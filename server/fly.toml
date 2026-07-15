@@ -1,0 +1,35 @@
+# FRAUDE web API — Fly.io yapılandırması.
+# İlk deploy:  cd server && fly launch --no-deploy   (uygulama adını/region'ı onayla)
+# Gizli anahtarlar:  fly secrets set DATABASE_URL=... FRAUDE_KEY_ENC_SECRET=... SUPABASE_JWKS_URL=...
+# Deploy:  fly deploy
+
+app = "fraude-api"
+primary_region = "fra"   # Frankfurt — Türkiye'ye en yakın düşük gecikme
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  RUST_LOG = "info"
+  # ALLOWED_ORIGIN Vercel prod origin'i ile fly secrets/env üzerinden ayarlanır.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Arka plan döngüleri (IPO tazeleme + çok kiracılı monitor) sürekli çalışmalı;
+  # bu yüzden makineler otomatik durdurulmaz ve en az 1 makine hep açık kalır.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
