@@ -1,0 +1,41 @@
+{
+  "name": "fraude-terminal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "registry:dev": "node scripts/registry-dev.mjs",
+    "registry:verify": "node scripts/verify-registry-dev.mjs",
+    "registry:verify-persistence": "node scripts/verify-registry-persistence.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-opener": "^2.0.0",
+    "d3-hierarchy": "^3.1.2",
+    "dompurify": "^3.4.12",
+    "i18next": "^26.3.6",
+    "lightweight-charts": "^5.2.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.9",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.9.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/dompurify": "^3.0.5",
+    "@types/mozilla-readability": "^0.2.1",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

@@ -1,0 +1,73 @@
+:root {
+  --bg-dark: #0d1117;
+  --bg-panel: #161b22;
+  --bg-hover: #21262d;
+  --text-main: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent-primary: #00ff9d;
+  --accent-secondary: #00c3ff;
+  --border-color: #30363d;
+  --font-mono: 'Courier New', Courier, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  user-select: none;
+}
+
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track { background: var(--bg-dark); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Fraude'da Oku okuyucu görünümü */
+.reader-content img,
+.reader-content video,
+.reader-content iframe {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.reader-content figure {
+  margin: 16px 0;
+}
+.reader-content figcaption {
+  font-size: 0.8rem;
+  color: #8b949e;
+  margin-top: 6px;
+}
+.reader-content a {
+  color: var(--accent-primary, #00ff9d);
+}
+.reader-content p {
+  margin: 0 0 14px;
+}
+.reader-content h2,
+.reader-content h3 {
+  color: #fff;
+  margin: 22px 0 10px;
+}

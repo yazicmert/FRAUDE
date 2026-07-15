@@ -1,0 +1,742 @@
+<title>FRAUDE · Rehber ve Kurulum</title>
+<style>
+  :root {
+    --bg:        #f3f6f3;
+    --surface:   #ffffff;
+    --surface-2: #e9efe9;
+    --border:    #d5ded6;
+    --border-2:  #c3cec5;
+    --text:      #10160f;
+    --text-mut:  #566259;
+    --text-dim:  #7a857c;
+    --accent:    #00895a;
+    --accent-2:  #00a568;
+    --accent-ink:#ffffff;
+    --pos:       #1a7f37;
+    --neg:       #cf222e;
+    --warn:      #9a6700;
+    --shadow:    0 1px 2px rgba(16,22,15,.06), 0 8px 24px rgba(16,22,15,.06);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0a0e0c;
+      --surface:   #10160f;
+      --surface-2: #161d18;
+      --border:    #1f2a24;
+      --border-2:  #2a3831;
+      --text:      #d6e2db;
+      --text-mut:  #8aa096;
+      --text-dim:  #647469;
+      --accent:    #00e08a;
+      --accent-2:  #34eea0;
+      --accent-ink:#04140d;
+      --pos:       #3fb950;
+      --neg:       #f85149;
+      --warn:      #d29922;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#f3f6f3; --surface:#ffffff; --surface-2:#e9efe9; --border:#d5ded6; --border-2:#c3cec5;
+    --text:#10160f; --text-mut:#566259; --text-dim:#7a857c; --accent:#00895a; --accent-2:#00a568;
+    --accent-ink:#ffffff; --pos:#1a7f37; --neg:#cf222e; --warn:#9a6700;
+    --shadow:0 1px 2px rgba(16,22,15,.06), 0 8px 24px rgba(16,22,15,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0a0e0c; --surface:#10160f; --surface-2:#161d18; --border:#1f2a24; --border-2:#2a3831;
+    --text:#d6e2db; --text-mut:#8aa096; --text-dim:#647469; --accent:#00e08a; --accent-2:#34eea0;
+    --accent-ink:#04140d; --pos:#3fb950; --neg:#f85149; --warn:#d29922;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(140%) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner { display: flex; align-items: center; gap: 20px; height: 56px; }
+  .brand { font-family: var(--mono); font-weight: 700; letter-spacing: .18em; font-size: .92rem; color: var(--text); display:flex; align-items:center; gap:9px; }
+  .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .topnav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  .topnav a {
+    font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--text-mut); text-decoration: none; padding: 7px 10px; border-radius: 6px;
+  }
+  .topnav a:hover { color: var(--text); background: var(--surface-2); }
+  .theme-btn {
+    font-family: var(--mono); font-size: .72rem; color: var(--text-mut); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; cursor: pointer;
+  }
+  .theme-btn:hover { color: var(--text); border-color: var(--border-2); }
+
+  /* ── Hero ────────────────────────────────────────────── */
+  .hero { padding: 64px 0 40px; }
+  .term {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .term-bar {
+    display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface-2);
+    font-family: var(--mono); font-size: .74rem; color: var(--text-dim);
+  }
+  .term-bar .tl { display: flex; gap: 6px; }
+  .term-bar .tl i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .term-bar .tl i:nth-child(1){ background:#ff5f57; }
+  .term-bar .tl i:nth-child(2){ background:#febc2e; }
+  .term-bar .tl i:nth-child(3){ background:#28c840; }
+  .term-bar .path { margin-left: 6px; }
+  .term-body { padding: 26px 26px 30px; font-family: var(--mono); }
+  .term-line { font-size: .84rem; color: var(--text-mut); margin: 0 0 4px; }
+  .term-line .ok { color: var(--pos); }
+  .term-line .pr { color: var(--accent); }
+  .hero-title {
+    font-family: var(--mono); font-weight: 700; letter-spacing: .12em;
+    font-size: clamp(2.4rem, 8vw, 4.6rem); line-height: .98; margin: 20px 0 0;
+    color: var(--text); text-wrap: balance;
+  }
+  .hero-sub {
+    font-family: var(--sans); font-size: clamp(1rem, 2.4vw, 1.25rem); color: var(--text-mut);
+    margin: 14px 0 0; max-width: 60ch;
+  }
+  .cursor { display:inline-block; width:.6ch; background:var(--accent); color:transparent; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+  .chip {
+    font-family: var(--mono); font-size: .72rem; color: var(--text-mut);
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; background: var(--surface);
+  }
+  .chip b { color: var(--accent); font-weight: 600; }
+
+  /* ── Sections ────────────────────────────────────────── */
+  section { padding: 48px 0; border-top: 1px solid var(--border); }
+  .eyebrow {
+    font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .18em;
+    color: var(--accent); margin: 0 0 10px; display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before { content:""; width: 22px; height: 1px; background: var(--accent); display:inline-block; }
+  h2 { font-family: var(--mono); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: -.01em; margin: 0 0 14px; text-wrap: balance; }
+  h3 { font-family: var(--mono); font-weight: 700; font-size: 1.05rem; margin: 0 0 8px; letter-spacing: .01em; }
+  .lead { font-size: 1.06rem; color: var(--text-mut); max-width: 68ch; margin: 0 0 8px; }
+  p { max-width: 72ch; }
+  a.inline { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  a.inline:hover { border-bottom-color: var(--accent); }
+
+  /* ── Module grid ─────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 26px; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column; transition: border-color .15s ease, transform .15s ease;
+  }
+  .panel:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface-2);
+  }
+  .panel-head .ico { font-family: var(--mono); font-weight: 700; font-size: .8rem; color: var(--accent-ink); background: var(--accent); border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; flex: none; }
+  .panel-head h3 { margin: 0; font-size: .96rem; }
+  .panel-head .tag { margin-left: auto; font-family: var(--mono); font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); border: 1px solid var(--border-2); border-radius: 5px; padding: 3px 6px; }
+  .panel-body { padding: 14px; font-size: .92rem; color: var(--text-mut); }
+  .panel-body ul { margin: 10px 0 0; padding: 0 0 0 2px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .panel-body li { position: relative; padding-left: 18px; font-size: .86rem; }
+  .panel-body li::before { content:"▸"; position:absolute; left:0; color: var(--accent); font-size: .8rem; }
+
+  /* ── Provider tabs ───────────────────────────────────── */
+  .prov { margin-top: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  .prov-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .prov-tab {
+    font-family: var(--mono); font-size: .78rem; color: var(--text-mut); background: transparent;
+    border: none; border-right: 1px solid var(--border); padding: 13px 16px; cursor: pointer;
+    display: flex; align-items: center; gap: 9px; flex: 1 1 auto; justify-content: center; min-width: 120px;
+  }
+  .prov-tab .mono-badge { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; font-weight: 700; font-size: .7rem; background: var(--border); color: var(--text); flex: none; }
+  .prov-tab[aria-selected="true"] { color: var(--text); background: var(--surface); box-shadow: inset 0 -2px 0 var(--accent); }
+  .prov-tab:hover { color: var(--text); }
+  .prov-panel { padding: 24px; display: none; }
+  .prov-panel.active { display: block; }
+  .prov-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 18px; margin-bottom: 4px; }
+  .prov-top h3 { font-size: 1.35rem; margin: 0; }
+  .prov-flags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .flag { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; padding: 4px 9px; border-radius: 5px; border: 1px solid var(--border-2); color: var(--text-mut); }
+  .flag.free { color: var(--pos); border-color: color-mix(in srgb, var(--pos) 45%, var(--border)); }
+  .flag.paid { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+  .prov-desc { color: var(--text-mut); margin: 8px 0 20px; max-width: 72ch; }
+  .steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  .steps li { counter-increment: s; position: relative; padding-left: 44px; min-height: 30px; }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px;
+    font-family: var(--mono); font-weight: 700; font-size: .85rem; color: var(--accent-ink);
+    background: var(--accent); border-radius: 8px; display: grid; place-items: center;
+  }
+  .steps li strong { color: var(--text); font-weight: 600; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 22px 0 0; padding: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; align-items: center; }
+  .kv dt { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); }
+  .kv dd { margin: 0; }
+  code, .code {
+    font-family: var(--mono); font-size: .82em;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-2); padding: 2px 6px; border-radius: 5px; word-break: break-all;
+  }
+  :root[data-theme="light"] code, :root[data-theme="light"] .code { color: var(--accent); }
+  @media (prefers-color-scheme: light) { code, .code { color: var(--accent); } }
+  .models { display: flex; flex-wrap: wrap; gap: 6px; }
+  .models span { font-family: var(--mono); font-size: .74rem; color: var(--text-mut); border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 10px; }
+  .note { display: flex; gap: 10px; margin-top: 18px; font-size: .86rem; color: var(--text-mut); border-left: 2px solid var(--warn); padding: 4px 0 4px 14px; }
+  .note b { color: var(--warn); }
+
+  /* ── In-app step ─────────────────────────────────────── */
+  .inapp { margin-top: 22px; padding: 18px 20px; border: 1px dashed var(--border-2); border-radius: 10px; background: var(--surface); }
+  .inapp .eyebrow { color: var(--text-dim); }
+  .inapp .eyebrow::before { background: var(--text-dim); }
+  .path-line { font-family: var(--mono); font-size: .9rem; color: var(--text); }
+  .path-line .sep { color: var(--text-dim); margin: 0 6px; }
+  .path-line .b { color: var(--accent); }
+
+  /* ── Architecture / pipeline ─────────────────────────── */
+  .scroll-x { overflow-x: auto; }
+  .flow { display: flex; align-items: stretch; gap: 0; margin-top: 24px; min-width: 640px; }
+  .flow .node { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .flow .node h4 { font-family: var(--mono); font-size: .82rem; margin: 0 0 8px; letter-spacing: .04em; }
+  .flow .node .host { font-family: var(--mono); font-size: .68rem; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+  .flow .node p { font-size: .8rem; color: var(--text-mut); margin: 6px 0 0; }
+  .flow .arrow { display: grid; place-items: center; padding: 0 10px; color: var(--text-dim); font-family: var(--mono); flex: none; }
+
+  .phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 12px; margin-top: 22px; }
+  .phase { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; position: relative; }
+  .phase .n { font-family: var(--mono); font-size: .7rem; letter-spacing: .1em; color: var(--accent); text-transform: uppercase; }
+  .phase h4 { font-family: var(--mono); font-size: .92rem; margin: 6px 0 8px; }
+  .phase p { font-size: .82rem; color: var(--text-mut); margin: 0; }
+  .phase .est { margin-top: 10px; font-family: var(--mono); font-size: .68rem; color: var(--text-dim); }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 22px; }
+  .listcard { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .listcard h3 { font-size: .95rem; display:flex; align-items:center; gap:8px; }
+  .listcard h3 .swatch { width: 10px; height: 10px; border-radius: 3px; display:inline-block; }
+  .listcard ul { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .listcard li { font-size: .87rem; color: var(--text-mut); padding-left: 18px; position: relative; }
+  .listcard li::before { content: "·"; position: absolute; left: 4px; color: var(--text-dim); font-weight: 700; }
+
+  /* ── Callout / footer ────────────────────────────────── */
+  .callout { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 26px; margin-top: 26px; }
+  .start-steps { list-style: none; counter-reset: q; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .start-steps li { counter-increment: q; padding-left: 40px; position: relative; color: var(--text-mut); }
+  .start-steps li::before { content: counter(q, decimal-leading-zero); position: absolute; left: 0; top: 0; font-family: var(--mono); font-weight: 700; color: var(--accent); font-size: .82rem; }
+  .start-steps b { color: var(--text); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--border); padding: 30px 0 60px; color: var(--text-dim); font-family: var(--mono); font-size: .76rem; }
+  footer .wrap { display:flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+
+  :where(a, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  @media (max-width: 760px) {
+    .split { grid-template-columns: 1fr; }
+    .topnav { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="topbar">
+  <div class="wrap topbar-inner">
+    <span class="brand"><span class="dot"></span>FRAUDE</span>
+    <nav class="topnav">
+      <a href="#overview">Genel Bakış</a>
+      <a href="#modules">Modüller</a>
+      <a href="#ai">AI Kurulumu</a>
+      <a href="#arch">Mimari</a>
+      <a href="#deploy">Deploy</a>
+      <a href="#start">Başla</a>
+    </nav>
+    <button class="theme-btn" id="themeBtn" type="button" aria-label="Temayı değiştir">tema ↺</button>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="term" role="img" aria-label="FRAUDE terminal açılış ekranı">
+      <div class="term-bar">
+        <span class="tl"><i></i><i></i><i></i></span>
+        <span class="path">fraude://terminal ~ BIST intelligence</span>
+      </div>
+      <div class="term-body">
+        <p class="term-line"><span class="pr">$</span> fraude --boot</p>
+        <p class="term-line">▸ Piyasa verisi (Yahoo · İş Yatırım) bağlanıyor… <span class="ok">OK</span></p>
+        <p class="term-line">▸ KAP akışı &amp; İzleme Radarı… <span class="ok">OK</span></p>
+        <p class="term-line">▸ Halka arz takvimi &amp; kurumsal olaylar… <span class="ok">OK</span></p>
+        <h1 class="hero-title">FRAUDE<span class="cursor">_</span></h1>
+        <p class="hero-sub">BIST için finansal zeka terminali — piyasa taraması, KAP izleme, bilanço analizi ve kendi AI anahtarınla çalışan araştırma, tek ekranda.</p>
+        <div class="hero-meta">
+          <span class="chip"><b>12</b> modül</span>
+          <span class="chip"><b>5</b> AI sağlayıcı desteği</span>
+          <span class="chip">BIST · <b>XU100</b> · <b>XHARZ</b></span>
+          <span class="chip">TR / EN</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ── OVERVIEW ─────────────────────────────────────── -->
+  <section id="overview">
+    <div class="wrap">
+      <p class="eyebrow">Genel Bakış</p>
+      <h2>FRAUDE nedir?</h2>
+      <p class="lead">FRAUDE, Borsa İstanbul (BIST) hisselerini izleyen yatırımcı ve analistler için bir masaüstü finans terminalidir. Fiyat ve teknik göstergeleri, bilanço oranlarını, KAP bildirimlerini, haber akışını ve halka arz takvimini tek bir çalışma alanında birleştirir; üstüne <strong>kendi AI anahtarınızla</strong> çalışan bir araştırma katmanı ekler.</p>
+      <p>Bu rehber iki şeyi anlatır: (1) uygulamanın <a class="inline" href="#modules">tüm modüllerini</a> ne işe yaradıklarıyla birlikte, (2) AI özelliklerini açmak için <a class="inline" href="#ai">API anahtarınızı sağlayıcıya göre adım adım</a> nasıl alıp uygulamaya gireceğinizi. Sonda uygulamanın <a class="inline" href="#arch">web'e taşınma mimarisi</a> ve <a class="inline" href="#deploy">yayınlama hattı</a> özetlenir.</p>
+    </div>
+  </section>
+
+  <!-- ── MODULES ──────────────────────────────────────── -->
+  <section id="modules">
+    <div class="wrap">
+      <p class="eyebrow">Modül Turu</p>
+      <h2>Uygulamadaki her panel</h2>
+      <p class="lead">Sol kenar çubuğundan modüller arasında gezinir, üstteki arama/komut çubuğundan hisse açar veya komut çalıştırırsınız. Her sekme bağımsız bir çalışma paneli gibi davranır.</p>
+
+      <div class="grid">
+        <article class="panel">
+          <div class="panel-head"><span class="ico">DB</span><h3>Dashboard</h3><span class="tag">Ana ekran</span></div>
+          <div class="panel-body">Piyasanın günlük özeti ve karar destek modülleri.
+            <ul>
+              <li>Günlük Piyasa Bülteni: genişlik, BIST 100, XHARZ, lider/zayıf hisseler</li>
+              <li>Model Portföy: değer + kalite + momentum puanları (görünür formüllerle)</li>
+              <li>Bilanço Analizi: F/K, PD/DD, ROE, ROA, marj, büyüme karşılaştırması</li>
+              <li>Filtreli Analiz: çoklu eşik taraması</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">SC</span><h3>Teknik Tarayıcı</h3><span class="tag">Screener</span></div>
+          <div class="panel-body">Teknik göstergelere göre BIST/XHARZ evreninde hisse tarar.
+            <ul>
+              <li>RSI(14), ATR(14) — Wilder/RMA yumuşatması</li>
+              <li>EMA, SMA, MACD, Bollinger — yerel hesaplama</li>
+              <li>F/K, PD/DD, ROE, günlük değişim eşikleri birlikte</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">TK</span><h3>Hisse Detayı</h3><span class="tag">Ticker</span></div>
+          <div class="panel-body">Tek hissenin tam kartı; aramadan veya tablodan açılır.
+            <ul>
+              <li>Fiyat, OHLC, hacim, 52 hafta yüksek/düşük grafiği</li>
+              <li>Temel veriler: F/K, PD/DD, ROE, ROA, marj, Net Borç/FAVÖK</li>
+              <li>Ortaklık yapısı ve bağlı ortaklıklar</li>
+              <li>Hisseye özel KAP ve haber</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">IX</span><h3>Endeks Görünümü</h3><span class="tag">Index</span></div>
+          <div class="panel-body">Endeks seviyesi ve bileşen evreni.
+            <ul>
+              <li>BIST 100 (XU100) ve BIST Halka Arz (XHARZ) kartları</li>
+              <li>Endeks OHLCV serisi ve bileşen listesi</li>
+              <li>Yeni halka arzlar <code>IPO</code> etiketiyle</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">KP</span><h3>KAP Akışı</h3><span class="tag">Bildirimler</span></div>
+          <div class="panel-body">Kamuyu Aydınlatma Platformu bildirim akışı.
+            <ul>
+              <li>Şirket bazlı özel durum açıklamaları</li>
+              <li>AI önem puanı ile sıralama</li>
+              <li>Hisse filtreleme</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">NW</span><h3>Haber Akışı</h3><span class="tag">News</span></div>
+          <div class="panel-body">Çok kaynaklı şirket ve piyasa haberi.
+            <ul>
+              <li>GDELT DOC 2.0 — küresel şirket haberi</li>
+              <li>Google News RSS — Türkçe şirket haberi</li>
+              <li>Bloomberg HT RSS — ekonomi ve hisse eşleşmesi</li>
+              <li>Okunabilir önizleme (Readability)</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">AI</span><h3>AI Araştırma</h3><span class="tag">Panel + yan</span></div>
+          <div class="panel-body">Kendi anahtarınla çalışan araştırma asistanı.
+            <ul>
+              <li>Aktif sekme bağlamıyla soru-cevap</li>
+              <li>Özel AI ajanları (rol + sistem komutu)</li>
+              <li>Ajan bazlı otomatik analiz</li>
+              <li>Sohbet geçmişi</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">RD</span><h3>İzleme Radarı</h3><span class="tag">Monitor 🔔</span></div>
+          <div class="panel-body">Takip listendeki hisseleri arka planda tarar.
+            <ul>
+              <li>Yeni KAP bildirimlerini periyodik kontrol</li>
+              <li>Ortaklık değişimi / iş ilişkisi sınıflandırma</li>
+              <li>Zil rozeti + (masaüstünde) OS bildirimi</li>
+              <li>AI yorumlu uyarılar</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">CA</span><h3>Kurumsal Olaylar</h3><span class="tag">Corporate</span></div>
+          <div class="panel-body">Şirket aksiyonları ve halka arz takvimi.
+            <ul>
+              <li>Temettü kayıtları</li>
+              <li>Bedelli/bedelsiz sermaye artırımları</li>
+              <li>Halka arz takvimi ve arşivi</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">$_</span><h3>Terminal (FQL)</h3><span class="tag">Komut</span></div>
+          <div class="panel-body">Klavyeyle her şeyi süren komut satırı.
+            <ul>
+              <li><code>open THYAO</code> — hisse aç</li>
+              <li><code>scan …</code> — tarama çalıştır</li>
+              <li><code>kap</code> · <code>sync</code> · <code>ask …</code> · <code>help</code></li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">TM</span><h3>Ekip</h3><span class="tag">Team</span></div>
+          <div class="panel-body">Ekip çalışma alanı ve paylaşılan görünümler.
+            <ul>
+              <li>Ortak izleme ve araştırma bağlamı</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><span class="ico">MD</span><h3>Modül Merkezi</h3><span class="tag">Modules</span></div>
+          <div class="panel-body">Modülleri açıp kapatma ve güncelleme.
+            <ul>
+              <li>Modül kataloğu ve kurulum</li>
+              <li>İmzalı güncelleme / geri alma (registry)</li>
+              <li>Kenar çubuğu sekmelerini özelleştirme</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── AI SETUP ─────────────────────────────────────── -->
+  <section id="ai">
+    <div class="wrap">
+      <p class="eyebrow">AI Kurulumu</p>
+      <h2>API anahtarını sağlayıcına göre ekle</h2>
+      <p class="lead">AI Araştırma, İzleme Radarı yorumları ve ajan analizleri <strong>senin kendi API anahtarınla</strong> çalışır — anahtarı sen alır, uygulamaya girersin, kullanım senin hesabına işler. Aşağıdan sağlayıcını seç; nereye gireceğini, ne alacağını ve FRAUDE'ye nasıl gireceğini adım adım göster.</p>
+
+      <div class="prov">
+        <div class="prov-tabs" role="tablist" aria-label="AI sağlayıcıları">
+          <button class="prov-tab" role="tab" aria-selected="true" aria-controls="p-openai" id="t-openai"><span class="mono-badge">AI</span>OpenAI</button>
+          <button class="prov-tab" role="tab" aria-selected="false" aria-controls="p-deepseek" id="t-deepseek"><span class="mono-badge">DS</span>DeepSeek</button>
+          <button class="prov-tab" role="tab" aria-selected="false" aria-controls="p-google" id="t-google"><span class="mono-badge">G</span>Gemini</button>
+          <button class="prov-tab" role="tab" aria-selected="false" aria-controls="p-qwen" id="t-qwen"><span class="mono-badge">Q</span>Qwen</button>
+          <button class="prov-tab" role="tab" aria-selected="false" aria-controls="p-custom" id="t-custom"><span class="mono-badge">+</span>Custom</button>
+        </div>
+
+        <!-- OpenAI -->
+        <div class="prov-panel active" role="tabpanel" id="p-openai" aria-labelledby="t-openai">
+          <div class="prov-top">
+            <h3>OpenAI</h3>
+            <div class="prov-flags"><span class="flag paid">Ücretli · kullanım bazlı</span><span class="flag">Kredi kartı gerekir</span></div>
+          </div>
+          <p class="prov-desc">GPT modelleri. Genel amaçlı analiz için güçlü varsayılan. Anahtar <code>sk-</code> ile başlar ve <strong>yalnızca bir kez</strong> gösterilir.</p>
+          <ol class="steps">
+            <li><strong>platform.openai.com</strong> adresine git, hesap aç veya giriş yap.</li>
+            <li>Sağ üstteki hesap menüsünden <strong>API keys</strong> sayfasını aç (<span class="code">platform.openai.com/api-keys</span>).</li>
+            <li><strong>Create new secret key</strong> → anahtara bir ad ver → oluştur.</li>
+            <li>Çıkan <code>sk-…</code> anahtarını <strong>hemen kopyala</strong> (sayfayı kapatınca tekrar görünmez).</li>
+            <li><strong>Billing → Payment methods</strong> altından kart ekle ve bir miktar bakiye tanımla (yoksa istekler reddedilir).</li>
+          </ol>
+          <dl class="kv">
+            <dt>Base URL</dt><dd><span class="code">https://api.openai.com/v1</span></dd>
+            <dt>Modeller</dt><dd><div class="models"><span>gpt-4o</span><span>gpt-4o-mini</span><span>o3-mini</span><span>o1</span><span>o1-mini</span></div></dd>
+          </dl>
+        </div>
+
+        <!-- DeepSeek -->
+        <div class="prov-panel" role="tabpanel" id="p-deepseek" aria-labelledby="t-deepseek" hidden>
+          <div class="prov-top">
+            <h3>DeepSeek</h3>
+            <div class="prov-flags"><span class="flag paid">Ücretli · çok uygun</span><span class="flag">Ön ödemeli bakiye</span></div>
+          </div>
+          <p class="prov-desc">DeepSeek-V3 (sohbet) ve DeepSeek-R1 (akıl yürütme). Düşük maliyetle güçlü analiz isteyenler için. OpenAI-uyumlu API.</p>
+          <ol class="steps">
+            <li><strong>platform.deepseek.com</strong> adresine git ve kayıt ol.</li>
+            <li>Panelde <strong>API keys</strong> bölümünü aç.</li>
+            <li><strong>Create new API key</strong> → oluştur → <code>sk-…</code> anahtarını kopyala.</li>
+            <li><strong>Top up / Billing</strong> altından hesabına bakiye yükle.</li>
+          </ol>
+          <dl class="kv">
+            <dt>Base URL</dt><dd><span class="code">https://api.deepseek.com/v1</span></dd>
+            <dt>Modeller</dt><dd><div class="models"><span>deepseek-chat (V3)</span><span>deepseek-reasoner (R1)</span></div></dd>
+          </dl>
+        </div>
+
+        <!-- Google Gemini -->
+        <div class="prov-panel" role="tabpanel" id="p-google" aria-labelledby="t-google" hidden>
+          <div class="prov-top">
+            <h3>Google Gemini</h3>
+            <div class="prov-flags"><span class="flag free">Ücretsiz katman var</span><span class="flag">Google hesabı yeter</span></div>
+          </div>
+          <p class="prov-desc">Gemini modelleri. Ücretsiz katmanla denemeye başlamak için en kolay yol. FRAUDE, Google'ın OpenAI-uyumlu ucunu kullanır.</p>
+          <ol class="steps">
+            <li><strong>aistudio.google.com</strong> (Google AI Studio) adresine Google hesabınla gir.</li>
+            <li>Sol menüden veya üstten <strong>Get API key</strong>'e tıkla.</li>
+            <li><strong>Create API key</strong> → (istenirse bir proje seç) → anahtarı kopyala.</li>
+            <li>Daha yüksek limit istersen faturalandırmayı (Cloud Billing) etkinleştir; başlangıç için ücretsiz katman yeterli.</li>
+          </ol>
+          <dl class="kv">
+            <dt>Base URL</dt><dd><span class="code">https://generativelanguage.googleapis.com/v1beta/openai/</span></dd>
+            <dt>Modeller</dt><dd><div class="models"><span>gemini-2.5-pro</span><span>gemini-2.5-flash</span><span>gemini-2.0-flash</span><span>gemini-1.5-pro</span><span>gemini-1.5-flash</span></div></dd>
+          </dl>
+        </div>
+
+        <!-- Qwen -->
+        <div class="prov-panel" role="tabpanel" id="p-qwen" aria-labelledby="t-qwen" hidden>
+          <div class="prov-top">
+            <h3>Qwen · Alibaba Cloud</h3>
+            <div class="prov-flags"><span class="flag paid">Ücretli</span><span class="flag free">Deneme kotası</span></div>
+          </div>
+          <p class="prov-desc">Alibaba'nın Qwen modelleri, DashScope üzerinden. Uzun bağlam ve çok dilli görevlerde güçlü. <code>compatible-mode</code> = OpenAI-uyumlu uç.</p>
+          <ol class="steps">
+            <li><strong>Alibaba Cloud</strong> hesabı aç ve <strong>DashScope</strong> (Model Studio) servisini etkinleştir.</li>
+            <li>Konsolda <strong>dashscope.console.aliyun.com</strong> → <strong>API-KEY</strong> yönetimini aç.</li>
+            <li><strong>Create API Key</strong> → <code>sk-…</code> anahtarını kopyala.</li>
+            <li>Uluslararası hesaplarda uç <span class="code">dashscope-intl…</span> olabilir; sağlayıcının verdiği base URL'i esas al.</li>
+          </ol>
+          <dl class="kv">
+            <dt>Base URL</dt><dd><span class="code">https://dashscope.aliyuncs.com/compatible-mode/v1</span></dd>
+            <dt>Modeller</dt><dd><div class="models"><span>qwen-max</span><span>qwen-plus</span><span>qwen-turbo</span><span>qwen-long</span></div></dd>
+          </dl>
+        </div>
+
+        <!-- Custom -->
+        <div class="prov-panel" role="tabpanel" id="p-custom" aria-labelledby="t-custom" hidden>
+          <div class="prov-top">
+            <h3>Custom · OpenAI-uyumlu</h3>
+            <div class="prov-flags"><span class="flag">Base URL sen girersin</span><span class="flag">Claude · Llama · Mistral</span></div>
+          </div>
+          <p class="prov-desc"><strong>Custom</strong> seçeneği, OpenAI-uyumlu <em>herhangi bir</em> uca bağlanmanı sağlar: base URL ve model kimliğini sen belirlersin. Anthropic Claude, Meta Llama veya Mistral gibi modelleri tek anahtarla sunan bir ağ geçidi (ör. OpenRouter, Together AI) ya da kendi proxy'in.</p>
+          <ol class="steps">
+            <li>Bir sağlayıcı seç — ör. <strong>openrouter.ai</strong> (tek anahtarla Claude/Llama/Mistral) veya <strong>together.ai</strong>.</li>
+            <li>Hesap aç → <strong>Keys / API Keys</strong> → yeni anahtar oluştur → kopyala.</li>
+            <li>Sağlayıcının <strong>Base URL</strong>'ini not al (ör. OpenRouter: <span class="code">https://openrouter.ai/api/v1</span>).</li>
+            <li>Kullanmak istediğin <strong>tam model kimliğini</strong> sağlayıcının model listesinden al (aşağıdaki örnekler FRAUDE'de hazır gelir).</li>
+          </ol>
+          <dl class="kv">
+            <dt>Base URL</dt><dd><span class="code">senin sağlayıcın</span> (Custom alanına yapıştır)</dd>
+            <dt>Örnek modeller</dt><dd><div class="models"><span>claude-3-7-sonnet-latest</span><span>claude-3-5-sonnet-latest</span><span>meta-llama/Llama-3-70b-chat-hf</span><span>mistralai/Mistral-7B-Instruct-v0.2</span></div></dd>
+          </dl>
+          <p class="note"><b>Not:</b> Model kimliği sağlayıcıya göre değişir (ör. OpenRouter'da <span class="code">anthropic/claude-3.7-sonnet</span>). Doğru dizeyi mutlaka sağlayıcının belgelerinden kopyala.</p>
+        </div>
+      </div>
+
+      <!-- In-app step (ortak) -->
+      <div class="inapp">
+        <p class="eyebrow">Sonra: FRAUDE içinde</p>
+        <p class="path-line"><span class="b">Settings</span><span class="sep">›</span><span class="b">AI Providers</span><span class="sep">›</span>Add key</p>
+        <p style="margin-top:10px; color:var(--text-mut); font-size:.92rem; max-width:70ch;">
+          <strong>Provider</strong>'ı seç (OpenAI / DeepSeek / Google / Qwen / Custom), bir <strong>Label</strong> yaz, kopyaladığın <strong>API key</strong>'i yapıştır, <strong>Default model</strong>'i seç. Provider'ı seçince Base URL otomatik dolar (Custom'da elle girersin). Kaydettikten sonra <strong>Test</strong> ile doğrula ve istersen <strong>varsayılan</strong> yap. Birden fazla anahtar ekleyip ajanlarına farklı anahtar atayabilirsin.
+        </p>
+        <p class="note" style="border-color:var(--pos);"><b style="color:var(--pos);">Güvenlik:</b> Anahtar kaydedildikten sonra arayüze düz metin olarak geri dönmez; yalnızca maskeli gösterilir (<span class="code">sk-t••••</span>). Web sürümünde anahtarlar sunucuda şifreli saklanacak.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ARCHITECTURE ─────────────────────────────────── -->
+  <section id="arch">
+    <div class="wrap">
+      <p class="eyebrow">Mimari · Web'e Taşıma</p>
+      <h2>Masaüstünden çok kullanıcılı web'e</h2>
+      <p class="lead">FRAUDE bugün bir Tauri (Rust + React) masaüstü uygulaması. Halka açık web sürümünde frontend Vercel'e taşınır; veri mantığı Rust olarak kalıp kalıcı bir sunucuda çalışır; kimlik doğrulama ve kişi-başı veri ise Supabase ile izole edilir.</p>
+
+      <div class="scroll-x">
+        <div class="flow">
+          <div class="node">
+            <span class="host">Vercel</span>
+            <h4>Frontend</h4>
+            <p>React + Vite statik build. Giriş ekranı ve <code>platformClient</code> zaten web moduna hazır.</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="host">Fly.io / Render</span>
+            <h4>Backend (Rust API)</h4>
+            <p>axum · <code>/v1/rpc/{command}</code>. Kazıma, cache ve arka plan döngüleri. JWT doğrular.</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="host">Supabase</span>
+            <h4>Auth + Postgres</h4>
+            <p>Kullanıcı, oturum, kişi-başı veri (anahtar/geçmiş/ajan) + satır düzeyi güvenlik.</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node">
+            <span class="host">Dış kaynaklar</span>
+            <h4>Veri &amp; AI</h4>
+            <p>Yahoo · İş Yatırım · KAP · GDELT · Google News; AI çağrısı kullanıcının kendi anahtarıyla.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="listcard">
+          <h3><span class="swatch" style="background:var(--accent)"></span>Paylaşımlı veri</h3>
+          <p style="font-size:.85rem;color:var(--text-mut);margin:6px 0 0;">Tüm kullanıcılar için aynı — sunucuda tek cache.</p>
+          <ul>
+            <li>Hisse/endeks fiyatları, OHLCV</li>
+            <li>KAP bildirimleri, haber akışı</li>
+            <li>Temel veriler, ortaklık yapısı</li>
+            <li>Halka arz takvimi, kurumsal olaylar</li>
+          </ul>
+        </div>
+        <div class="listcard">
+          <h3><span class="swatch" style="background:var(--warn)"></span>Kişi-başı veri</h3>
+          <p style="font-size:.85rem;color:var(--text-mut);margin:6px 0 0;">Auth zorunlu — Postgres'te <code>user_id</code> ile izole.</p>
+          <ul>
+            <li>AI anahtarları (şifreli, envelope encryption)</li>
+            <li>AI sohbet geçmişi ve özel ajanlar</li>
+            <li>Kayıtlı analizler (artifacts)</li>
+            <li>İzleme listesi, monitor ayarları ve uyarılar</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="phases">
+        <div class="phase"><span class="n">Faz 0</span><h4>Ayrıştır</h4><p>Backend'i Tauri'den ayır; axum <code>/v1/rpc</code> kabuğu; Docker.</p><p class="est">Orta–Büyük</p></div>
+        <div class="phase"><span class="n">Faz 1</span><h4>Yayına al</h4><p>Frontend Vercel, backend Fly/Render; paylaşımlı veri canlı.</p><p class="est">Küçük–Orta</p></div>
+        <div class="phase"><span class="n">Faz 2</span><h4>Auth + DB</h4><p>Supabase auth, Postgres, kişi-başı CRUD, RLS.</p><p class="est">Büyük</p></div>
+        <div class="phase"><span class="n">Faz 3</span><h4>AI + Monitor</h4><p>Şifreli anahtarlar, AI proxy, çok kiracılı izleme.</p><p class="est">Büyük</p></div>
+        <div class="phase"><span class="n">Faz 4</span><h4>Sertleştir</h4><p>Rate-limit, loglama, sağlık ucu, yük testi.</p><p class="est">Orta</p></div>
+      </div>
+      <p style="margin-top:20px;font-size:.9rem;color:var(--text-mut);">Tam teknik döküm: <code>docs/WEB_MIGRATION_PLAN.md</code> (veritabanı şeması, endpoint sınıflandırması, güvenlik tasarımı).</p>
+    </div>
+  </section>
+
+  <!-- ── DEPLOY ───────────────────────────────────────── -->
+  <section id="deploy">
+    <div class="wrap">
+      <p class="eyebrow">Yayınlama Hattı</p>
+      <h2>CI/CD deploy pipeline</h2>
+      <p class="lead">Her <code>git push</code> testlerden geçer; yeşilse frontend ve backend ayrı hedeflere otomatik dağıtılır.</p>
+      <div class="scroll-x">
+        <div class="flow">
+          <div class="node"><span class="host">git</span><h4>push → PR → main</h4><p>Geliştirici değişikliği gönderir.</p></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="host">GitHub Actions</span><h4>Doğrulama</h4><p>tsc · cargo fmt/clippy · cargo test · vite build.</p></div>
+          <div class="arrow">→</div>
+          <div class="node"><span class="host">Vercel</span><h4>Frontend deploy</h4><p>PR → preview URL · main → production.</p></div>
+          <div class="arrow">＋</div>
+          <div class="node"><span class="host">Fly.io</span><h4>Backend deploy</h4><p>Docker build/push · healthz yeşilse yayına.</p></div>
+        </div>
+      </div>
+      <p style="margin-top:18px;font-size:.9rem;color:var(--text-mut);">Gizli anahtarlar (<code>DATABASE_URL</code>, <code>FRAUDE_KEY_ENC_SECRET</code>, JWKS) host secret'ı olarak tutulur — repoya asla girmez.</p>
+    </div>
+  </section>
+
+  <!-- ── START ────────────────────────────────────────── -->
+  <section id="start">
+    <div class="wrap">
+      <p class="eyebrow">Başla</p>
+      <h2>Hızlı başlangıç</h2>
+      <div class="callout">
+        <h3>Masaüstünde denemek</h3>
+        <ol class="start-steps">
+          <li>Depoyu klonla ve <b>npm install</b> ile bağımlılıkları kur.</li>
+          <li><b>npm run tauri dev</b> ile uygulamayı aç (Rust + React birlikte derlenir).</li>
+          <li>İlk açılışta piyasa verisi otomatik senkronlanır; <b>Dashboard</b> dolmaya başlar.</li>
+          <li>AI için <b>Settings › AI Providers</b>'a git ve yukarıdaki adımlarla anahtarını ekle.</li>
+          <li><b>İzleme Radarı</b>'na birkaç hisse ekle ve <b>enabled</b> yap; arka plan taraması başlasın.</li>
+        </ol>
+      </div>
+      <div class="callout">
+        <h3>Web'e taşımaya başlamak</h3>
+        <ol class="start-steps">
+          <li>Projeyi <b>git init</b> ile versiyon kontrolüne al (şu an git deposu değil).</li>
+          <li><b>Vercel · Supabase · Fly.io</b> hesaplarını aç.</li>
+          <li><b>Faz 0</b>: backend'i Tauri'den ayırıp axum <code>/v1/rpc</code> kabuğunu kur.</li>
+          <li>Frontend'i <code>VITE_FRAUDE_API_URL</code> ile lokal backend'e bağlayıp uçtan uca doğrula.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="brand"><span class="dot"></span>FRAUDE</span>
+    <span>BIST finansal zeka terminali · dahili rehber</span>
+    <span style="margin-left:auto;">React · Rust · Tauri → Vercel · Supabase · Fly.io</span>
+  </div>
+</footer>
+
+<script>
+  // Sağlayıcı sekmeleri
+  (function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.prov-tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.prov-panel'));
+    function select(tab) {
+      tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t === tab)); });
+      panels.forEach(function (p) {
+        var on = p.id === tab.getAttribute('aria-controls');
+        p.classList.toggle('active', on);
+        if (on) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
+      });
+    }
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener('click', function () { select(tab); });
+      tab.addEventListener('keydown', function (e) {
+        var dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!dir) return;
+        e.preventDefault();
+        var next = tabs[(i + dir + tabs.length) % tabs.length];
+        next.focus(); select(next);
+      });
+    });
+  })();
+
+  // Tema geçişi (sistem → override)
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    btn.addEventListener('click', function () {
+      var current = root.getAttribute('data-theme');
+      if (!current) {
+        current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+  })();
+</script>

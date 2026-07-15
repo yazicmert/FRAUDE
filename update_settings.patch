@@ -1,0 +1,143 @@
+--- src/features/settings/SettingsView.tsx
++++ src/features/settings/SettingsView.tsx
+@@ -7,7 +7,9 @@
+   setDefaultAiKey,
+   testAiKey,
++  listAiAgents,
++  saveAiAgent,
++  deleteAiAgent,
+ } from '../../api/tauriClient';
+-import type { AiKeyRecord, SaveAiKeyRequest } from '../../types';
++import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest } from '../../types';
+ 
+ const emptyForm: SaveAiKeyRequest = {
+@@ -56,9 +58,21 @@
+ 
++const emptyAgentForm: SaveAiAgentRequest = {
++  name: '',
++  role_description: '',
++  system_prompt: 'Sen bir BIST finans analistisin...',
++  api_key_id: '',
++  is_active: true,
++};
++
+ export default function SettingsView() {
++  const [activeTab, setActiveTab] = useState<'keys' | 'agents'>('keys');
+   const [keys, setKeys] = useState<AiKeyRecord[]>([]);
+   const [form, setForm] = useState<SaveAiKeyRequest>(emptyForm);
+   const [message, setMessage] = useState('');
+ 
++  const [agents, setAgents] = useState<AiAgent[]>([]);
++  const [agentForm, setAgentForm] = useState<SaveAiAgentRequest>(emptyAgentForm);
++  const [agentMessage, setAgentMessage] = useState('');
++
+   const load = async () => {
+     setKeys(await listAiKeys());
++    setAgents(await listAiAgents());
+   };
+@@ -115,7 +129,20 @@
+ 
++  const submitAgent = async (event: FormEvent) => {
++    event.preventDefault();
++    try {
++      await saveAiAgent(agentForm);
++      setAgentForm(emptyAgentForm);
++      setAgentMessage('Agent saved successfully.');
++      await load();
++    } catch (error) {
++      setAgentMessage(String(error));
++    }
++  };
++
+   return (
+     <div className="view">
+       <div className="view-header">
+         <div>
+-          <p className="eyebrow">Secure local configuration</p>
++          <p className="eyebrow">Fraude Configuration</p>
+           <h1>Settings</h1>
+         </div>
+       </div>
+ 
++      <div className="tabs" style={{ display: 'flex', gap: '12px', padding: '0 24px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
++        <button onClick={() => setActiveTab('keys')} style={{ padding: '8px 16px', borderBottom: activeTab === 'keys' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'keys' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Providers</button>
++        <button onClick={() => setActiveTab('agents')} style={{ padding: '8px 16px', borderBottom: activeTab === 'agents' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'agents' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Agents</button>
++      </div>
++
++      {activeTab === 'keys' && (
++        <>
+       <section className="panel">
+@@ -223,5 +250,71 @@
+       </section>
++        </>
++      )}
++
++      {activeTab === 'agents' && (
++        <>
++      <section className="panel">
++        <h2>AI Agents</h2>
++        <form className="settings-form" onSubmit={submitAgent}>
++          <label>
++            Agent Name
++            <input
++              value={agentForm.name}
++              onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))}
++              placeholder="e.g. Kıdemli Teknik Analist"
++              required
++            />
++          </label>
++          <label>
++            Role Description
++            <input
++              value={agentForm.role_description}
++              onChange={(event) => setAgentForm((current) => ({ ...current, role_description: event.target.value }))}
++              placeholder="e.g. Destek ve direnç seviyelerine odaklanır"
++              required
++            />
++          </label>
++          <label>
++            System Prompt
++            <textarea
++              value={agentForm.system_prompt}
++              onChange={(event) => setAgentForm((current) => ({ ...current, system_prompt: event.target.value }))}
++              placeholder="Sen bir teknik analiz uzmanısın..."
++              rows={3}
++              required
++            />
++          </label>
++          <label>
++            Provider Key
++            <select
++              value={agentForm.api_key_id}
++              onChange={(event) => setAgentForm((current) => ({ ...current, api_key_id: event.target.value }))}
++              required
++            >
++              <option value="">Select a Provider Key</option>
++              {keys.map((k) => (
++                <option key={k.id} value={k.id}>{k.label} ({k.provider})</option>
++              ))}
++            </select>
++          </label>
++          <button type="submit" className="primary-button">Save Agent</button>
++        </form>
++        {agentMessage && <p className="status-line">{agentMessage}</p>}
++      </section>
++
++      <section className="panel">
++        <h2>Configured Agents</h2>
++        <div className="key-list">
++          {agents.map((agent) => (
++            <article className="key-row" key={agent.id}>
++              <div>
++                <strong>{agent.name}</strong>
++                <span>{agent.role_description}</span>
++              </div>
++              <button type="button" onClick={() => void deleteAiAgent(agent.id).then(setAgents)}>Delete</button>
++            </article>
++          ))}
++          {agents.length === 0 && <p className="muted">No agents configured yet.</p>}
++        </div>
++      </section>
++        </>
++      )}
+     </div>
