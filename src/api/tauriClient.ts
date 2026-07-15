@@ -23,6 +23,15 @@ export function getPriceHistory(ticker: string, range = '6mo', source: PriceSour
   return invoke<HistoricalQuote[]>('get_price_history', { ticker, range, source });
 }
 
+export interface MarketHoliday {
+  date: string; // YYYY-MM-DD (Europe/Istanbul)
+  name: string;
+}
+
+export function getMarketHolidays() {
+  return invoke<MarketHoliday[]>('get_market_holidays');
+}
+
 export function executeFql(command: string, activeContext?: string) {
   return invoke<FqlResponse>('execute_fql', {
     command,

@@ -7,6 +7,7 @@ mod fql;
 mod indicators;
 mod isyatirim;
 mod isyatirim_price;
+mod market_calendar;
 mod news_tagger;
 mod ai_tagger;
 mod providers;
@@ -197,6 +198,7 @@ pub fn run() {
             commands::save_artifact,
             commands::delete_artifact,
             commands::get_price_history,
+            commands::get_market_holidays,
             commands::get_news_feed,
             commands::get_news_preview,
             commands::get_news_html,

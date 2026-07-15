@@ -342,6 +342,15 @@ pub async fn get_price_history(
     crate::yahoo::fetch_price_history(&state.http, &ticker, &r).await
 }
 
+/// BIST resmi tatil takvimi (Nager.Date). Frontend bir kez çekip yerel önbelleğe
+/// yazar; piyasa açık/kapalı rozeti bunu kullanır, ağ yoksa gömülü yedeğe düşer.
+#[tauri::command]
+pub async fn get_market_holidays(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::market_calendar::MarketHoliday>, String> {
+    Ok(crate::market_calendar::get_holidays(&state.http).await)
+}
+
 #[tauri::command]
 pub async fn get_news_feed(
     state: State<'_, AppState>,

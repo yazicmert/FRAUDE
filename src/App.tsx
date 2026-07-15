@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { executeFql, syncData } from './api/tauriClient';
+import { executeFql, syncData, getMarketHolidays } from './api/tauriClient';
 import { isDataRuntimeConfigured } from './api/platformClient';
 import TabBar from './features/tabs/TabBar';
 import TerminalPanel from './features/terminal/TerminalPanel';
@@ -22,6 +22,7 @@ import ShareModal from './features/share/ShareModal';
 import ToastHost from './components/Toast';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
 import { getMarketStatus, type MarketStatus } from './lib/marketHours';
+import { setFetchedHolidays } from './lib/marketHolidays';
 import { ensureNotificationPermission } from './lib/notify';
 import { useMorningBrief } from './hooks/useMorningBrief';
 import type { FqlResponse } from './types';
@@ -365,6 +366,15 @@ export default function App() {
     window.addEventListener('fraude-open-palette', onOpenPalette);
     window.addEventListener('fraude-open-share', onOpenShare);
     window.addEventListener('keydown', onKey);
+    // Sağlam kaynaktan (Nager.Date, Rust get_market_holidays) resmi tatilleri
+    // çek; yerleştir ve rozeti hemen güncelle. Çevrimdışıysa gömülü yedek takvim
+    // (marketHolidays.ts) devrede kalır.
+    getMarketHolidays()
+      .then((list) => {
+        setFetchedHolidays(list);
+        setMarketStatus(getMarketStatus());
+      })
+      .catch(() => { /* çevrimdışı: gömülü yedek takvim kullanılır */ });
     const statusTimer = setInterval(() => setMarketStatus(getMarketStatus()), 30_000);
     return () => {
       window.removeEventListener('fraude-open-alerts', onOpenAlerts);
