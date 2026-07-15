@@ -24,6 +24,17 @@ pub fn read_secret(id: &str) -> Option<String> {
         .filter(|secret| !secret.is_empty())
 }
 
+/// Bir anahtarın sırrını çözer: bellekte doluysa onu döndürür, boşsa
+/// (anahtarlık-tabanlı) anahtarlıktan lazy okur. Sırlar başlangıçta topluca
+/// değil, yalnız gerçekten kullanılacakları anda okunur; böylece kayıtlı her
+/// anahtar için tek tek keychain şifre sorusu tetiklenmez.
+pub fn resolve_secret(id: &str, in_memory: &str) -> String {
+    if !in_memory.is_empty() {
+        return in_memory.to_string();
+    }
+    read_secret(id).unwrap_or_default()
+}
+
 /// Sırrı anahtarlıktan siler (anahtar silindiğinde çağrılır). Sessizce
 /// başarısız olabilir (kayıt zaten yoksa).
 pub fn delete_secret(id: &str) {

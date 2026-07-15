@@ -606,6 +606,23 @@ tr.clickable-row:hover {
   50% { opacity: 0.4; transform: scale(1.4); }
 }
 
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Senkron sonrası fiyat değişimini vurgulayan kısa flash */
+@keyframes flash-up {
+  0% { background-color: rgba(63, 185, 80, 0.38); }
+  100% { background-color: transparent; }
+}
+@keyframes flash-down {
+  0% { background-color: rgba(248, 81, 73, 0.38); }
+  100% { background-color: transparent; }
+}
+.flash-up { animation: flash-up 0.9s ease-out; }
+.flash-down { animation: flash-down 0.9s ease-out; }
+
 /* KAP Feed improved styles */
 .kap-item-enhanced {
   background: #0d1117;

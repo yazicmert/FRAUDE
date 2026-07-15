@@ -278,18 +278,16 @@ Kurallar:
             return;
         }
 
-        // Sırlar OS anahtarlığında tutulur. Dosyadaki `secret` alanı boşsa
-        // anahtarlıktan okunur; doluysa bu eski düz-metin (legacy) kayıttır —
-        // anahtarlığa taşınır ve dosya sanitize edilerek yeniden yazılır.
+        // Sırlar OS anahtarlığında tutulur. Anahtarlık-tabanlı sırlar (dosyada
+        // `secret` boş) BAŞLANGIÇTA OKUNMAZ: aksi halde kayıtlı her anahtar için
+        // ayrı bir keychain şifre sorusu tetiklenir (14 anahtar = 14 soru). Sır
+        // yalnız gerçekten kullanılacağı anda lazy okunur (bkz.
+        // keychain::resolve_secret). Yalnız eski düz-metin (legacy) kayıtlar
+        // anahtarlığa taşınır ve dosya sonra sanitize edilir.
         let mut migrated = false;
         for key in &mut keys {
-            if key.secret.is_empty() {
-                if let Some(secret) = crate::keychain::read_secret(&key.id) {
-                    key.secret = secret;
-                }
-            } else if crate::keychain::store_secret(&key.id, &key.secret) {
-                // Düz-metin sır başarıyla anahtarlığa taşındı; bellekte kalır,
-                // dosyadan silinecek.
+            if !key.secret.is_empty() && crate::keychain::store_secret(&key.id, &key.secret) {
+                // Düz-metin sır anahtarlığa taşındı; bellekte kalır, dosyadan silinecek.
                 migrated = true;
             }
         }

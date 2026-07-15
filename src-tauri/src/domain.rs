@@ -70,6 +70,8 @@ pub struct EquityRow {
     pub index_memberships: Vec<String>,
     pub index_changes: Option<crate::bist_indices::IndexChange>,
     pub free_float_ratio: Option<f64>,
+    /// Cari yabancı takas oranı (%). İş Yatırım screener kriter kodu 40.
+    pub foreign_ratio: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize, Default)]

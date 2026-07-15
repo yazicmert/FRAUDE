@@ -1,0 +1,67 @@
+/* Masaüstü admin "Yayınla" paneli — uygulama token'larıyla (index.css). */
+.publish-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 28px 56px;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  user-select: text;
+}
+.publish-inner { max-width: 760px; margin: 0 auto; }
+.publish-eyebrow {
+  font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--accent-primary); margin: 0 0 8px;
+}
+.publish-h1 { font-family: var(--font-mono); font-weight: 700; font-size: 1.5rem; margin: 0 0 6px; }
+.publish-sub { color: var(--text-muted); margin: 0 0 20px; font-size: 0.95rem; }
+
+.publish-status {
+  display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center;
+  padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-panel); margin-bottom: 20px; font-family: var(--font-mono); font-size: 0.8rem;
+}
+.publish-badge { padding: 3px 9px; border-radius: 5px; font-size: 0.72rem; }
+.publish-badge.ok { color: #04140d; background: var(--accent-primary); }
+.publish-badge.warn { color: #d29922; border: 1px solid #5c4611; }
+.publish-status .kv { color: var(--text-muted); }
+.publish-status .kv b { color: var(--text-main); font-weight: 600; }
+
+.publish-note {
+  padding: 14px 16px; border: 1px dashed var(--border-color); border-radius: 8px;
+  background: var(--bg-panel); color: var(--text-muted); font-size: 0.9rem; line-height: 1.6;
+}
+.publish-note code {
+  font-family: var(--font-mono); font-size: 0.82em; background: rgba(0, 255, 157, 0.1);
+  color: var(--accent-primary); padding: 2px 6px; border-radius: 4px; word-break: break-all;
+}
+
+.publish-form { display: grid; gap: 14px; }
+.publish-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.publish-field { display: flex; flex-direction: column; gap: 5px; }
+.publish-field label {
+  font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+.publish-field input, .publish-field textarea {
+  background: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-main);
+  border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 0.85rem;
+}
+.publish-field textarea { min-height: 130px; resize: vertical; line-height: 1.5; }
+.publish-field input:focus, .publish-field textarea:focus {
+  outline: none; border-color: var(--accent-primary);
+}
+
+.publish-actions { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
+.publish-btn {
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.9rem; color: #04140d;
+  background: var(--accent-primary); border: none; border-radius: 7px; padding: 10px 22px; cursor: pointer;
+}
+.publish-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.publish-btn:not(:disabled):hover { filter: brightness(1.08); }
+
+.publish-result, .publish-error {
+  margin-top: 8px; padding: 10px 14px; border-radius: 7px; font-family: var(--font-mono);
+  font-size: 0.82rem; word-break: break-word;
+}
+.publish-result { color: #3fb950; border: 1px solid #1f5a2e; background: rgba(63, 185, 80, 0.08); }
+.publish-error { color: #f85149; border: 1px solid #5c2321; background: rgba(248, 81, 73, 0.08); }

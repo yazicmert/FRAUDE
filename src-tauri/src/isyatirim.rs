@@ -19,6 +19,7 @@ struct CurrentRatios {
     roa: Option<f64>,
     dividend_yield: Option<f64>,
     free_float_ratio: Option<f64>,
+    foreign_ratio: Option<f64>,
     market_cap: Option<f64>,
 }
 
@@ -60,6 +61,7 @@ pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) ->
         equity.roa = current.roa.or(equity.roa);
         equity.dividend_yield = current.dividend_yield.or(equity.dividend_yield);
         equity.free_float_ratio = current.free_float_ratio.or(equity.free_float_ratio);
+        equity.foreign_ratio = current.foreign_ratio.or(equity.foreign_ratio);
         equity.market_cap = current.market_cap.or(equity.market_cap);
         equity.fundamentals_available = [
             equity.pe, equity.pb, equity.roe, equity.roa, equity.gross_margin,
@@ -119,15 +121,24 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
         ["423", "-100000", "100000", "False"],
         ["36", "-100000", "100000", "False"]
     ]);
+    // Yabancı takas oranı (kriter 40) ayrı bir katmanda çekilir; kod 40'ı
+    // mevcut katmanlara eklemek onları yalnız yabancı oranı olan hisselerle
+    // sınırlar ve F/K, PD/DD kapsamını daraltırdı. Piyasa değeriyle (8) birlikte
+    // istenerek geniş kapsam (~585 hisse) korunur.
+    let foreign = serde_json::json!([
+        ["8", "0", "1000000000", "False"],
+        ["40", "0", "100", "False"]
+    ]);
 
-    let (widest, base_body, extended_body) = tokio::join!(
+    let (widest, base_body, extended_body, foreign_body) = tokio::join!(
         screener_request(client, &cookies, &market_cap_only),
         screener_request(client, &cookies, &base),
         screener_request(client, &cookies, &extended),
+        screener_request(client, &cookies, &foreign),
     );
 
     let mut map = parse_rows(&widest?)?;
-    for body in [base_body, extended_body].into_iter().flatten() {
+    for body in [base_body, extended_body, foreign_body].into_iter().flatten() {
         if let Ok(rows) = parse_rows(&body) {
             for (ticker, ext) in rows {
                 let entry = map.entry(ticker).or_default();
@@ -137,6 +148,7 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
                 entry.roa = ext.roa.or(entry.roa);
                 entry.dividend_yield = ext.dividend_yield.or(entry.dividend_yield);
                 entry.free_float_ratio = ext.free_float_ratio.or(entry.free_float_ratio);
+                entry.foreign_ratio = ext.foreign_ratio.or(entry.foreign_ratio);
                 entry.market_cap = ext.market_cap.or(entry.market_cap);
             }
         }
@@ -192,6 +204,7 @@ fn parse_rows(value: &str) -> Result<RatioMap, String> {
             roa: number(&row, "423"),
             dividend_yield: number(&row, "36"),
             free_float_ratio: number(&row, "11"),
+            foreign_ratio: number(&row, "40"),
             // Ekran 8 no'lu kriteri milyon TL olarak döndürür; ısı haritası TL bekler.
             market_cap: number(&row, "8").map(|value| value * 1_000_000.0),
         });
@@ -240,8 +253,18 @@ mod tests {
             rows.get("DSTKF").and_then(|row| row.market_cap).is_some(),
             "DSTKF piyasa değeriyle kapsanmalı (ısı haritası regresyonu)"
         );
-        assert!(rows.get("ASELS").and_then(|row| row.pe).is_some_and(|value| (47.0..48.0).contains(&value)));
-        assert!(rows.get("THYAO").and_then(|row| row.pe).is_some_and(|value| (3.0..4.0).contains(&value)));
+        // F/K piyasa fiyatıyla her gün değiştiğinden dar bir banda kilitlenmez;
+        // yalnız kriter 28'in ayrıştırıldığı (pozitif, makul aralıkta) doğrulanır.
+        assert!(rows.get("ASELS").and_then(|row| row.pe).is_some_and(|value| (1.0..500.0).contains(&value)));
+        assert!(rows.get("THYAO").and_then(|row| row.pe).is_some_and(|value| (1.0..500.0).contains(&value)));
+
+        // Yabancı takas oranı (kriter 40) ayrı katmandan gelmeli ve 0-100 aralığında olmalı.
+        let with_foreign = rows.values().filter(|row| row.foreign_ratio.is_some()).count();
+        assert!(with_foreign > 300, "yabancı takas oranı geniş kapsanmalı: {with_foreign}");
+        assert!(
+            rows.get("ASELS").and_then(|row| row.foreign_ratio).is_some_and(|value| (0.0..=100.0).contains(&value)),
+            "ASELS yabancı takas oranı 0-100 aralığında gelmeli"
+        );
 
         let covered = crate::yahoo::BIST_TICKERS.iter()
             .filter(|(ticker, _)| rows.contains_key(*ticker))

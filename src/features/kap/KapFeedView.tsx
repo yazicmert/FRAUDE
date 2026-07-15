@@ -3,6 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { listKapAnnouncements } from '../../api/tauriClient';
 import type { KapAnnouncement } from '../../types';
 import { useTranslation } from '../../api/i18n';
+import { dispatchAiAsk } from '../../lib/actions';
 
 function scoreClass(score: number): string {
   if (score >= 70) return 'high';
@@ -139,6 +140,16 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
                   <span style={{ fontSize: '0.72rem', color: '#8b949e' }}>
                     ID: {item.id}
                   </span>
+                  <button
+                    type="button"
+                    className="small-button"
+                    style={{ fontSize: '0.72rem', padding: '5px 10px' }}
+                    onClick={() => dispatchAiAsk(
+                      `${item.ticker} için şu KAP bildirimini yatırımcı gözüyle 2-3 cümlede özetle ve olası etkisini belirt: "${item.title}"${item.summary ? ` — ${item.summary}` : ''}. Yatırım tavsiyesi verme.`,
+                    )}
+                  >
+                    🤖 Özetle
+                  </button>
                   <button
                     type="button"
                     className="primary-button"

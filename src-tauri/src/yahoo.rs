@@ -295,6 +295,7 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
         index_memberships,
         index_changes: None,
         free_float_ratio: None,
+        foreign_ratio: None,
     }
 }
 

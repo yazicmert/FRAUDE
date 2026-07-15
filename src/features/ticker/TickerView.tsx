@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews } from '../../api/tauriClient';
+import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, type PriceSource } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot } from '../../types';
 import PriceChart from './PriceChart';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
+import { dispatchAiAsk, dispatchOpenAlerts } from '../../lib/actions';
 import FinancialsTab from './FinancialsTab';
+import WatchlistJournal from './WatchlistJournal';
+import FlashValue from '../../components/FlashValue';
 
 const OWNER_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00ced1', '#f0883e', '#7ee787'];
 
@@ -92,6 +95,10 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState('6mo');
+  // Fiyat kaynağı: Yahoo (mum + hacim) veya İş Yatırım (düzeltilmiş kapanış-only).
+  // Yalnız BIST hisseleri için anlamlı; endeks/emtia/yabancı sembollerde gizlenir.
+  const [priceSource, setPriceSource] = useState<PriceSource>('yahoo');
+  const isBistStock = /^[A-Z0-9]+$/.test(ticker) && !ticker.startsWith('X');
   const [activeTab, setActiveTab] = useState<'overview' | 'financials'>('overview');
 
   useEffect(() => {
@@ -104,14 +111,21 @@ export default function TickerView({ ticker }: { ticker: string }) {
       .catch((err: unknown) => setError(String(err)));
   }, [ticker]);
 
+  // Hisse değişince kaynak Yahoo'ya döner: İş Yatırım yalnız BIST hisselerinde
+  // veri döndürür, yeni sembol BIST dışıysa seçili İş Yatırım isteği boşa gider.
+  useEffect(() => {
+    setPriceSource('yahoo');
+  }, [ticker]);
+
   // Tüm geçmiş bir kez çekilir; aralık butonları yalnızca görünümü değiştirir,
-  // böylece MAX dahil her aralıkta yeniden istek atılmaz.
+  // böylece MAX dahil her aralıkta yeniden istek atılmaz. Kaynak değişince
+  // (Yahoo ↔ İş Yatırım) seri yeniden çekilir.
   useEffect(() => {
     setHistory([]);
-    getPriceHistory(ticker, 'max')
+    getPriceHistory(ticker, 'max', priceSource)
       .then(setHistory)
       .catch((err: unknown) => console.error('Failed to load history:', err));
-  }, [ticker]);
+  }, [ticker, priceSource]);
 
   useEffect(() => {
     setNews([]);
@@ -190,12 +204,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
   useEffect(() => {
     const handleSync = () => {
       getTickerSnapshot(ticker).then(setSnapshot).catch(console.error);
-      getPriceHistory(ticker, 'max').then(setHistory).catch(console.error);
+      getPriceHistory(ticker, 'max', priceSource).then(setHistory).catch(console.error);
     };
 
     window.addEventListener('fraude-sync-completed', handleSync);
     return () => window.removeEventListener('fraude-sync-completed', handleSync);
-  }, [ticker]);
+  }, [ticker, priceSource]);
 
   if (error) return <div className="empty-state error">{error}</div>;
   if (!snapshot) return <div className="empty-state">{t('loadingChart')} {ticker}...</div>;
@@ -247,11 +261,29 @@ export default function TickerView({ ticker }: { ticker: string }) {
             >
               {isInWatchlist(ticker) ? '⭐ Portföyümde' : '☆ Portföye Ekle'}
             </button>
+            <button
+              className="small-button"
+              onClick={() => dispatchAiAsk(
+                `${equity.ticker} (${equity.name}) hissesinde bugünkü %${equity.change_pct.toFixed(2)} hareketin olası nedenlerini ve teknik görünümü (fiyat ${equity.price.toFixed(2)}, RSI ${equity.rsi.toFixed(1)}, F/K ${equity.pe?.toFixed(2) ?? 'yok'}) kısaca yorumla. Yatırım tavsiyesi verme.`,
+              )}
+              style={{ padding: '4px 12px', fontSize: '0.85rem', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer' }}
+              title="Bu hareketi AI ile yorumla"
+            >
+              🤖 Hareketi Açıkla
+            </button>
+            <button
+              className="small-button"
+              onClick={() => dispatchOpenAlerts(equity.ticker)}
+              style={{ padding: '4px 12px', fontSize: '0.85rem', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer' }}
+              title="Bu hisse için fiyat/teknik alarm kur"
+            >
+              ⏰ Alarm
+            </button>
           </div>
           <p>{equity.name}</p>
         </div>
         <div className="price-block">
-          <strong>{equity.price.toFixed(2)}</strong>
+          <strong><FlashValue value={equity.price} format={(v) => v.toFixed(2)} style={{ borderRadius: '4px', padding: '0 4px' }} /></strong>
           <span className={equity.change_pct >= 0 ? 'positive' : 'negative'}>
             {equity.change_pct >= 0 ? '+' : ''}{equity.change_pct.toFixed(2)}%
           </span>
@@ -259,8 +291,34 @@ export default function TickerView({ ticker }: { ticker: string }) {
       </div>
 
       <section className="panel" style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <strong>{t('priceHistory')}</strong>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <strong>{t('priceHistory')}</strong>
+            {isBistStock && (
+              <div className="source-selector" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('chartSource')}:</span>
+                {(['yahoo', 'isyatirim'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setPriceSource(s)}
+                    title={s === 'yahoo' ? t('sourceYahooHint') : t('sourceIsyatirimHint')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      background: priceSource === s ? 'var(--accent-primary)' : 'var(--bg-panel)',
+                      color: priceSource === s ? '#000000' : 'var(--text-muted)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {s === 'yahoo' ? 'Yahoo' : 'İş Yatırım'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="range-selector" style={{ display: 'flex', gap: '6px' }}>
             {['1mo', '3mo', '6mo', '1y', '5y', 'max'].map((r) => (
@@ -290,6 +348,8 @@ export default function TickerView({ ticker }: { ticker: string }) {
           <div className="empty-state" style={{ height: '350px' }}>{t('loadingChart')} {ticker}...</div>
         )}
       </section>
+
+      <WatchlistJournal ticker={ticker} price={equity.price} />
 
       <div className="tabs" style={{ marginBottom: '16px', display: 'flex', gap: '16px', borderBottom: '1px solid var(--border-color)' }}>
         <button
@@ -411,6 +471,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Profit Growth</span>
               <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: (equity.profit_growth ?? 0) >= 0 ? '#3fb950' : '#f85149', marginTop: '4px' }}>
                 {signedMetric(equity.profit_growth, '%')}
+              </div>
+            </div>
+            <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
+              <span style={{ fontSize: '0.75rem', color: '#8b949e' }} title={t('foreignRatioHint')}>{t('foreignRatio')}</span>
+              <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#58a6ff', marginTop: '4px' }}>
+                {metric(equity.foreign_ratio ?? null, '%')}
               </div>
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d', gridColumn: 'span 2' }}>

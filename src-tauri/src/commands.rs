@@ -321,8 +321,15 @@ pub async fn get_price_history(
     state: State<'_, AppState>,
     ticker: String,
     range: Option<String>,
+    source: Option<String>,
 ) -> Result<Vec<crate::domain::HistoricalQuote>, String> {
     let r = range.unwrap_or_else(|| "6mo".to_string());
+    // Kullanıcı grafikte "İş Yatırım" kaynağını seçtiyse fiyat serisi oradan
+    // gelir (düzeltilmiş kapanış-only). Yalnızca BIST hisseleri için anlamlıdır;
+    // frontend seçiciyi zaten yalnız BIST sembollerinde gösterir.
+    if source.as_deref() == Some("isyatirim") {
+        return crate::isyatirim_price::fetch_price_history(&state.http, &ticker, &r).await;
+    }
     // X ile başlayan BIST endeksleri Borsa İstanbul'dan gelir; XRP-USD gibi
     // kripto sembolleri bu yola girmemeli.
     if ticker.starts_with('X') && !ticker.contains('-') && (ticker.ends_with(".IS") || !ticker.contains('=')) {

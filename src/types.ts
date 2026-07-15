@@ -70,6 +70,7 @@ export interface EquityRow {
   index_memberships: string[];
   index_changes?: IndexChange;
   free_float_ratio?: number | null;
+  foreign_ratio?: number | null;
 }
 
 export interface FinancialPeriod {

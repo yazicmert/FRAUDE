@@ -26,8 +26,26 @@ window.addEventListener("unhandledrejection", (event) => {
   showFatalError(String(event.reason?.stack ?? event.reason));
 });
 
+// React render-fazı hataları window.onerror'a düşmez; ErrorBoundary olmadan
+// ağaç sessizce sökülür ve beyaz ekran kalır. Boundary hatayı yakalayıp aynı
+// okunur kutuda (showFatalError) bileşen iziyle birlikte gösterir.
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    showFatalError(`${error?.stack ?? error?.message ?? String(error)}\n\nBileşen izi:${info?.componentStack ?? ""}`);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

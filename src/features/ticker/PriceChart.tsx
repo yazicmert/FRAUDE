@@ -75,6 +75,27 @@ function calculateMACD(data: Point[]): { macd: Point[]; signal: Point[]; hist: P
   return { macd, signal, hist };
 }
 
+function calculateBollinger(data: Point[], period = 20, mult = 2): { upper: Point[]; middle: Point[]; lower: Point[] } {
+  const upper: Point[] = [];
+  const middle: Point[] = [];
+  const lower: Point[] = [];
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < period; j++) sum += data[i - j].value;
+    const mean = sum / period;
+    let variance = 0;
+    for (let j = 0; j < period; j++) {
+      const d = data[i - j].value - mean;
+      variance += d * d;
+    }
+    const sd = Math.sqrt(variance / period);
+    middle.push({ time: data[i].time, value: mean });
+    upper.push({ time: data[i].time, value: mean + mult * sd });
+    lower.push({ time: data[i].time, value: mean - mult * sd });
+  }
+  return { upper, middle, lower };
+}
+
 const toggleStyle = (active: boolean): React.CSSProperties => ({
   padding: '3px 9px',
   fontSize: '0.7rem',
@@ -94,6 +115,7 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
   const [showSMA20, setShowSMA20] = useState(true);
   const [showSMA50, setShowSMA50] = useState(true);
   const [showEMA20, setShowEMA20] = useState(false);
+  const [showBB, setShowBB] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
@@ -182,6 +204,17 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
     if (showEMA20) {
       const s = chart.addSeries(LineSeries, { color: 'rgba(0, 200, 255, 0.85)', lineWidth: 1, title: 'EMA 20', priceLineVisible: false, lastValueVisible: false });
       s.setData(calculateEMA(closeData, 20));
+    }
+    // Bollinger Bantları (20, 2)
+    if (showBB) {
+      const { upper, middle, lower } = calculateBollinger(closeData, 20, 2);
+      const bandColor = 'rgba(130, 170, 255, 0.55)';
+      const up = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: 'BB Üst', priceLineVisible: false, lastValueVisible: false });
+      up.setData(upper);
+      const lo = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: 'BB Alt', priceLineVisible: false, lastValueVisible: false });
+      lo.setData(lower);
+      const mid = chart.addSeries(LineSeries, { color: 'rgba(130, 170, 255, 0.3)', lineWidth: 1, title: 'BB Orta', priceLineVisible: false, lastValueVisible: false });
+      mid.setData(middle);
     }
 
     // Alt paneller: RSI ve MACD
@@ -290,7 +323,7 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showVolume, showRSI, showMACD, logScale, totalHeight]);
+  }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
 
   return (
     <div>
@@ -305,6 +338,7 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
         <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
         <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
         <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
+        <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title="Bollinger Bantları (20, 2)">BB</button>
         <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>Hacim</button>
         <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
         <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>

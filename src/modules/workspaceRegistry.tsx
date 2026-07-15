@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import type { ReactNode } from 'react';
 import type { EquityRow, KapAnnouncement, MonitorState } from '../types';
 import type { InstalledModule, ModuleManifest, ModulePermission } from './types';
+import { isDesktopRuntime } from '../api/platformClient';
 
 // ---------------------------------------------------------------------------
 // Plug-and-play workspace registry ("tak-çıkar modüller")
@@ -26,6 +27,7 @@ const TeamView = lazy(() => import('../features/team/TeamView'));
 const CorporateActionsView = lazy(() => import('../features/corporate/CorporateActionsView'));
 const MonitorView = lazy(() => import('../features/monitor/MonitorView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
+const PublishView = lazy(() => import('../features/publish/PublishView'));
 
 export const CORE_VERSION = '0.1.0';
 
@@ -241,6 +243,15 @@ export const workspaceModules: WorkspaceModule[] = [
       'guide',
     ),
     render: () => <GuideView />,
+  },
+  // Admin-only publishing surface. Core view (no manifest → not toggle-able);
+  // desktop-only in the sidebar because the private signing key lives locally.
+  {
+    kind: 'publish',
+    titleKey: 'publish',
+    nav: isDesktopRuntime(),
+    defaultTab: false,
+    render: () => <PublishView />,
   },
   {
     kind: 'settings',

@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import type { DashboardSnapshot, IndexConstituent } from '../../types';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import MarketHeatmap from './MarketHeatmap';
+import FlashValue from '../../components/FlashValue';
 
 interface ModuleProps {
   snapshot: DashboardSnapshot;
@@ -412,7 +413,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                       }}
                     />
                   </td>
-                  <td onClick={() => onSelectTicker(row.ticker)}>{row.price.toFixed(2)}</td>
+                  <td onClick={() => onSelectTicker(row.ticker)}><FlashValue value={row.price} format={(v) => v.toFixed(2)} /></td>
                   <td onClick={() => onSelectTicker(row.ticker)} className={row.change_pct >= 0 ? 'positive' : 'negative'}>
                     {row.change_pct >= 0 ? '+' : ''}{row.change_pct.toFixed(2)}%
                   </td>

@@ -17,8 +17,10 @@ import type {
   SaveAiAgentRequest,
 } from '../types';
 
-export function getPriceHistory(ticker: string, range = '6mo') {
-  return invoke<HistoricalQuote[]>('get_price_history', { ticker, range });
+export type PriceSource = 'yahoo' | 'isyatirim';
+
+export function getPriceHistory(ticker: string, range = '6mo', source: PriceSource = 'yahoo') {
+  return invoke<HistoricalQuote[]>('get_price_history', { ticker, range, source });
 }
 
 export function executeFql(command: string, activeContext?: string) {

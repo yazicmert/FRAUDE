@@ -1,7 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { runScreener } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { EquityRow } from '../../types';
+import {
+  type ScreenerPreset,
+  loadScreenerPresets,
+  addScreenerPreset,
+  removeScreenerPreset,
+  SCREENER_PRESETS_EVENT,
+} from '../../lib/screenerPresets';
 
 interface ScreenerViewProps {
   initialRows?: EquityRow[];
@@ -14,6 +21,21 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
   const [rows, setRows] = useState<EquityRow[]>(initialRows ?? []);
   const [message, setMessage] = useState(initialRows ? t('screenerResultStatus').replace('{{count}}', initialRows.length.toString()) : '');
   const [hasSearched, setHasSearched] = useState(!!initialRows);
+  const [presets, setPresets] = useState<ScreenerPreset[]>(() => loadScreenerPresets());
+  const [presetName, setPresetName] = useState('');
+
+  useEffect(() => {
+    const onUpdate = (e: Event) => setPresets((e as CustomEvent<ScreenerPreset[]>).detail);
+    window.addEventListener(SCREENER_PRESETS_EVENT, onUpdate);
+    return () => window.removeEventListener(SCREENER_PRESETS_EVENT, onUpdate);
+  }, []);
+
+  const savePreset = () => {
+    const name = presetName.trim();
+    if (!name || !query.trim()) return;
+    setPresets(addScreenerPreset({ name, query: query.trim() }));
+    setPresetName('');
+  };
 
   const execute = async (searchQuery: string = query) => {
     setQuery(searchQuery);
@@ -92,11 +114,35 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
           </button>
         </div>
 
+        {/* Kullanıcının kaydettiği preset'ler + kaydetme */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>Kayıtlı:</span>
+          {presets.length === 0 && (
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', opacity: 0.7 }}>henüz yok</span>
+          )}
+          {presets.map((p) => (
+            <span key={p.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px 4px 2px 10px' }}>
+              <button type="button" onClick={() => void execute(p.query)} title={p.query} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>{p.name}</button>
+              <button type="button" onClick={() => setPresets(removeScreenerPreset(p.name))} title="Sil" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
+            </span>
+          ))}
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+            <input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') savePreset(); }}
+              placeholder="Preset adı"
+              style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', padding: '5px 8px', fontSize: '0.8rem', width: '120px' }}
+            />
+            <button type="button" className="secondary-button" onClick={savePreset} disabled={!presetName.trim() || !query.trim()}>💾 Kaydet</button>
+          </span>
+        </div>
+
         <div style={{ display: 'flex', gap: '10px' }}>
-          <div style={{ 
-            flex: 1, 
-            display: 'flex', 
-            alignItems: 'center', 
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
             background: 'var(--bg-main)', 
             border: '1px solid var(--border-color)', 
             borderRadius: '6px',

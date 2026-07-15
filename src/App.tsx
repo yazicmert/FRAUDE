@@ -16,6 +16,14 @@ import {
 import type { ModuleHost, WorkspaceModule, WorkspaceTab } from './modules/workspaceRegistry';
 import { useModuleRegistry } from './modules/useModuleRegistry';
 import { useMonitor } from './hooks/useMonitor';
+import { useAlerts } from './features/alerts/useAlerts';
+import AlertsModal from './features/alerts/AlertsModal';
+import ShareModal from './features/share/ShareModal';
+import ToastHost from './components/Toast';
+import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
+import { getMarketStatus, type MarketStatus } from './lib/marketHours';
+import { ensureNotificationPermission } from './lib/notify';
+import { useMorningBrief } from './hooks/useMorningBrief';
 import type { FqlResponse } from './types';
 import type { InstalledModule, ModuleManifest } from './modules/types';
 import './App.css';
@@ -57,6 +65,15 @@ export default function App() {
   const { t, lang, setLanguage } = useTranslation();
   const { modules, installedModules, toggleModule, replaceInstalledModules } = useModuleRegistry();
   const { state: monitorState, setState: setMonitorState } = useMonitor();
+  const { unread: alertUnread } = useAlerts({ engine: true });
+  const { brief: morningBrief, dismiss: dismissBrief } = useMorningBrief();
+
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [alertsTicker, setAlertsTicker] = useState<string | undefined>(undefined);
+  const [marketStatus, setMarketStatus] = useState<MarketStatus>(() => getMarketStatus());
+  const [aiQuickPrompt, setAiQuickPrompt] = useState<{ text: string; nonce: number } | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const [openTabs, setOpenTabs] = useState<WorkspaceTab[]>(() => initialOpenTabs(installedModules));
   const [activeTabId, setActiveTabId] = useState('dashboard');
@@ -319,6 +336,46 @@ export default function App() {
     };
   }, []);
 
+  // Bildirim izni + alarm penceresini açan olay + piyasa durumu saati.
+  useEffect(() => {
+    void ensureNotificationPermission();
+    const onOpenAlerts = (e: Event) => {
+      const detail = (e as CustomEvent<{ ticker?: string }>).detail;
+      setAlertsTicker(detail?.ticker);
+      setAlertsOpen(true);
+    };
+    // Proaktif AI: bir yerden tek-tık soru gelince sağ paneli aç ve prompt'u ilet.
+    const onAiAsk = (e: Event) => {
+      const prompt = (e as CustomEvent<{ prompt?: string }>).detail?.prompt;
+      if (!prompt) return;
+      setShowRightPanel(true);
+      localStorage.setItem('fraude-show-right-panel', JSON.stringify(true));
+      setAiQuickPrompt({ text: prompt, nonce: Date.now() });
+    };
+    const onOpenPalette = () => setPaletteOpen(true);
+    const onOpenShare = () => setShareOpen(true);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('fraude-open-alerts', onOpenAlerts);
+    window.addEventListener('fraude-ai-ask', onAiAsk);
+    window.addEventListener('fraude-open-palette', onOpenPalette);
+    window.addEventListener('fraude-open-share', onOpenShare);
+    window.addEventListener('keydown', onKey);
+    const statusTimer = setInterval(() => setMarketStatus(getMarketStatus()), 30_000);
+    return () => {
+      window.removeEventListener('fraude-open-alerts', onOpenAlerts);
+      window.removeEventListener('fraude-ai-ask', onAiAsk);
+      window.removeEventListener('fraude-open-palette', onOpenPalette);
+      window.removeEventListener('fraude-open-share', onOpenShare);
+      window.removeEventListener('keydown', onKey);
+      clearInterval(statusTimer);
+    };
+  }, []);
+
   const renderTabContent = (tab: WorkspaceTab) => {
     const module = getWorkspaceModule(tab.kind);
     return module ? module.render(tab, host) : null;
@@ -328,6 +385,32 @@ export default function App() {
     const module = getWorkspaceModule('monitor');
     return module ? isModuleEnabled(module, installedModules) : false;
   }, [installedModules]);
+
+  // Komut paleti eylemleri: navigasyon modülleri + panel aç/kapatma + alarm + senkron.
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const cmds: PaletteCommand[] = [];
+    for (const m of navModules) {
+      const title = m.title ? m.title(host, { id: m.kind, kind: m.kind }) : t(m.titleKey ?? m.kind);
+      cmds.push({ id: `open-${m.kind}`, label: `Aç · ${title}`, keywords: `${m.kind} ${title} panel modül`, hint: 'panel', run: () => openModuleTab(m.kind) });
+    }
+    cmds.push({ id: 'toggle-sidebar', label: 'Kenar çubuğunu aç/kapat', keywords: 'sidebar kenar', run: toggleSidebar });
+    cmds.push({ id: 'toggle-terminal', label: 'Terminali aç/kapat', keywords: 'terminal konsol', run: toggleTerminal });
+    cmds.push({ id: 'toggle-ai', label: 'AI panelini aç/kapat', keywords: 'ai yapay zeka panel', run: toggleRightPanel });
+    cmds.push({ id: 'open-alerts', label: 'Alarmları aç', keywords: 'alarm alert fiyat teknik', hint: 'alarm', run: () => { setAlertsTicker(undefined); setAlertsOpen(true); } });
+    cmds.push({ id: 'sync', label: 'Verileri şimdi senkronla', keywords: 'sync senkron güncelle veri', run: () => void handleCommand('sync all incremental') });
+    cmds.push({ id: 'share', label: 'Yedekle & Paylaş', keywords: 'yedek paylaş export import dışa içe aktar', hint: 'yedek', run: () => setShareOpen(true) });
+    return cmds;
+  }, [navModules, host, t, openModuleTab, handleCommand]);
+
+  const recentTickers = useMemo<string[]>(() => {
+    if (!paletteOpen) return [];
+    try {
+      const h = JSON.parse(localStorage.getItem('fraude-ticker-history') || '[]');
+      return Array.isArray(h) ? h : [];
+    } catch {
+      return [];
+    }
+  }, [paletteOpen]);
 
   const shellStyle = {
     gridTemplateColumns: `${showSidebar ? '208px' : '0px'} minmax(0, 1fr) ${showRightPanel ? '300px' : '0px'}`,
@@ -402,6 +485,53 @@ export default function App() {
               EN
             </button>
           </div>
+
+          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
+
+          {/* BIST seans durumu */}
+          <div
+            title={`Borsa İstanbul · ${marketStatus.istanbulTime} (TR)`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '4px 10px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)',
+              color: marketStatus.color, border: '1px solid var(--border-color)',
+              borderRadius: '4px', whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{
+              display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%',
+              background: marketStatus.color,
+              animation: marketStatus.state === 'open' ? 'pulse-dot 1.6s ease-in-out infinite' : 'none',
+            }} />
+            {marketStatus.label}
+          </div>
+
+          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
+
+          {/* Fiyat & teknik alarm zili */}
+          <button
+            type="button"
+            onClick={() => { setAlertsTicker(undefined); setAlertsOpen(true); }}
+            title="Fiyat & Teknik Alarmlar"
+            style={{
+              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '28px', fontSize: '0.95rem',
+              background: alertsOpen ? 'var(--accent-primary)' : 'var(--bg-panel)',
+              border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer',
+            }}
+          >
+            <span>⏰</span>
+            {alertUnread > 0 && (
+              <span style={{
+                position: 'absolute', top: '-6px', right: '-6px', minWidth: '16px', height: '16px',
+                padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: '#d29922', color: '#000', fontSize: '0.62rem', fontWeight: 700,
+                borderRadius: '8px', boxSizing: 'border-box',
+              }}>
+                {alertUnread > 99 ? '99+' : alertUnread}
+              </span>
+            )}
+          </button>
 
           <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
 
@@ -543,6 +673,36 @@ export default function App() {
           onSelect={setActiveTabId}
           onClose={closeTab}
         />
+        {morningBrief && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 12px 0',
+            padding: '10px 14px', background: 'linear-gradient(90deg, rgba(0,195,255,0.10), rgba(0,255,157,0.05))',
+            border: '1px solid var(--border-color)', borderRadius: '8px',
+          }}>
+            <span style={{ fontSize: '1.2rem' }}>☀️</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong style={{ fontSize: '0.85rem' }}>{morningBrief.headline}</strong>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {morningBrief.lines.join('  ·  ')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => openModuleTab('dashboard')}
+              style={{ padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', background: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              Panele git
+            </button>
+            <button
+              type="button"
+              onClick={dismissBrief}
+              title="Kapat"
+              style={{ padding: '4px 8px', fontSize: '0.72rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {openTabs.filter((tab) => visitedTabIds.has(tab.id)).map((tab) => (
           <div
             key={tab.id}
@@ -563,13 +723,24 @@ export default function App() {
       {showRightPanel && (
         <aside className="right-panel">
           <Suspense fallback={<div className="module-loading-state">{t('loadingModule')}</div>}>
-            <AiPanel mode="side" activeContext={activeContext} />
+            <AiPanel mode="side" activeContext={activeContext} quickPrompt={aiQuickPrompt} />
           </Suspense>
         </aside>
       )}
       {showTerminal && (
         <TerminalPanel history={terminalHistory} onCommand={handleCommand} />
       )}
+      <AlertsModal open={alertsOpen} onClose={() => setAlertsOpen(false)} initialTicker={alertsTicker} />
+      <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={paletteCommands}
+        onOpenTicker={upsertTickerTab}
+        onRunFql={(c) => void handleCommand(c)}
+        recentTickers={recentTickers}
+      />
+      <ToastHost />
     </div>
   );
 }

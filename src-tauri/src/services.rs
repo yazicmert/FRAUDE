@@ -136,7 +136,12 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
         key.last_used_at = Some(clock_string());
         let provider = key.provider.clone();
         let model = key.default_model.clone();
-        let secret = key.secret.clone();
+        // Sır bellekte boşsa (anahtarlık-tabanlı) yalnız bu anahtar için lazy
+        // okunur ve session boyunca yeniden sorulmaması için belleğe alınır.
+        let secret = crate::keychain::resolve_secret(&key.id, &key.secret);
+        if key.secret.is_empty() && !secret.is_empty() {
+            key.secret = secret.clone();
+        }
         let context = request.active_context.unwrap_or_else(|| "global workspace".into());
 
         // Build context from equity data if a ticker is mentioned
@@ -933,7 +938,7 @@ pub async fn run_completion(
 
     let resp = client
         .post(&api_url)
-        .header("Authorization", format!("Bearer {}", key.secret))
+        .header("Authorization", format!("Bearer {}", crate::keychain::resolve_secret(&key.id, &key.secret)))
         .header("Content-Type", "application/json")
         .json(&body)
         .timeout(std::time::Duration::from_secs(90))

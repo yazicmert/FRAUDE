@@ -32,6 +32,7 @@ sha2 = "0.10"
 scraper = "0.27.0"
 futures = "0.3.32"
 base64 = "0.22"
+ed25519-dalek = "2"
 tauri-plugin-notification = "2.3.3"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 

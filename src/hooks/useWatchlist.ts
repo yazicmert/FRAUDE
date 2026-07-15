@@ -6,6 +6,10 @@ export interface WatchlistItem {
   addedPrice: number;
   /** Adet; girilmemişse pozisyon eşit ağırlıklı kabul edilir. */
   quantity?: number;
+  /** Kısa serbest not (portföy günlüğü). */
+  note?: string;
+  /** Bu hisseyi neden aldığına dair yatırım tezi. */
+  thesis?: string;
 }
 
 export function useWatchlist() {
@@ -45,7 +49,7 @@ export function useWatchlist() {
     });
   };
 
-  const updateWatchlistItem = (ticker: string, patch: Partial<Pick<WatchlistItem, 'addedPrice' | 'quantity'>>) => {
+  const updateWatchlistItem = (ticker: string, patch: Partial<Pick<WatchlistItem, 'addedPrice' | 'quantity' | 'note' | 'thesis'>>) => {
     setWatchlist(prev => {
       const next = prev.map(item => item.ticker === ticker ? { ...item, ...patch } : item);
       localStorage.setItem('fraude-watchlist', JSON.stringify(next));

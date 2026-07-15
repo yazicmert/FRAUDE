@@ -6,6 +6,7 @@ mod domain;
 mod fql;
 mod indicators;
 mod isyatirim;
+mod isyatirim_price;
 mod news_tagger;
 mod ai_tagger;
 mod providers;
@@ -24,6 +25,7 @@ mod bist_universe;
 mod persist;
 mod keychain;
 mod module_updater;
+mod publisher;
 mod spk;
 use tauri::Manager;
 use tokio::sync::Mutex;
@@ -218,6 +220,8 @@ pub fn run() {
             commands::run_agent_analysis,
             module_updater::activate_module_release,
             module_updater::rollback_module_release,
+            publisher::publish_config_status,
+            publisher::publish_module_release,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

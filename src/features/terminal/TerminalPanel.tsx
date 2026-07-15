@@ -16,11 +16,25 @@ const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 600;
 const DEFAULT_HEIGHT = 176;
 
+// FQL komut şablonları — terminal girişinde otomatik tamamlama önerileri.
+const FQL_TEMPLATES: { insert: string; label: string; desc: string }[] = [
+  { insert: 'open ', label: 'open <HİSSE>', desc: 'Hisse detayını aç' },
+  { insert: 'scan BIST100 where rsi < 30', label: 'scan BIST100 where rsi < 30', desc: 'Aşırı satım taraması' },
+  { insert: 'scan BIST100 where ', label: 'scan <PAZAR> where <koşul>', desc: 'Filtreli tarama' },
+  { insert: 'kap ', label: 'kap <HİSSE>', desc: 'KAP bildirimleri' },
+  { insert: 'ai ', label: 'ai <soru>', desc: 'AI’ya sor' },
+  { insert: 'sync all incremental', label: 'sync all incremental', desc: 'Verileri senkronla' },
+  { insert: 'help', label: 'help', desc: 'Komut yardımı' },
+];
+
 export default function TerminalPanel({ history, onCommand }: TerminalPanelProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
+  const [focused, setFocused] = useState(false);
+  const [sugIdx, setSugIdx] = useState(-1);
   const [executingCmd, setExecutingCmd] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [height, setHeight] = useState(() => {
     const saved = localStorage.getItem('fraude-terminal-height');
     return saved ? Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, parseInt(saved, 10))) : DEFAULT_HEIGHT;
@@ -82,6 +96,36 @@ export default function TerminalPanel({ history, onCommand }: TerminalPanelProps
     }
   };
 
+  const inputLower = input.trim().toLowerCase();
+  const suggestions = FQL_TEMPLATES.filter((s) =>
+    inputLower === '' ? true : (s.insert.toLowerCase().startsWith(inputLower) || s.label.toLowerCase().includes(inputLower)),
+  ).slice(0, 6);
+
+  const applySuggestion = (i: number) => {
+    const s = suggestions[i];
+    if (!s) return;
+    setInput(s.insert);
+    setSugIdx(-1);
+    inputRef.current?.focus();
+  };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!focused || suggestions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSugIdx((idx) => Math.min(suggestions.length - 1, idx + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSugIdx((idx) => Math.max(-1, idx - 1));
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      applySuggestion(sugIdx >= 0 ? sugIdx : 0);
+    } else if (e.key === 'Escape') {
+      setSugIdx(-1);
+      setFocused(false);
+    }
+  };
+
   return (
     <section className="terminal" style={{ height: `${height}px`, minHeight: `${MIN_HEIGHT}px`, maxHeight: `${MAX_HEIGHT}px` }}>
       {/* Drag resize handle */}
@@ -128,16 +172,46 @@ export default function TerminalPanel({ history, onCommand }: TerminalPanelProps
           </div>
         )}
       </div>
-      <form className="terminal-input-form" onSubmit={handleSubmit}>
-        <span className="prompt">&gt;_</span>
-        <input
-          className="terminal-input"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder={t('terminalPlaceholder')}
-          autoFocus
-        />
-      </form>
+      <div style={{ position: 'relative' }}>
+        {focused && suggestions.length > 0 && (
+          <div style={{
+            position: 'absolute', bottom: '100%', left: '0', right: '0',
+            background: 'var(--bg-panel)', border: '1px solid var(--border-color)',
+            borderBottom: 'none', maxHeight: '180px', overflow: 'auto', zIndex: 20,
+          }}>
+            {suggestions.map((s, i) => (
+              <div
+                key={s.label}
+                onMouseDown={(e) => { e.preventDefault(); applySuggestion(i); }}
+                onMouseEnter={() => setSugIdx(i)}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', gap: '12px',
+                  padding: '6px 12px', cursor: 'pointer', fontSize: '0.78rem',
+                  fontFamily: 'var(--font-mono)',
+                  background: i === sugIdx ? 'var(--bg-hover)' : 'transparent',
+                }}
+              >
+                <span style={{ color: 'var(--accent-primary)' }}>{s.label}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{s.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <form className="terminal-input-form" onSubmit={handleSubmit}>
+          <span className="prompt">&gt;_</span>
+          <input
+            ref={inputRef}
+            className="terminal-input"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={onInputKeyDown}
+            placeholder={`${t('terminalPlaceholder')} · TAB ile tamamla`}
+            autoFocus
+          />
+        </form>
+      </div>
     </section>
   );
 }

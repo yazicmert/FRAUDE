@@ -7,6 +7,8 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 interface AiPanelProps {
   mode: 'side' | 'workspace';
   activeContext: string;
+  /** Uygulamanın başka yerlerinden gelen tek-tık AI aksiyonu; nonce değişince çalışır. */
+  quickPrompt?: { text: string; nonce: number } | null;
 }
 
 function AssistantMarkdown({ content }: { content: string }) {
@@ -40,7 +42,7 @@ function AssistantMarkdown({ content }: { content: string }) {
   );
 }
 
-export default function AiPanel({ mode, activeContext }: AiPanelProps) {
+export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelProps) {
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -86,9 +88,8 @@ export default function AiPanel({ mode, activeContext }: AiPanelProps) {
     }
   }, [messages, loading]);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = prompt.trim();
+  const runPrompt = async (raw: string) => {
+    const value = raw.trim();
     if (!value || loading) return;
 
     // Model isteğine anlık hisse verisi eklenir; balonda yalnızca kullanıcının
@@ -124,6 +125,23 @@ export default function AiPanel({ mode, activeContext }: AiPanelProps) {
       setLoading(false);
     }
   };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void runPrompt(prompt);
+  };
+
+  // Tek-tık AI aksiyonu: en güncel kapanışa erişmek için ref üzerinden çağrılır.
+  const runPromptRef = useRef(runPrompt);
+  runPromptRef.current = runPrompt;
+  const lastQuickNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!quickPrompt) return;
+    if (lastQuickNonce.current === quickPrompt.nonce) return;
+    lastQuickNonce.current = quickPrompt.nonce;
+    void runPromptRef.current(quickPrompt.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickPrompt?.nonce]);
 
   const loadHistoricalRecord = (record: AiHistoryRecord) => {
     // Kayıt yeni bir sohbet başlangıcı olarak yüklenir; kullanıcı kaldığı

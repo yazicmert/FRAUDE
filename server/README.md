@@ -96,6 +96,33 @@ Doğrulama (istemci pariteli): yayınla→`200`, auth `401/401/503`, imza + arti
 hash + negatif test uçtan uca geçirildi — masaüstü/web istemcisi yayınlanan
 sürümü kabul eder.
 
+### Masaüstü "Yayınla" butonu
+
+Masaüstü admin uygulamasında **Yayınla** paneli (yalnız desktop navigasyonunda
+görünür) aynı akışı UI'dan yürütür:
+
+- Panel release'i kurar, artifact SHA-256'sını ve kanonik imza payload'ını
+  istemcinin birebir kodu (`src/modules/crypto.ts` `releaseSigningPayload`) ile
+  üretir; Tauri komutu `publish_module_release` bu kanonik baytları **yerel
+  Ed25519 anahtarıyla** imzalar (ed25519-dalek; Rust↔WebCrypto imza paritesi
+  birim testiyle kanıtlı) ve admin token'ıyla `POST /v1/registry/releases`'e yollar.
+- Özel imza anahtarı ve admin token'ı **webview'e hiç girmez**; yalnız Rust tarafında.
+
+Masaüstü yayın yapılandırması — `{config}/fraude/registry-publish.json`
+(veya aynı adlı ortam değişkenleri override eder):
+
+```json
+{
+  "publishUrl": "https://api.fraude.app",
+  "publicBaseUrl": "https://api.fraude.app",
+  "adminToken": "<sunucudaki FRAUDE_REGISTRY_ADMIN_TOKEN>",
+  "keyId": "fraude-registry-1"
+}
+```
+
+İmza anahtarı: `{config}/fraude/registry-signing-key.json`
+(`scripts/registry-build.mjs` üretir; **bu makinede kalır**).
+
 ### Notlar / güvenlik
 
 - `signing-key.json` gizlidir; sürüm kontrolüne/sunucuya konmaz (kök `.gitignore`
