@@ -40,6 +40,62 @@ Frontend'i buna bağlamak: proje kökünde `.env` içine
 - **USER_COMMANDS** (22) — kişi-başı veri, JWT zorunlu (Faz 2).
 - **ADMIN_COMMANDS** (2) — yalnızca arka plan; web ucundan `403`.
 
+## Modül registry (masaüstü/web güncelleme)
+
+Masaüstü ve web istemcisi, imzalı **modül** güncellemelerini (FMUP — declarative
+`views/data/locales`, çalıştırılabilir kod değil) bu sunucudan alır. İstemci
+sözleşmesi `src/modules/registryClient.ts` + doğrulama `src/modules/crypto.ts`.
+
+Sunulan uçlar (`src/registry.rs`):
+
+```text
+GET /v1/trust/keys                 → { keys: [...] }          güven anahtarları
+GET /v1/channels/{channel}/latest  → { releases: [...] }      imzalı sürümler
+GET /v1/artifacts/{sha256}         → declarative artifact baytları
+```
+
+**Güvenlik modeli — çevrimdışı imzala, statik sun.** Özel imza anahtarı bu
+internete açık sunucuda **bulunmaz**. Sürümler `scripts/registry-build.mjs` ile
+çevrimdışı imzalanır; sunucu yalnız imzalı baytları olduğu gibi sunar. İmzalama,
+istemcinin doğrulamasıyla (`stableValue` + Ed25519) birebir aynı
+kanonikleştirmeyi kullanır → imza paritesi yapısal olarak garantidir.
+
+### Yayın akışı
+
+```bash
+# 1) İmzalı registry veri dizinini üret (ilk çalıştırma kalıcı anahtar üretir)
+FRAUDE_REGISTRY_PUBLIC_URL=https://api.fraude.app \
+FRAUDE_REGISTRY_DATA_DIR=.fraude-registry \
+node scripts/registry-build.mjs
+# → çıktı: pinlenecek güven anahtarı (VITE_FRAUDE_TRUST_KEYS)
+
+# 2) Sunucuyu bu dizinle çalıştır (yerel test)
+cd server && FRAUDE_REGISTRY_DATA_DIR=../.fraude-registry cargo run
+
+# 3) İstemcide güven anahtarını pinle (üretim, localhost dışı zorunlu):
+#    frontend .env → VITE_FRAUDE_TRUST_KEYS='[{"id":"fraude-registry-1",...}]'
+#    ve VITE_FRAUDE_REGISTRY_URL (yoksa VITE_FRAUDE_API_URL'e düşer)
+```
+
+Doğrulama (istemci pariteli): imza, artifact hash ve negatif test uçtan uca
+geçirildi — masaüstü istemcisi sunulan sürümü kabul eder.
+
+### Notlar / güvenlik
+
+- `signing-key.json` gizlidir; sürüm kontrolüne/sunucuya konmaz (kök `.gitignore`
+  `.fraude-registry/` dizinini yok sayar). Üretimde `FRAUDE_REGISTRY_KEY_FILE`
+  çevrimdışı bir makinede tutulmalı; FMUP: çevrimdışı kök + döndürülebilir yayın
+  anahtarı + iptal metadata'sı.
+- Artifact URL'leri imzaya dahildir; `FRAUDE_REGISTRY_PUBLIC_URL` imzalama anında
+  üretim URL'ine ayarlanmalıdır (değişmez artifact URL'leri).
+- **Katkı alımı (contribution intake)** bu sürümde `503` döner. Etkinleştirmek
+  için Ed25519 katkı-imzası doğrulaması (istemci kanonik baytlarıyla parite) +
+  kimlik doğrulamalı review akışı gerekir (bugünkü `FRAUDE_REGISTRY_REVIEW_TOKEN`
+  yerine oturum + rol + CSRF + denetim günlüğü).
+- **Çekirdek binary self-update** (uygulamanın `.dmg/.exe`'sini güncellemesi) ayrı
+  bir mekanizmadır (`tauri-plugin-updater` — kurulu değil) ve bu registry'nin
+  kapsamı dışındadır.
+
 ## fraude-core çıkarımı (sıradaki adım)
 
 Kod incelemesi, `src-tauri/src` içindeki **~25 modülün tamamen Tauri'siz**

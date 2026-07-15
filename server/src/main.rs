@@ -9,6 +9,7 @@
 //! `fraude-core` çıkarıldığında bağlanır (bkz. README).
 
 mod auth;
+mod registry;
 mod rpc;
 
 use axum::{
@@ -26,11 +27,20 @@ async fn main() {
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .init();
 
-    let app = Router::new()
+    // Veri API'si (rpc) — sıkı/dev CORS + kimlik bilgisi taşır.
+    let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/rpc/{command}", post(rpc::dispatch))
-        .layer(TraceLayer::new_for_http())
         .layer(build_cors());
+
+    // Registry — herkese açık, imzalı içerik. Masaüstü (tauri://) ve web
+    // istemcilerinin okuyabilmesi için esnek CORS; kimlik bilgisi taşımaz.
+    let registry = registry::router().layer(CorsLayer::permissive());
+
+    let app = Router::new()
+        .merge(api)
+        .merge(registry)
+        .layer(TraceLayer::new_for_http());
 
     let port: u16 = std::env::var("PORT")
         .ok()
