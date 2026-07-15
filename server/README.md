@@ -49,9 +49,10 @@ sözleşmesi `src/modules/registryClient.ts` + doğrulama `src/modules/crypto.ts
 Sunulan uçlar (`src/registry.rs`):
 
 ```text
-GET /v1/trust/keys                 → { keys: [...] }          güven anahtarları
-GET /v1/channels/{channel}/latest  → { releases: [...] }      imzalı sürümler
-GET /v1/artifacts/{sha256}         → declarative artifact baytları
+GET  /v1/trust/keys                 → { keys: [...] }          güven anahtarları
+GET  /v1/channels/{channel}/latest  → { releases: [...] }      imzalı sürümler
+GET  /v1/artifacts/{sha256}         → declarative artifact baytları
+POST /v1/registry/releases          → imzalı sürüm YAYINLA (admin)
 ```
 
 **Güvenlik modeli — çevrimdışı imzala, statik sun.** Özel imza anahtarı bu
@@ -60,25 +61,40 @@ internete açık sunucuda **bulunmaz**. Sürümler `scripts/registry-build.mjs` 
 istemcinin doğrulamasıyla (`stableValue` + Ed25519) birebir aynı
 kanonikleştirmeyi kullanır → imza paritesi yapısal olarak garantidir.
 
-### Yayın akışı
+### Yayın akışı — yerelde imzala → sunucuya gönder
+
+Admin (senin makinen) sürümü YEREL imzalar ve HTTP ile sunucuya yollar. Özel
+imza anahtarı ne sunucuda ne de web istemcisinde bulunur. Masaüstü "Yayınla"
+butonu da bu ucu aynı gövdeyle çağırır.
 
 ```bash
-# 1) İmzalı registry veri dizinini üret (ilk çalıştırma kalıcı anahtar üretir)
+# Tek seferlik: güven anahtarını sunucuya (out-of-band) deploy et + istemcide pinle.
+#   node scripts/registry-build.mjs  → trust/keys.json üretir + pinlenecek anahtarı yazdırır
+#   sunucu data dir'ine trust/keys.json'ı koy;  frontend .env → VITE_FRAUDE_TRUST_KEYS='[...]'
+
+# Her yayında: yerelde imzala → sunucuya gönder
+FRAUDE_REGISTRY_KEY_FILE=~/.fraude/signing-key.json \
+FRAUDE_REGISTRY_PUBLISH_URL=https://api.fraude.app \
+FRAUDE_REGISTRY_ADMIN_TOKEN=<sunucudaki token> \
 FRAUDE_REGISTRY_PUBLIC_URL=https://api.fraude.app \
-FRAUDE_REGISTRY_DATA_DIR=.fraude-registry \
 node scripts/registry-build.mjs
-# → çıktı: pinlenecek güven anahtarı (VITE_FRAUDE_TRUST_KEYS)
-
-# 2) Sunucuyu bu dizinle çalıştır (yerel test)
-cd server && FRAUDE_REGISTRY_DATA_DIR=../.fraude-registry cargo run
-
-# 3) İstemcide güven anahtarını pinle (üretim, localhost dışı zorunlu):
-#    frontend .env → VITE_FRAUDE_TRUST_KEYS='[{"id":"fraude-registry-1",...}]'
-#    ve VITE_FRAUDE_REGISTRY_URL (yoksa VITE_FRAUDE_API_URL'e düşer)
+# → POST /v1/registry/releases ; sunucu artifact+release'i doğrular ve saklar
 ```
 
-Doğrulama (istemci pariteli): imza, artifact hash ve negatif test uçtan uca
-geçirildi — masaüstü istemcisi sunulan sürümü kabul eder.
+Gövde: `{ "release": <imzalı ModuleRelease>, "artifactBase64": "<base64>" }`.
+Sunucu: admin token'ı doğrular → artifact hash'i manifest ile karşılaştırır →
+artifact'i ve `channels/{ch}/latest.json`'ı atomik yazar (aynı modül kimliğini
+değiştirir). İmzanın kriptografik doğrulaması istemcidedir (pinli anahtar).
+
+**Alternatif (CI / elle deploy):** `FRAUDE_REGISTRY_PUBLISH_URL` vermezsen aynı
+komut imzalı statik veri dizini üretir; onu sunucuya kopyalarsın.
+
+Yetkilendirme: yayın ucu `FRAUDE_REGISTRY_ADMIN_TOKEN` ile korunur (tanımsızsa
+`503`). Uygun cevaplar: token yok/yanlış → `401`, geçersiz gövde/hash → `400`.
+
+Doğrulama (istemci pariteli): yayınla→`200`, auth `401/401/503`, imza + artifact
+hash + negatif test uçtan uca geçirildi — masaüstü/web istemcisi yayınlanan
+sürümü kabul eder.
 
 ### Notlar / güvenlik
 

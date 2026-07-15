@@ -25,6 +25,11 @@ const dataDir = resolve(process.env.FRAUDE_REGISTRY_DATA_DIR || '.fraude-registr
 const keyFile = resolve(process.env.FRAUDE_REGISTRY_KEY_FILE || `${dataDir}/signing-key.json`);
 const keyId = process.env.FRAUDE_REGISTRY_KEY_ID || 'fraude-registry-1';
 
+// Yayın modu: ayarlıysa imzalı sürümler yerel dizin yerine sunucuya gönderilir.
+// (Masaüstü "Yayınla" butonu da bu ucu aynı gövdeyle çağırır.)
+const publishUrl = (process.env.FRAUDE_REGISTRY_PUBLISH_URL || '').replace(/\/$/, '');
+const adminToken = process.env.FRAUDE_REGISTRY_ADMIN_TOKEN || '';
+
 // ── Kanonikleştirme — src/modules/crypto.ts ile BİREBİR aynı olmalı ──────────
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -139,39 +144,71 @@ function moduleReleases() {
   }];
 }
 
-// ── Derleme ──────────────────────────────────────────────────────────────────
-function build() {
+// ── Sunucuya yayınla (POST /v1/registry/releases) ────────────────────────────
+async function publishToServer(signed, artifact) {
+  if (!adminToken) throw new Error('FRAUDE_REGISTRY_ADMIN_TOKEN gerekli (yayın modu)');
+  const res = await fetch(`${publishUrl}/v1/registry/releases`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ release: signed, artifactBase64: artifact.toString('base64') }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`yayın hatası ${res.status}: ${text}`);
+  return JSON.parse(text);
+}
+
+// ── Derleme / yayın ──────────────────────────────────────────────────────────
+async function build() {
   const { privateKey, publicKey } = loadOrCreateKeypair();
   const publicJwk = publicKey.export({ format: 'jwk' });
-
   const trust = {
     keys: [{ id: keyId, algorithm: 'Ed25519', publicKey: publicJwk.x, channels: ['official'] }],
   };
-  writeFileAtomic(resolve(dataDir, 'trust/keys.json'), JSON.stringify(trust, null, 2));
 
-  const byChannel = new Map();
+  // Her sürümü imzala.
+  const signedReleases = [];
   for (const release of moduleReleases()) {
     const artifactHash = createHash('sha256').update(release.artifact).digest('hex');
-    writeFileAtomic(resolve(dataDir, 'artifacts', artifactHash), release.artifact);
-
     const unsigned = release.unsignedFor(artifactHash);
     const payload = JSON.stringify(stableValue(unsigned));
     const signature = sign(null, Buffer.from(payload), privateKey).toString('base64url');
     const signed = { ...unsigned, provenance: { algorithm: 'Ed25519', keyId, signature } };
-
-    if (!byChannel.has(release.channel)) byChannel.set(release.channel, []);
-    byChannel.get(release.channel).push(signed);
+    signedReleases.push({ signed, artifact: release.artifact, artifactHash, channel: release.channel });
     console.log(`İmzalandı: ${unsigned.manifest.id}@${unsigned.manifest.version}  (artifact ${artifactHash.slice(0, 12)}…)`);
   }
 
+  if (publishUrl) {
+    // Yayın modu: yerelde imzala → sunucuya gönder. (Güven anahtarı ayrıca,
+    // bir kez, out-of-band deploy edilir; yayın token'ı trust'ı değiştiremez.)
+    console.log(`\nYayınlanıyor → ${publishUrl}/v1/registry/releases`);
+    for (const { signed, artifact } of signedReleases) {
+      const receipt = await publishToServer(signed, artifact);
+      console.log(`  ✓ ${receipt.published.id}@${receipt.published.version} (kanal ${receipt.published.channel})`);
+    }
+    console.log('\nHatırlatma: sunucuda trust/keys.json bir kez deploy edilmiş olmalı ve');
+    console.log('istemcide VITE_FRAUDE_TRUST_KEYS pinlenmiş olmalı:');
+    console.log(JSON.stringify(trust.keys));
+    return;
+  }
+
+  // Derleme modu: imzalı statik veri dizini üret (elle deploy / yerel test).
+  writeFileAtomic(resolve(dataDir, 'trust/keys.json'), JSON.stringify(trust, null, 2));
+  const byChannel = new Map();
+  for (const { signed, artifact, artifactHash, channel } of signedReleases) {
+    writeFileAtomic(resolve(dataDir, 'artifacts', artifactHash), artifact);
+    if (!byChannel.has(channel)) byChannel.set(channel, []);
+    byChannel.get(channel).push(signed);
+  }
   for (const [channel, releases] of byChannel) {
     writeFileAtomic(resolve(dataDir, 'channels', channel, 'latest.json'), JSON.stringify({ releases }, null, 2));
   }
-
   console.log(`\nRegistry veri dizini hazır: ${dataDir}`);
   console.log(`Public base URL (artifact URL'lerine gömüldü): ${publicBaseUrl}`);
   console.log('\nÜretimde istemciye pinlenecek güven anahtarı (VITE_FRAUDE_TRUST_KEYS):');
   console.log(JSON.stringify(trust.keys));
 }
 
-build();
+build().catch((e) => {
+  console.error('HATA:', e.message || e);
+  process.exit(1);
+});
