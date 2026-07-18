@@ -1,37 +1,34 @@
-# FRAUDE web API — Fly.io yapılandırması.
-# Derleme bağlamı repo köküdür (fraude-core path bağımlılığı); komutlar
-# REPO KÖKÜNDEN çalıştırılır:
-#   İlk kurulum:  fly launch --no-deploy -c server/fly.toml
-#   Deploy:       fly deploy -c server/fly.toml
-# Gizli anahtarlar:  fly secrets set ALLOWED_ORIGIN=https://<vercel-domain> ...
+# fly.toml app configuration file generated for fraude-api on 2026-07-18T06:52:31+03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "fraude-api"
-primary_region = "fra"   # Frankfurt — Türkiye'ye en yakın düşük gecikme
+app = 'fraude-api'
+primary_region = 'fra'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  RUST_LOG = "info"
-  # ALLOWED_ORIGIN Vercel prod origin'i ile fly secrets/env üzerinden ayarlanır.
+  PORT = '8080'
+  RUST_LOG = 'info'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Arka plan döngüleri (IPO tazeleme + çok kiracılı monitor) sürekli çalışmalı;
-  # bu yüzden makineler otomatik durdurulmaz ve en az 1 makine hep açık kalır.
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    method = "GET"
-    path = "/healthz"
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "5s"
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '5s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpus = 1
+  memory_mb = 512
