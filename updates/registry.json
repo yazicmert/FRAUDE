@@ -2,6 +2,32 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-rehber-eklenti-mimarisi",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Rehber'e eklenti mimarisi bölümü; hisse-fon panelinde düzeltmeler",
+        "en": "Guide gains a plug-in architecture section; ticker-funds panel fixes"
+      },
+      "summary": {
+        "tr": "Rehber artık tak-çıkar mimariyi anlatıyor: herkes kendi AI sağlayıcısını anahtarıyla, kendi veri sağlayıcısını da data-adapter eklentisiyle bağlayabilir; varsayılan Yahoo Finance ve İş Yatırım kartları, herkese açık/ücretsiz erişim ve kullanım koşulları notuyla birlikte geldi. Hisse-fon panelindeki ham {{n}} yer tutucusu düzeltildi ve dizin boşken PDR taraması beklemeden başlıyor.",
+        "en": "The Guide now explains the plug-and-play architecture: everyone connects their own AI provider with their key and their own data provider as a data-adapter plug-in; default Yahoo Finance and İş Yatırım cards ship with a publicly-accessible/free access note and terms-of-use caveat. The raw {{n}} placeholder in the ticker-funds panel was fixed and the PDR crawl now starts immediately when the index is empty."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "src/features/guide/GuideView.tsx",
+        "src/api/i18n.ts",
+        "core/src/kap_pdr.rs",
+        "core/src/api.rs"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. Uygulama içi Rehber'e (GuideView, TR+EN) modül turundan sonra 'Eklenti mimarisi' bölümü ekle: açılış cümlesi uygulamanın açık kaynak ve tak-çıkar olduğunu, herkesin kendi AI sağlayıcısını kendi anahtarıyla ve kendi veri sağlayıcısını data-adapter eklentisiyle bağlayabileceğini anlatsın. Üç kart: Yahoo Finance (varsayılan; OHLC+hacim, ~15 dk gecikmeli kotasyon, temettü/bölünme), İş Yatırım (varsayılan; düzeltilmiş kapanış, mali tablolar, tarama oranları) ve 'Kendi kaynağın' (FMUP kind \"data-adapter\", imzalı paket + izin listesi, Güncellemeler üzerinden paylaşım).\n2. Bölümün altına iki not ekle: (a) varsayılan kaynakların internette herkese açık, ücretsiz uçlardan okunduğu, ~15 dk gecikmeli ve kişisel araştırma amaçlı olduğu; veri sahiplerinin kullanım koşullarının geçerli olduğu ve yeniden yayım/ticari kullanım için sağlayıcı lisansı gerekebileceği; (b) eklenti katkılarının güvenlik incelemesi sonrası sitede ve uygulamada listelendiği. Hero çiplerine 'varsayılan veri kaynağı: 2' ekle.\n3. Hisse sayfasındaki 'Bu Hisseyi Tutan Fonlar' dizgilerinde i18n yer tutucularını projenin gerçek enterpolasyon sözdizimiyle hizala (react-i18next çift süslü {{n}}; tek süslü {n} ham görünür).\n4. PDR ters dizini bomboşken get_ticker_funds çağrısı, açılış görevini beklemeden sınırlı bir taramayı arka planda başlatsın; kap_pdr'deki tarama fonksiyonunu AtomicBool ile tek-örnek koru.\n\nKabul: 'npx tsc --noEmit', 'npx vite build' ve core'da 'cargo test' geçmeli; Rehber'de yeni bölüm iki dilde görünmeli, hisse-fon panelinde sayılar ham yer tutucu olmadan basılmalı.",
+      "notes": null
+    },
+    {
       "id": "2026-07-18-intro-yazisi-ortalama",
       "date": "2026-07-18",
       "author": "yazicmert",

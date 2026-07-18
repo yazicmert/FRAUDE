@@ -31,6 +31,13 @@ interface GuideContent {
   modulesHeading: string;
   modulesLead: string;
   modules: ModuleCard[];
+  pluginHeading: string;
+  pluginLead: string;
+  /** Varsayılan veri kaynakları + kendi kaynağını ekleme kartları. */
+  dataSources: ModuleCard[];
+  /** Varsayılan kaynakların erişim/kullanım koşulu notu. */
+  pluginLegalNote: string;
+  pluginContribute: string;
   aiHeading: string;
   aiLead: string;
   providers: Provider[];
@@ -58,6 +65,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     chips: [
       { label: 'modül', value: '13' },
       { label: 'AI sağlayıcı', value: '5' },
+      { label: 'varsayılan veri kaynağı', value: '2' },
       { label: 'BIST · XU100 · XHARZ' },
       { label: 'TR / EN' },
     ],
@@ -78,6 +86,18 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: 'MD', name: 'Modül Merkezi', tag: 'Modules', desc: 'Modülleri açıp kapatma ve güncelleme.', items: ['Modül kataloğu ve kurulum', 'İmzalı güncelleme / geri alma', 'Kenar çubuğu sekmelerini özelleştirme'] },
       { code: 'UP', name: 'Güncellemeler', tag: 'Ayarlar ▸', desc: 'Topluluk güncellemelerini sorgula, uygula ve kendi katkını gönder (⌘, → Güncellemeler).', items: ['Güncelleme Sorgula: kayıt defteri + son paket sürümü', 'Yeni paket çıktığında tek tuşla kurulum indirme', 'Pakete girmemiş kayıtlar için AI ajan promptunu kopyala, yerel klonunda uygula', 'Güncelleme Gönder: GitHub token ile otomatik PR, tokensız önceden doldurulmuş taslak'] },
     ],
+    pluginHeading: 'Eklenti mimarisi: veri ve AI senin kontrolünde',
+    pluginLead:
+      'FRAUDE açık kaynaklıdır ve tak-çıkar çalışır: masaüstü uygulamayı indiren herkes kendi AI sağlayıcısını kendi API anahtarıyla bağlar, kendi veri sağlayıcısını da eklenti olarak ekleyebilir. Kurulum iki hazır veri kaynağıyla gelir; ikisini de değiştirmek ya da yenisini eklemek serbesttir.',
+    dataSources: [
+      { code: 'Y!', name: 'Yahoo Finance', tag: 'Varsayılan', desc: 'Küresel fiyat verisi: BIST hisseleri, endeksler, emtia, döviz ve kripto.', items: ['OHLC mum + hacim serileri', '~15 dk gecikmeli kotasyon', 'Temettü ve bölünme olayları'] },
+      { code: 'İŞ', name: 'İş Yatırım', tag: 'Varsayılan', desc: "BIST'e özgü derinlik: düzeltilmiş seriler, mali tablolar ve tarama verisi.", items: ['Düzeltilmiş kapanış (temettü/bölünme yansıtılmış)', 'Mali tablo kalemleri', 'Tarama oranları (F/K, PD/DD, ROE…)'] },
+      { code: '+', name: 'Kendi kaynağın', tag: 'Eklenti', desc: 'Kendi lisanslı veri beslemen veya API\'n varsa data-adapter eklentisiyle bağlarsın.', items: ['FMUP manifest: kind "data-adapter"', 'İmzalı paket + açık izin listesi', 'Ayarlar › Güncellemeler › Güncelleme Gönder ile toplulukla paylaşılır'] },
+    ],
+    pluginLegalNote:
+      'Varsayılan kaynaklar (Yahoo Finance ve İş Yatırım) internette herkese açık, ücretsiz uçlardan okunur; kotasyonlar ~15 dk gecikmelidir ve kişisel araştırma içindir. Veri sahiplerinin kullanım koşulları geçerlidir: veriyi yeniden yayımlamak veya ticari bir üründe kullanmak ilgili sağlayıcıdan lisans gerektirebilir. FRAUDE veri satmaz ve yatırım tavsiyesi vermez.',
+    pluginContribute:
+      'Geliştirdiğin sağlayıcı eklentisi güvenlik incelemesinden geçtikten sonra sitedeki Güncellemeler sayfasında ve herkesin uygulamasındaki Güncellemeler sekmesinde listelenir.',
     aiHeading: 'API anahtarını sağlayıcına göre ekle',
     aiLead: 'AI Araştırma, İzleme Radarı yorumları ve ajan analizleri senin kendi API anahtarınla çalışır — anahtarı sen alır, uygulamaya girersin, kullanım senin hesabına işler. Sağlayıcını seç; nereye gireceğini, ne alacağını ve FRAUDE\'ye nasıl gireceğini gör.',
     baseUrlLabel: 'Base URL',
@@ -184,6 +204,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     chips: [
       { label: 'modules', value: '13' },
       { label: 'AI providers', value: '5' },
+      { label: 'default data sources', value: '2' },
       { label: 'BIST · XU100 · XHARZ' },
       { label: 'TR / EN' },
     ],
@@ -204,6 +225,18 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: 'MD', name: 'Module Center', tag: 'Modules', desc: 'Enable/disable and update modules.', items: ['Module catalog and install', 'Signed update / rollback', 'Customize sidebar tabs'] },
       { code: 'UP', name: 'Updates', tag: 'In Settings ▸', desc: 'Check community updates, apply them and submit your own contribution (⌘, → Updates).', items: ['Check for Updates: registry + latest package version', 'One-click installer download when a new package ships', 'Copy the AI-agent prompt for unpackaged entries, apply in your local clone', 'Submit Update: automatic PR with a GitHub token, prefilled draft without'] },
     ],
+    pluginHeading: 'Plug-in architecture: your data, your AI',
+    pluginLead:
+      'FRAUDE is open source and plug-and-play: anyone who downloads the desktop app connects their own AI provider with their own API key, and can add their own data provider as a plug-in. The install ships with two ready data sources; both can be replaced or extended freely.',
+    dataSources: [
+      { code: 'Y!', name: 'Yahoo Finance', tag: 'Default', desc: 'Global price data: BIST equities, indices, commodities, FX and crypto.', items: ['OHLC candles + volume series', '~15-min delayed quotes', 'Dividend and split events'] },
+      { code: 'İŞ', name: 'İş Yatırım', tag: 'Default', desc: 'BIST-specific depth: adjusted series, financial statements and screening data.', items: ['Adjusted close (dividends/splits applied)', 'Financial statement items', 'Screening ratios (P/E, P/B, ROE…)'] },
+      { code: '+', name: 'Your own source', tag: 'Plug-in', desc: 'If you have a licensed data feed or API, connect it as a data-adapter plug-in.', items: ['FMUP manifest: kind "data-adapter"', 'Signed bundle + explicit permission list', 'Share it with the community via Settings › Updates › Submit Update'] },
+    ],
+    pluginLegalNote:
+      'The default sources (Yahoo Finance and İş Yatırım) are read from publicly accessible, free endpoints; quotes are ~15-min delayed and intended for personal research. The data owners\' terms of use apply: republishing the data or using it in a commercial product may require a license from the provider. FRAUDE does not sell data and does not give investment advice.',
+    pluginContribute:
+      'Once your provider plug-in passes security review, it is listed on the site\'s Updates page and in everyone\'s in-app Updates tab.',
     aiHeading: 'Add your API key, provider by provider',
     aiLead: 'AI Research, Watch Radar comments and agent analyses run on your own API key — you obtain it, enter it, and usage bills to your account. Pick your provider; see where to go, what to get, and how to enter it in FRAUDE.',
     baseUrlLabel: 'Base URL',
@@ -348,6 +381,31 @@ export default function GuideView() {
               </article>
             ))}
           </div>
+        </section>
+
+        {/* ── Eklenti mimarisi: veri kaynakları ── */}
+        <section className="guide-section">
+          <h2 className="guide-h2">{c.pluginHeading}</h2>
+          <p className="guide-lead">{c.pluginLead}</p>
+          <div className="guide-grid">
+            {c.dataSources.map((source) => (
+              <article className="guide-card" key={source.code}>
+                <div className="guide-card-head">
+                  <span className="guide-card-ico">{source.code}</span>
+                  <h3>{source.name}</h3>
+                  <span className="guide-card-tag">{source.tag}</span>
+                </div>
+                <div className="guide-card-body">
+                  {source.desc}
+                  <ul>
+                    {source.items.map((it, i) => <li key={i}>{it}</li>)}
+                  </ul>
+                </div>
+              </article>
+            ))}
+          </div>
+          <p className="guide-note ok"><b>✓</b> {c.pluginLegalNote}</p>
+          <p className="guide-note"><b>↗</b> {c.pluginContribute}</p>
         </section>
 
         {/* ── AI kurulumu ── */}

@@ -256,13 +256,28 @@ pub struct TickerFundsPayload {
 }
 
 /// Verilen hisseyi portföyünde taşıyan fonlar, birikmiş PDR dizininden.
-/// Ağ yalnız fon adlarını çözmek için (önbellekli liste) kullanılır.
+/// Ağ yalnız fon adlarını çözmek için (önbellekli liste) kullanılır. Dizin
+/// bomboşsa (ilk kurulum) tarama açılış görevini beklemeden hemen başlatılır;
+/// eşzamanlılık kilidi kap_pdr içindedir.
 pub async fn get_ticker_funds(
     state: &AppState,
     ticker: String,
 ) -> Result<TickerFundsPayload, String> {
     let (entries, scanned_funds) = crate::kap_pdr::funds_holding_ticker(&ticker);
     let funds = crate::tefas::get_funds(&state.http).await;
+
+    if scanned_funds == 0 && !funds.is_empty() {
+        let client = state.http.clone();
+        let codes: Vec<String> = funds
+            .iter()
+            .filter(|f| matches!(f.kind.as_str(), "YAT" | "EMK" | "BYF"))
+            .map(|f| f.code.clone())
+            .take(80)
+            .collect();
+        tokio::spawn(async move {
+            crate::kap_pdr::crawl_fund_holdings(&client, &codes, 30).await;
+        });
+    }
     let by_code: std::collections::HashMap<&str, &crate::tefas::FundRow> =
         funds.iter().map(|f| (f.code.as_str(), f)).collect();
 

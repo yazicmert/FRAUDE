@@ -660,12 +660,25 @@ pub fn funds_holding_ticker(ticker: &str) -> (Vec<TickerFundEntry>, usize) {
     (entries, scanned)
 }
 
+/// Aynı anda tek tarama çalışır; açılış görevi ile "dizin boş" tetiklemesi
+/// çakışıp KAP'a çift trafik üretmesin.
+static CRAWLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Verilen fon kodlarının PDR'lerini dizine ekler (arka plan taraması).
 ///
 /// Dönemi güncel olan kayıtlar atlanır; istekler arasında beklenir ki KAP'a
 /// nazik kalınsın. `cap` bir oturumda indirilecek yeni rapor sayısını sınırlar.
 /// Dizine eklenen yeni rapor sayısını döndürür.
 pub async fn crawl_fund_holdings(client: &reqwest::Client, codes: &[String], cap: usize) -> usize {
+    if CRAWLING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return 0;
+    }
+    let added = crawl_inner(client, codes, cap).await;
+    CRAWLING.store(false, std::sync::atomic::Ordering::SeqCst);
+    added
+}
+
+async fn crawl_inner(client: &reqwest::Client, codes: &[String], cap: usize) -> usize {
     let Ok(index) = pdr_index(client).await else { return 0 };
     let (period, available) = index.as_ref();
     let done = stored_period_codes(period);
