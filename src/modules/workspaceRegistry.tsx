@@ -1,6 +1,6 @@
 import { lazy } from 'react';
 import type { ReactNode } from 'react';
-import type { EquityRow, KapAnnouncement, MonitorState } from '../types';
+import type { EquityRow, KapAnnouncement, MonitorState, ResearchJob } from '../types';
 import type { InstalledModule, ModuleManifest, ModulePermission } from './types';
 import { isDesktopRuntime } from '../api/platformClient';
 
@@ -27,6 +27,8 @@ const ModuleCenterView = lazy(() => import('../features/modules/ModuleCenterView
 const TeamView = lazy(() => import('../features/team/TeamView'));
 const CorporateActionsView = lazy(() => import('../features/corporate/CorporateActionsView'));
 const MonitorView = lazy(() => import('../features/monitor/MonitorView'));
+const NotificationsView = lazy(() => import('../features/notifications/NotificationsView'));
+const ResearchView = lazy(() => import('../features/research/ResearchView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
 
@@ -53,6 +55,12 @@ export interface ModuleHost {
   monitor: {
     state: MonitorState | null;
     setState: (state: MonitorState) => void;
+  };
+  research: {
+    jobs: ResearchJob[];
+    unread: number;
+    refresh: () => void;
+    markSeen: () => void;
   };
   moduleCenter: {
     modules: Array<{ manifest: ModuleManifest; installed?: InstalledModule }>;
@@ -239,6 +247,47 @@ export const workspaceModules: WorkspaceModule[] = [
         onSelectTicker={host.openTicker}
       />
     ),
+  },
+  {
+    kind: 'research',
+    titleKey: 'research',
+    title: (host) => {
+      const unread = host.research.unread ?? 0;
+      return `${host.t('research')}${unread > 0 ? ` (${unread})` : ''}`;
+    },
+    manifest: manifest(
+      'fraude.research',
+      { tr: 'Araştırma', en: 'Research' },
+      { tr: 'AI ajan takımıyla hisse araştırması ve serbest görevler.', en: 'AI agent-team stock research and free-form tasks.' },
+      ['api:ai-provider', 'api:market-data', 'storage:workspace'],
+      'research',
+      'research',
+    ),
+    render: (_tab, host) => (
+      <ResearchView
+        jobs={host.research.jobs}
+        unread={host.research.unread}
+        refresh={host.research.refresh}
+        markSeen={host.research.markSeen}
+        openTicker={host.openTicker}
+      />
+    ),
+  },
+  {
+    kind: 'notifications',
+    titleKey: 'notifications',
+    manifest: manifest(
+      'fraude.notifications',
+      { tr: 'Bildirimler', en: 'Notifications' },
+      {
+        tr: 'KAP/SPK/haber e-posta bildirimleri: kaynaklar, takip hisseleri, anahtar kelimeler ve önem eşiği.',
+        en: 'KAP/SPK/news email notifications: sources, followed tickers, keywords and importance threshold.',
+      },
+      ['storage:workspace'],
+      'notifications',
+      'notifications',
+    ),
+    render: () => <NotificationsView />,
   },
   {
     kind: 'corporate',
