@@ -10,6 +10,8 @@ export type MarketState = 'open' | 'pre' | 'closed';
 export interface MarketStatus {
   state: MarketState;
   label: string;
+  /** Tatil günündeyse resmi tatilin adı; görünen etiket App'te dile göre kurulur. */
+  holidayName?: string;
   /** Europe/Istanbul yerel "HH:MM" biçiminde şu anki saat. */
   istanbulTime: string;
   color: string;
@@ -50,7 +52,7 @@ export function getMarketStatus(now: Date = new Date()): MarketStatus {
   // Resmi tatiller hafta içi olsa bile piyasa kapalıdır; saat kontrolünden önce bakılır.
   const holiday = bistHolidayName(isoDate);
   if (holiday) {
-    return { state: 'closed', label: `Piyasa Kapalı · ${holiday}`, istanbulTime: hhmm, color: '#8b949e' };
+    return { state: 'closed', label: `Piyasa Kapalı · ${holiday}`, holidayName: holiday, istanbulTime: hhmm, color: '#8b949e' };
   }
 
   const isWeekday = weekday >= 1 && weekday <= 5;

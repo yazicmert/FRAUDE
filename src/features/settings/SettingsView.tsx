@@ -10,6 +10,8 @@ import {
   deleteAiAgent,
 } from '../../api/tauriClient';
 import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest } from '../../types';
+import { useTranslation } from '../../api/i18n';
+import { getSession, signOut } from '../auth/session';
 
 const emptyForm: SaveAiKeyRequest = {
   provider: 'openai',
@@ -66,6 +68,8 @@ const emptyAgentForm: SaveAiAgentRequest = {
 };
 
 export default function SettingsView() {
+  const { t } = useTranslation();
+  const account = getSession();
   const [activeTab, setActiveTab] = useState<'keys' | 'agents'>('keys');
   const [keys, setKeys] = useState<AiKeyRecord[]>([]);
   const [form, setForm] = useState<SaveAiKeyRequest>(emptyForm);
@@ -149,6 +153,28 @@ export default function SettingsView() {
           <p className="eyebrow">Fraude Configuration</p>
           <h1>Settings</h1>
         </div>
+        {account && (
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+              {t('authSignedInAs')}: {account.name} · {account.email}
+            </p>
+            <button
+              type="button"
+              onClick={signOut}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255,106,94,0.4)',
+                background: 'transparent',
+                color: '#ff6a5e',
+                cursor: 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              {t('authSignOut')}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="tabs" style={{ display: 'flex', gap: '12px', padding: '0 24px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
@@ -188,7 +214,7 @@ export default function SettingsView() {
             <input
               value={form.api_key}
               onChange={(event) => setForm((current) => ({ ...current, api_key: event.target.value }))}
-              placeholder="sk-..."
+              placeholder={form.provider === 'google' ? 'AIza...' : 'sk-...'}
               type="password"
               required
             />

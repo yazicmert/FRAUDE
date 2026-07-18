@@ -1,16 +1,60 @@
 use serde::Deserialize;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::domain::{EquityRow, HistoricalQuote, MarketMetric};
 use crate::indicators;
 
-pub const YAHOO_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 FRAUDE/0.1";
+pub const YAHOO_USER_AGENT: &str = "FraudeFinance/1.0";
 
 pub const COMMODITY_TICKERS: &[(&str, &str)] = &[
-    ("GC=F", "Altın (ONS)"),
-    ("SI=F", "Gümüş (ONS)"),
+    ("GC=F", "Altın Ons ($)"),
+    ("SI=F", "Gümüş Ons ($)"),
     ("USDTRY=X", "USD/TRY"),
+];
+
+/// Global hisselerin `index_memberships` grup etiketi. Frontend BIST'e özel
+/// listeleri kurarken bu etiketi taşıyan satırları eler.
+pub const GLOBAL_GROUP: &str = "Global";
+
+pub const GLOBAL_TICKERS: &[(&str, &str)] = &[
+    ("AAPL", "Apple Inc."),
+    ("MSFT", "Microsoft Corp."),
+    ("NVDA", "NVIDIA Corp."),
+    ("AMZN", "Amazon.com Inc."),
+    ("META", "Meta Platforms Inc."),
+    ("GOOGL", "Alphabet Inc."),
+    ("TSLA", "Tesla Inc."),
+    ("BRK-B", "Berkshire Hathaway"),
+    ("LLY", "Eli Lilly"),
+    ("AVGO", "Broadcom Inc."),
+    ("JPM", "JPMorgan Chase"),
+    ("V", "Visa Inc."),
+    ("XOM", "Exxon Mobil"),
+    ("UNH", "UnitedHealth Group"),
+    ("WMT", "Walmart Inc."),
+    ("MA", "Mastercard Inc."),
+    ("PG", "Procter & Gamble"),
+    ("JNJ", "Johnson & Johnson"),
+    ("HD", "Home Depot Inc."),
+    ("ASML", "ASML Holding"),
+    ("COST", "Costco Wholesale"),
+    ("NFLX", "Netflix Inc."),
+    ("AMD", "Advanced Micro Devices"),
+    ("PEP", "PepsiCo Inc."),
+    ("CSCO", "Cisco Systems"),
+    ("TMUS", "T-Mobile US"),
+    ("GS", "Goldman Sachs"),
+    ("MCD", "McDonald's Corp"),
+    ("CAT", "Caterpillar Inc"),
+    ("CRM", "Salesforce Inc"),
+    ("BA", "Boeing Co"),
+    ("TRV", "Travelers Companies"),
+    ("AMGN", "Amgen Inc"),
+    ("IBM", "IBM Corp"),
+    ("AXP", "American Express"),
+    ("CVX", "Chevron Corp"),
+    ("MRK", "Merck & Co"),
 ];
 
 pub const BIST_TICKERS: &[(&str, &str)] = &[
@@ -172,7 +216,11 @@ struct YahooMeta {
     regular_market_time: Option<i64>,
 }
 #[derive(Deserialize)]
-struct YahooIndicators { quote: Option<Vec<YahooQuote>> }
+struct YahooIndicators {
+    quote: Option<Vec<YahooQuote>>,
+    /// Temettü + bölünme düzeltmeli kapanış serisi; göstergeler bundan beslenir.
+    adjclose: Option<Vec<YahooAdjClose>>,
+}
 #[derive(Deserialize)]
 struct YahooQuote {
     open: Option<Vec<Option<f64>>>,
@@ -180,6 +228,10 @@ struct YahooQuote {
     high: Option<Vec<Option<f64>>>,
     low: Option<Vec<Option<f64>>>,
     volume: Option<Vec<Option<u64>>>,
+}
+#[derive(Deserialize)]
+struct YahooAdjClose {
+    adjclose: Option<Vec<Option<f64>>>,
 }
 
 fn symbol(ticker: &str) -> String {
@@ -190,6 +242,7 @@ fn symbol(ticker: &str) -> String {
         "XAUTRY" => "XAUTRY=X".to_string(),
         "XAGTRY" => "XAGTRY=X".to_string(),
         // ^GSPC gibi global endeks sembolleri ve hazır Yahoo formatları olduğu gibi geçer.
+        _ if crate::yahoo::GLOBAL_TICKERS.iter().any(|(sym, _)| *sym == t) => t,
         _ if t.starts_with('^') || t.contains('=') || t.contains('.') || t.contains('-') => t,
         _ => format!("{t}.IS"),
     }
@@ -223,6 +276,51 @@ async fn chart(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Ya
         .ok_or_else(|| format!("No data for {ticker}"))
 }
 
+/// Yahoo'ya aynı anda gönderilen en fazla istek sayısı.
+///
+/// Sınır, batch + sabit uyku yerine semaforla uygulanır: istekler sürekli akar
+/// ve hızlı yanıtlar batch'in en yavaşını beklemez. Anlık eşzamanlılık eski
+/// batch boyutuyla aynı tutulmuştur; hızlanma bekleme süresinin kalkmasından
+/// gelir, Yahoo'ya daha sert yüklenmekten değil.
+///
+/// Yahoo'nun kısıtlaması ani eşzamanlılığa değil zaman içindeki toplam istek
+/// hacmine de bakar: yoğun kullanımda tek bir istek bile 429 dönebilir. Bu
+/// sayıyı büyütmeden önce `enrich_equity` dahil sembol başına düşen istek
+/// sayısını azaltmak daha etkilidir.
+const YAHOO_CONCURRENCY: usize = 8;
+
+/// Geçici hatada toplam deneme sayısı (ilk deneme dahil).
+const YAHOO_MAX_ATTEMPTS: u32 = 3;
+
+/// Ağ/geçici hatalarda ilk bekleme; her denemede ikiye katlanır.
+const YAHOO_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Hız sınırında ilk bekleme. 429 "yavaşla" demektir; ağ hatasından çok daha
+/// uzun beklenir, aksi halde yeniden denemeler kısıtlamayı büyütür.
+const YAHOO_RATE_LIMIT_BACKOFF: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// `chart` çağrısını geçici hatalara karşı yeniden dener.
+///
+/// 429 ve ağ hataları geçicidir; geri çekilerek tekrar denenir. 404 kalıcıdır
+/// (sembol Yahoo'da yok) ve beklemeden döner. Yeniden deneme olmadan hız
+/// sınırına takılan sembol evrenden sessizce düşerdi.
+async fn chart_with_retry(client: &reqwest::Client, ticker: &str, range: &str) -> Result<YahooResult, String> {
+    let mut attempt = 1;
+    loop {
+        let error = match chart(client, ticker, range).await {
+            Ok(result) => return Ok(result),
+            Err(error) => error,
+        };
+        // Sembol Yahoo'da yok ya da deneme hakkı bitti.
+        if error.contains("404") || attempt == YAHOO_MAX_ATTEMPTS {
+            return Err(error);
+        }
+        let base = if error.contains("429") { YAHOO_RATE_LIMIT_BACKOFF } else { YAHOO_RETRY_BACKOFF };
+        tokio::time::sleep(base * 2u32.pow(attempt - 1)).await;
+        attempt += 1;
+    }
+}
+
 fn quote_rows(result: &YahooResult) -> Vec<(f64, f64, f64, f64)> {
     let Some(quote) = result.indicators.quote.as_ref().and_then(|rows| rows.first()) else {
         return Vec::new();
@@ -237,11 +335,24 @@ fn quote_rows(result: &YahooResult) -> Vec<(f64, f64, f64, f64)> {
     ))).collect()
 }
 
+/// Gösterge hesabı için düzeltilmiş kapanış serisi.
+///
+/// Ham kapanışta temettü açılışları (BIST'te tek seferde %5-10 olabilir) RSI ve
+/// ortalamalara sahte bir "düşüş" olarak girer; adjclose bu boşlukları kapatır.
+/// Son barın adjclose'u ham kapanışa eşittir, dolayısıyla güncel fiyatla
+/// SMA/EMA karşılaştırmaları tutarlı kalır. Seri yoksa ham kapanışa düşülür.
+fn adjusted_closes(result: &YahooResult) -> Option<Vec<f64>> {
+    let series = result.indicators.adjclose.as_ref()?.first()?.adjclose.as_ref()?;
+    let values: Vec<f64> = series.iter().flatten().copied().filter(|v| v.is_finite()).collect();
+    (!values.is_empty()).then_some(values)
+}
+
 fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, index_memberships: Vec<String>) -> EquityRow {
     let candles = quote_rows(&result);
     let closes: Vec<f64> = candles.iter().map(|row| row.3).collect();
     let highs: Vec<f64> = candles.iter().map(|row| row.1).collect();
     let lows: Vec<f64> = candles.iter().map(|row| row.2).collect();
+    let indicator_closes = adjusted_closes(&result).unwrap_or_else(|| closes.clone());
     let price = result.meta.regular_market_price
         .or_else(|| closes.last().copied())
         .unwrap_or_default();
@@ -277,11 +388,13 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
         change_6m,
         change_1y,
         volume: result.meta.regular_market_volume.unwrap_or_default(),
-        rsi: indicators::rsi(&closes, 14),
-        macd: indicators::macd(&closes),
-        sma_50: indicators::sma(&closes, 50),
-        ema_20: indicators::ema(&closes, 20),
-        bollinger_position: indicators::bollinger_position(&closes, 20),
+        // Kapanış tabanlı göstergeler düzeltilmiş seriden; ATR gerçek işlem
+        // aralığını ölçtüğü için ham mumlarla kalır.
+        rsi: indicators::rsi(&indicator_closes, 14),
+        macd: indicators::macd(&indicator_closes),
+        sma_50: indicators::sma(&indicator_closes, 50),
+        ema_20: indicators::ema(&indicator_closes, 20),
+        bollinger_position: indicators::bollinger_position(&indicator_closes, 20),
         atr: indicators::atr(&highs, &lows, &closes, 14),
         week_52_high: result.meta.fifty_two_week_high.unwrap_or_default(),
         week_52_low: result.meta.fifty_two_week_low.unwrap_or_default(),
@@ -301,10 +414,18 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
 
 fn get_ticker_memberships(ticker: &str) -> Vec<String> {
     let mut indices = Vec::new();
-    
+
     if COMMODITY_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
         indices.push("Emtialar".to_string());
         return indices; // Early return for commodities as they are not BIST equities
+    }
+
+    // Global hisseler BIST evreninin parçası değildir; "Emtialar" gibi ayrı bir
+    // grup etiketi alırlar, böylece frontend BIST'e özel listeleri (yükselen/
+    // düşen gibi) bu semboller olmadan kurabilir.
+    if GLOBAL_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+        indices.push(GLOBAL_GROUP.to_string());
+        return indices;
     }
 
     if IPO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker)
@@ -367,27 +488,73 @@ fn select_previous_close(
         .unwrap_or(price)
 }
 
+/// Üst şeritte (marquee) ve pano özetinde gösterilen piyasa göstergeleri.
+/// Etiketler frontend'in `LABEL_TO_TICKER`/`SYMBOL_MAP` anahtarlarıyla birebir
+/// eşleşmelidir; canlı veri gelmediğinde `services::dashboard` aynı listeden
+/// yer tutucu üretir.
+pub const MARKET_INDICES: &[(&str, &str)] = &[
+    ("XU100.IS", "BIST 100"), ("XU030.IS", "BIST 30"), ("XBANK.IS", "BIST BANKA"), ("XUSIN.IS", "BIST SINAI"),
+    ("USDTRY=X", "USD/TRY"), ("EURTRY=X", "EUR/TRY"),
+    ("^GSPC", "S&P 500"), ("^IXIC", "NASDAQ"), ("^DJI", "DOW JONES"),
+    ("^GDAXI", "DAX"), ("^FTSE", "FTSE 100"),
+    ("GC=F", "Altın Ons ($)"), ("BZ=F", "Brent Petrol ($)"), ("BTC-USD", "Bitcoin ($)"),
+];
+
+/// Senkron sonunda okunur ada çevrilen satırlar: (Yahoo sembolü, store'daki ad).
+/// Şerit ve katalog sekmeyi Yahoo sembolüyle açtığından, yerel arama da bu
+/// haritayla eşlenmek zorundadır; aksi halde bu semboller store'da hiç bulunmaz
+/// ve her tıklama gereksiz bir canlı Yahoo çekimine dönüşür.
+const RENAMED_TICKERS: &[(&str, &str)] = &[
+    ("GC=F", "Altın Ons ($)"),
+    ("SI=F", "Gümüş Ons ($)"),
+    ("USDTRY=X", "USD/TRY"),
+];
+
+/// Yahoo sembolünün store'da saklandığı görünen adı döndürür (varsa).
+pub fn display_ticker(symbol: &str) -> Option<&'static str> {
+    RENAMED_TICKERS.iter().find(|(sym, _)| *sym == symbol).map(|(_, name)| *name)
+}
+
+/// Gösterge önbelleğinin ömrü. Şerit 30 saniyede bir yenilendiği ve pano ile
+/// komut paleti de aynı ucu çağırdığı için, önbellek olmadan her açılış 14 canlı
+/// Yahoo isteği doğuruyordu.
+const METRICS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(45);
+
+static METRICS_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<(std::time::Instant, Vec<MarketMetric>)>>> =
+    std::sync::OnceLock::new();
+
+fn cached_metrics() -> Option<Vec<MarketMetric>> {
+    let cache = METRICS_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    let guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+    guard
+        .as_ref()
+        .filter(|(fetched_at, _)| fetched_at.elapsed() < METRICS_CACHE_TTL)
+        .map(|(_, rows)| rows.clone())
+}
+
+/// Piyasa göstergelerini döndürür; `METRICS_CACHE_TTL` içinde önbellekten verir.
 pub async fn fetch_market_metrics(client: &reqwest::Client) -> Vec<MarketMetric> {
-    let indices = [
-        ("XU100.IS", "BIST 100"), ("XU030.IS", "BIST 30"),
-        ("XU050.IS", "BIST 50"), ("XBANK.IS", "BIST BANKA"),
-        ("XUSIN.IS", "BIST SINAI"), ("XUTEK.IS", "BIST TEKNOLOJI"),
-        ("XUHIZ.IS", "BIST HIZMETLER"), ("XHARZ.IS", "BIST HALKA ARZ"),
-        ("USDTRY=X", "USD/TRY"),
-        ("EURTRY=X", "EUR/TRY"),
-    ];
+    if let Some(rows) = cached_metrics() {
+        return rows;
+    }
+
+    let rows = fetch_market_metrics_uncached(client).await;
+
+    // Boş sonuç (ağ yok) önbelleğe alınmaz; ağ dönünce hemen toparlansın.
+    if !rows.is_empty() {
+        let cache = METRICS_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+        *cache.lock().unwrap_or_else(|error| error.into_inner()) =
+            Some((std::time::Instant::now(), rows.clone()));
+    }
+    rows
+}
+
+async fn fetch_market_metrics_uncached(client: &reqwest::Client) -> Vec<MarketMetric> {
     let mut tasks = Vec::new();
-    for (ticker, label) in indices {
+    for &(ticker, label) in MARKET_INDICES {
         let client_clone = client.clone();
         tasks.push(tokio::spawn(async move {
-            // Geçici 429/ağ hatalarına karşı tek deneme daha yap
-            let result = match chart(&client_clone, ticker, "5d").await {
-                Ok(r) => r,
-                Err(_) => {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    chart(&client_clone, ticker, "5d").await.ok()?
-                }
-            };
+            let result = chart_with_retry(&client_clone, ticker, "5d").await.ok()?;
 
             let candles = quote_rows(&result);
             let price = result.meta.regular_market_price
@@ -431,7 +598,7 @@ pub async fn fetch_equity(client: &reqwest::Client, ticker: &str, name: &str) ->
         Some(rows) if !rows.is_empty() => rows.clone(),
         _ => get_ticker_memberships(ticker),
     };
-    let result = chart(&client, ticker, "1y").await?;
+    let result = chart_with_retry(client, ticker, "1y").await?;
     let row = equity_from_result(ticker, name, result, memberships);
     let mut rows = vec![crate::fundamentals::enrich_equity(client, row).await];
     crate::isyatirim::enrich_all(client, &mut rows).await;
@@ -440,7 +607,8 @@ pub async fn fetch_equity(client: &reqwest::Client, ticker: &str, name: &str) ->
 
 pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bool) -> Vec<EquityRow> {
     let mut seen = HashSet::new();
-    let mut universe: Vec<(String, String)> = BIST_TICKERS.iter()
+    let mut universe: Vec<(String, String)> = GLOBAL_TICKERS.iter()
+        .chain(BIST_TICKERS.iter())
         .chain(IPO_TICKERS.iter())
         .chain(COMMODITY_TICKERS.iter())
         .copied()
@@ -467,37 +635,41 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
 
     let index_cache = crate::bist_indices::fetch_and_update_indices(force_bist_refresh).await;
 
+    // Tüm evren tek seferde kuyruğa alınır; eşzamanlılığı semafor sınırlar.
+    // Böylece istekler sürekli akar ve batch sınırında bekleme oluşmaz.
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(YAHOO_CONCURRENCY));
+    let mut tasks = Vec::with_capacity(universe.len());
+    for (ticker, name) in universe {
+        let client = client.clone();
+        let gate = gate.clone();
+        let mut memberships = index_cache.memberships.get(ticker.as_str()).cloned().unwrap_or_default();
+        let index_changes = index_cache.changes.get(ticker.as_str()).cloned();
+
+        if COMMODITY_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+            memberships.push("Emtialar".to_string());
+        } else if GLOBAL_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+            memberships.push(GLOBAL_GROUP.to_string());
+        } else if IPO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker)
+            || recent_ipos.contains(ticker.as_str())
+        {
+            memberships.push("BIST HALKA ARZ".to_string());
+        }
+
+        tasks.push(tokio::spawn(async move {
+            // İzin, temel veri zenginleştirmesi de dahil tüm görev boyunca tutulur;
+            // toplam dış istek trafiği bu sayıyla sınırlı kalır.
+            let _permit = gate.acquire().await.map_err(|error| error.to_string())?;
+            let result = chart_with_retry(&client, &ticker, "1y").await?;
+            let mut row = equity_from_result(&ticker, &name, result, memberships);
+            row.index_changes = index_changes;
+            Ok::<EquityRow, String>(crate::fundamentals::enrich_equity(&client, row).await)
+        }));
+    }
+
+    // Görevler kuyruğa alındıkları sırayla toplanır; çıktı sırası deterministik kalır.
     let mut equities = Vec::new();
-    // Yahoo is intentionally queried in bounded batches. Launching the whole
-    // BIST + XHARZ universe at once causes avoidable 429 responses.
-    for batch in universe.chunks(24) {
-        let mut tasks = Vec::new();
-        for (ticker, name) in batch {
-            let client = client.clone();
-            let ticker = ticker.clone();
-            let name = name.clone();
-            let mut memberships = index_cache.memberships.get(ticker.as_str()).cloned().unwrap_or_default();
-            let index_changes = index_cache.changes.get(ticker.as_str()).cloned();
-
-            if COMMODITY_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
-                memberships.push("Emtialar".to_string());
-            } else if IPO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker)
-                || recent_ipos.contains(ticker.as_str())
-            {
-                memberships.push("BIST HALKA ARZ".to_string());
-            }
-
-            tasks.push(tokio::spawn(async move {
-                let result = chart(&client, &ticker, "1y").await?;
-                let mut row = equity_from_result(&ticker, &name, result, memberships);
-                row.index_changes = index_changes;
-                Ok::<EquityRow, String>(crate::fundamentals::enrich_equity(&client, row).await)
-            }));
-        }
-        for task in tasks {
-            if let Ok(Ok(row)) = task.await { equities.push(row); }
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+    for task in tasks {
+        if let Ok(Ok(row)) = task.await { equities.push(row); }
     }
     crate::isyatirim::enrich_all(client, &mut equities).await;
 
@@ -529,18 +701,117 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
         }
     }
 
-    // Rename the base tickers to readable names for the UI
+    // Arayüz için okunur adlar; harita `display_ticker` ile ortak, böylece
+    // yerel arama eşlemesiyle adlandırma birbirinden kopamaz.
     for row in &mut equities {
-        if row.ticker == "GC=F" {
-            row.ticker = "ALTIN (ONS)".to_string();
-        } else if row.ticker == "SI=F" {
-            row.ticker = "GÜMÜŞ (ONS)".to_string();
-        } else if row.ticker == "USDTRY=X" {
-            row.ticker = "USD/TL".to_string();
+        if let Some(name) = display_ticker(&row.ticker) {
+            row.ticker = name.to_string();
         }
     }
 
     equities
+}
+
+/// Artımlı senkron için global/emtia/döviz sembollerinin güncel fiyatı ve
+/// önceki kapanışı: (sembol, fiyat, önceki kapanış). Sembol başına tek "5d"
+/// isteği atılır (~20 istek); BIST evrenine hiç gidilmez — o taraf İş Yatırım
+/// toplu screener'ından beslenir (`isyatirim::current_closes`).
+pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<(String, f64, f64)> {
+    let mut seen = HashSet::new();
+    let symbols: Vec<&'static str> = GLOBAL_TICKERS.iter()
+        .chain(COMMODITY_TICKERS.iter())
+        .map(|(symbol, _)| *symbol)
+        .filter(|symbol| seen.insert(*symbol))
+        .collect();
+
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(YAHOO_CONCURRENCY));
+    let mut tasks = Vec::with_capacity(symbols.len());
+    for symbol in symbols {
+        let client = client.clone();
+        let gate = gate.clone();
+        tasks.push(tokio::spawn(async move {
+            let _permit = gate.acquire().await.ok()?;
+            let result = chart_with_retry(&client, symbol, "5d").await.ok()?;
+            let candles = quote_rows(&result);
+            let price = result.meta.regular_market_price
+                .or_else(|| candles.last().map(|row| row.3))?;
+            let previous = select_previous_close(
+                &candles.iter().map(|row| row.3).collect::<Vec<_>>(),
+                result.meta.previous_close,
+                result.meta.chart_previous_close,
+                price,
+            );
+            Some((symbol.to_string(), price, previous))
+        }));
+    }
+
+    let mut quotes = Vec::new();
+    for task in tasks {
+        if let Ok(Some(quote)) = task.await {
+            quotes.push(quote);
+        }
+    }
+    quotes
+}
+
+/// Ucuz toplu fiyatları mevcut evrenin üzerine işler; güncellenen satır sayısını döndürür.
+///
+/// BIST satırlarında önceki kapanış, satırın eldeki fiyat/değişim ikilisinden
+/// türetilir; böylece değişim yüzdesi aynı tabana göre güncel kalır. Gün
+/// devrildiğinde taban eskir — sapma en geç bir sonraki tam senkronda düzelir.
+/// Göstergelere (RSI vb.) bilerek dokunulmaz: günlük barlarla çalışırlar ve
+/// tam senkron yeniler.
+pub fn apply_incremental_prices(
+    equities: &mut [EquityRow],
+    bist_closes: &HashMap<String, f64>,
+    global_quotes: &[(String, f64, f64)],
+) -> usize {
+    let mut updated = 0;
+
+    // Global/emtia satırları: Yahoo sembolü ya da store'daki görünen adla eşleşir.
+    for (symbol, price, previous) in global_quotes {
+        if *price <= 0.0 { continue; }
+        let display = display_ticker(symbol);
+        for row in equities.iter_mut() {
+            let matches = row.ticker == *symbol
+                || display.map_or(false, |alias| row.ticker == alias);
+            if !matches { continue; }
+            row.price = *price;
+            if *previous > 0.0 {
+                row.change_pct = (*price - *previous) / *previous * 100.0;
+            }
+            updated += 1;
+        }
+    }
+
+    // BIST satırları: İş Yatırım toplu kapanışından güncellenir.
+    for row in equities.iter_mut() {
+        let Some(&close) = bist_closes.get(&row.ticker) else { continue };
+        if close <= 0.0 || row.price <= 0.0 { continue; }
+        let previous = row.price / (1.0 + row.change_pct / 100.0);
+        row.price = close;
+        if previous.is_finite() && previous > 0.0 {
+            row.change_pct = (close - previous) / previous * 100.0;
+        }
+        updated += 1;
+    }
+
+    // Sentetik gram satırları baz satırlardan yeniden türetilir; tam senkrondaki
+    // create_synthetic ile aynı yaklaşım (değişim yüzdesi baz emtiadan gelir).
+    fn base_of(equities: &[EquityRow], ticker: &str) -> Option<(f64, f64)> {
+        equities.iter().find(|row| row.ticker == ticker).map(|row| (row.price, row.change_pct))
+    }
+    let fx = base_of(equities, "USD/TRY").map(|(price, _)| price);
+    for (gram_ticker, base_ticker) in [("GRAM ALTIN", "Altın Ons ($)"), ("GRAM GÜMÜŞ", "Gümüş Ons ($)")] {
+        let (Some((base_price, base_change)), Some(fx_rate)) = (base_of(equities, base_ticker), fx) else { continue };
+        if let Some(row) = equities.iter_mut().find(|row| row.ticker == gram_ticker) {
+            row.price = ((base_price / 31.1034768) * fx_rate * 100.0).round() / 100.0;
+            row.change_pct = base_change;
+            updated += 1;
+        }
+    }
+
+    updated
 }
 
 pub async fn fetch_price_history(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Vec<HistoricalQuote>, String> {
@@ -575,9 +846,11 @@ pub async fn fetch_price_history(client: &reqwest::Client, ticker: &str, range: 
     }
     
     let real_ticker = match ticker {
-        "ALTIN (ONS)" => "GC=F",
-        "GÜMÜŞ (ONS)" => "SI=F",
-        "USD/TL" => "USDTRY=X",
+        "Altın Ons ($)" | "ALTIN (ONS)" => "GC=F",
+        "Gümüş Ons ($)" | "GÜMÜŞ (ONS)" => "SI=F",
+        "USD/TRY" | "USD/TL" => "USDTRY=X",
+        "Brent Petrol ($)" => "BZ=F",
+        "Bitcoin ($)" => "BTC-USD",
         _ => ticker
     };
     
@@ -585,7 +858,7 @@ pub async fn fetch_price_history(client: &reqwest::Client, ticker: &str, range: 
 }
 
 async fn fetch_price_history_direct(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Vec<HistoricalQuote>, String> {
-    let result = chart(client, ticker, range).await?;
+    let result = chart_with_retry(client, ticker, range).await?;
     
     let timestamps = result.timestamp.ok_or("No timestamp data")?;
     let indicators = result.indicators.quote.as_ref().and_then(|q| q.first()).ok_or("No quote data")?;
@@ -611,6 +884,56 @@ async fn fetch_price_history_direct(client: &reqwest::Client, ticker: &str, rang
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Yeniden adlandırılan semboller görünen ada çözülür; yerel arama eşlemesi
+    /// (services::ticker_snapshot) bu haritaya dayanır.
+    #[test]
+    fn renamed_commodities_resolve_display_name() {
+        assert_eq!(display_ticker("GC=F"), Some("Altın Ons ($)"));
+        assert_eq!(display_ticker("SI=F"), Some("Gümüş Ons ($)"));
+        assert_eq!(display_ticker("USDTRY=X"), Some("USD/TRY"));
+        assert_eq!(display_ticker("THYAO"), None);
+    }
+
+    /// Artımlı fiyat işleme: BIST kapanışı türetilmiş önceki kapanışa göre
+    /// yüzde üretir, globaller görünen adla eşleşir, kapsam dışı satır eski
+    /// değerini korur, gram satırları bazdan yeniden hesaplanır.
+    #[test]
+    fn incremental_prices_update_rows_in_place() {
+        fn row(ticker: &str, price: f64, change_pct: f64) -> EquityRow {
+            EquityRow { ticker: ticker.into(), price, change_pct, ..Default::default() }
+        }
+        let mut equities = vec![
+            row("ASELS", 100.0, 25.0),         // önceki kapanış 80'e denk gelir
+            row("THYAO", 300.0, 0.0),          // kapanış gelmeyecek → aynı kalmalı
+            row("Altın Ons ($)", 2000.0, 1.0), // GC=F görünen adıyla eşleşmeli
+            row("USD/TRY", 40.0, 0.5),
+            row("GRAM ALTIN", 2572.0, 1.0),
+        ];
+        let closes = HashMap::from([("ASELS".to_string(), 90.0)]);
+        let globals = vec![
+            ("GC=F".to_string(), 2100.0, 2000.0),
+            ("USDTRY=X".to_string(), 41.0, 40.0),
+        ];
+
+        let updated = apply_incremental_prices(&mut equities, &closes, &globals);
+        assert_eq!(updated, 4, "ASELS + altın + USD/TRY + gram altın");
+
+        assert_eq!(equities[0].price, 90.0);
+        assert!((equities[0].change_pct - 12.5).abs() < 1e-9, "80 tabanına göre %12.5 olmalı: {}", equities[0].change_pct);
+
+        assert_eq!(equities[1].price, 300.0);
+        assert_eq!(equities[1].change_pct, 0.0);
+
+        let gold = equities.iter().find(|r| r.ticker == "Altın Ons ($)").unwrap();
+        assert_eq!(gold.price, 2100.0);
+        assert!((gold.change_pct - 5.0).abs() < 1e-9);
+
+        let gram = equities.iter().find(|r| r.ticker == "GRAM ALTIN").unwrap();
+        let expected = ((2100.0_f64 / 31.1034768) * 41.0 * 100.0).round() / 100.0;
+        assert_eq!(gram.price, expected);
+        assert!((gram.change_pct - 5.0).abs() < 1e-9, "gram değişimi baz emtiayı izler");
+    }
 
     #[tokio::test]
     #[ignore = "requires live Yahoo access"]
@@ -691,6 +1014,37 @@ mod tests {
         let mut symbols = HashSet::new();
         for (ticker, _) in BIST_TICKERS.iter().chain(IPO_TICKERS.iter()) {
             assert!(symbols.insert(*ticker), "duplicate universe symbol: {ticker}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    #[test]
+    fn global_and_commodity_tickers_get_their_own_group() {
+        // Global hisse: BIST listelerine sızmamalı.
+        let apple = get_ticker_memberships("AAPL");
+        assert_eq!(apple, vec![GLOBAL_GROUP.to_string()]);
+
+        // Emtia: eskiden olduğu gibi kendi grubunda.
+        assert_eq!(get_ticker_memberships("GC=F"), vec!["Emtialar".to_string()]);
+
+        // BIST hissesi: global grubu almamalı, endeks üyeliklerini korumalı.
+        let thyao = get_ticker_memberships("THYAO");
+        assert!(!thyao.contains(&GLOBAL_GROUP.to_string()), "BIST hissesi Global etiketi almamalı");
+        assert!(thyao.iter().any(|m| m.starts_with("BIST")), "THYAO bir BIST endeksinde olmalı: {thyao:?}");
+    }
+
+    #[test]
+    fn global_group_covers_every_configured_global_ticker() {
+        for (ticker, _) in GLOBAL_TICKERS {
+            let groups = get_ticker_memberships(ticker);
+            assert!(
+                groups.contains(&GLOBAL_GROUP.to_string()),
+                "{ticker} Global grubuna girmeli, bulunan: {groups:?}"
+            );
         }
     }
 }

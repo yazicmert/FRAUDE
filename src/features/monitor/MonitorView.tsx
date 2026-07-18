@@ -7,20 +7,21 @@ import {
   markMonitorAlertsRead,
   clearMonitorAlerts,
 } from '../../api/tauriClient';
+import { useTranslation } from '../../api/i18n';
 import type { AiAgent, MonitorState, MonitorAlert, MonitorEventType } from '../../types';
 
-const EVENT_META: Record<MonitorEventType, { label: string; icon: string; color: string }> = {
-  ownership: { label: 'Ortaklık / Pay değişimi', icon: '🔴', color: '#f85149' },
-  business: { label: 'Yeni iş ilişkisi', icon: '🤝', color: '#58a6ff' },
-  capital: { label: 'Sermaye / Kâr payı', icon: '💰', color: '#d29922' },
-  other: { label: 'Diğer', icon: '📄', color: '#8b949e' },
+const EVENT_META: Record<MonitorEventType, { labelKey: string; icon: string; color: string }> = {
+  ownership: { labelKey: 'monEvOwnership', icon: '🔴', color: '#f85149' },
+  business: { labelKey: 'monEvBusiness', icon: '🤝', color: '#58a6ff' },
+  capital: { labelKey: 'monEvCapital', icon: '💰', color: '#d29922' },
+  other: { labelKey: 'monEvOther', icon: '📄', color: '#8b949e' },
 };
 
 const INTERVAL_OPTIONS = [
-  { label: '5 dk', secs: 5 * 60 },
-  { label: '15 dk', secs: 15 * 60 },
-  { label: '30 dk', secs: 30 * 60 },
-  { label: '1 saat', secs: 60 * 60 },
+  { labelKey: 'monInt5m', secs: 5 * 60 },
+  { labelKey: 'monInt15m', secs: 15 * 60 },
+  { labelKey: 'monInt30m', secs: 30 * 60 },
+  { labelKey: 'monInt1h', secs: 60 * 60 },
 ];
 
 type FilterKey = 'all' | MonitorEventType;
@@ -34,10 +35,20 @@ export default function MonitorView({
   onState: (s: MonitorState) => void;
   onSelectTicker?: (ticker: string) => void;
 }) {
+  const { t, lang } = useTranslation();
   const [agents, setAgents] = useState<AiAgent[]>([]);
   const [scanning, setScanning] = useState(false);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [busy, setBusy] = useState(false);
+  // Tauri'nin macOS WebView'ü window.confirm desteklemez (sessizce false döner
+  // ve "Temizle" hiç çalışmazdı); onay iki aşamalı düğmeyle alınır.
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    if (!confirmClear) return;
+    const timer = setTimeout(() => setConfirmClear(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmClear]);
 
   useEffect(() => {
     invoke<AiAgent[]>('list_ai_agents').then(setAgents).catch(() => {});
@@ -77,11 +88,12 @@ export default function MonitorView({
   };
 
   const handleClear = async () => {
-    if (!confirm('Tüm uyarılar temizlensin mi? (Görülen bildirimler tekrar uyarı üretmez.)')) return;
     try {
       onState(await clearMonitorAlerts());
     } catch (err) {
       console.error(err);
+    } finally {
+      setConfirmClear(false);
     }
   };
 
@@ -95,7 +107,7 @@ export default function MonitorView({
   const visibleAlerts = filter === 'all' ? alerts : alerts.filter((a) => a.event_type === filter);
 
   if (!state) {
-    return <div className="empty-state" style={{ padding: '40px' }}>İzleme durumu yükleniyor...</div>;
+    return <div className="empty-state" style={{ padding: '40px' }}>{t('monLoading')}</div>;
   }
 
   const { config } = state;
@@ -104,11 +116,10 @@ export default function MonitorView({
     <div className="view" style={{ padding: '24px', maxWidth: '1100px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <p className="eyebrow" style={{ margin: 0 }}>KAP İZLEME MOTORU</p>
-          <h1 style={{ margin: '4px 0' }}>Ortaklık & İş İlişkisi Radarı</h1>
+          <p className="eyebrow" style={{ margin: 0 }}>{t('monEyebrow')}</p>
+          <h1 style={{ margin: '4px 0' }}>{t('monTitle')}</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0, maxWidth: '640px' }}>
-            Takip listenizdeki hisselerin KAP bildirimleri periyodik taranır. Ortak pay satışı, yeni sözleşme /
-            iş birliği gibi gelişmeler yakalanır, önemli olanlar yapay zekaya yorumlatılır ve size bildirilir.
+            {t('monDesc')}
           </p>
         </div>
         <button
@@ -121,7 +132,7 @@ export default function MonitorView({
             color: config.tickers.length && !scanning ? '#000' : 'gray',
           }}
         >
-          {scanning ? '⏳ Taranıyor... (KAP + AI)' : '▶ Şimdi Tara'}
+          {scanning ? t('monScanning') : t('monScanNow')}
         </button>
       </div>
 
@@ -129,11 +140,11 @@ export default function MonitorView({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', marginTop: '20px', padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
           <input type="checkbox" checked={config.enabled} disabled={busy} onChange={(e) => patchConfig({ enabled: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }} />
-          <strong>İzleme {config.enabled ? 'açık' : 'kapalı'}</strong>
+          <strong>{config.enabled ? t('monEnabledOn') : t('monEnabledOff')}</strong>
         </label>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
-          <span style={{ color: 'var(--text-muted)' }}>Aralık:</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t('monInterval')}</span>
           <div style={{ display: 'flex', gap: '4px' }}>
             {INTERVAL_OPTIONS.map((opt) => (
               <button
@@ -144,21 +155,21 @@ export default function MonitorView({
                 className={`small-button ${config.interval_secs === opt.secs ? 'active' : ''}`}
                 style={{ background: config.interval_secs === opt.secs ? 'var(--accent-primary)' : 'var(--bg-elevated)', color: config.interval_secs === opt.secs ? '#000' : 'var(--text-primary)' }}
               >
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             ))}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
-          <span style={{ color: 'var(--text-muted)' }}>Yorumlayan ajan:</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t('monAgent')}</span>
           <select
             value={config.agent_id ?? ''}
             disabled={busy}
             onChange={(e) => (e.target.value ? patchConfig({ agent_id: e.target.value }) : patchConfig({ clear_agent: true }))}
             style={{ padding: '6px 8px', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '0.8rem' }}
           >
-            <option value="">Varsayılan AI anahtarı</option>
+            <option value="">{t('monDefaultKey')}</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -167,18 +178,18 @@ export default function MonitorView({
 
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', marginLeft: 'auto' }}>
           <input type="checkbox" checked={config.os_notifications} disabled={busy} onChange={(e) => patchConfig({ os_notifications: e.target.checked })} style={{ width: '15px', height: '15px', accentColor: 'var(--accent-primary)' }} />
-          <span>Masaüstü bildirimi</span>
+          <span>{t('monOsNotif')}</span>
         </label>
       </div>
 
       {/* İZLENEN HİSSELER */}
       <div style={{ marginTop: '16px', fontSize: '0.82rem' }}>
         <span style={{ color: 'var(--text-muted)', marginRight: '8px' }}>
-          İzlenen ({config.tickers.length}):
+          {t('monWatched')} ({config.tickers.length}):
         </span>
         {config.tickers.length === 0 ? (
           <span style={{ color: '#d29922' }}>
-            Takip listeniz boş. Bir hisseyi izlemek için hisse detayında ☆ Portföye Ekle deyin.
+            {t('monEmptyWatch')}
           </span>
         ) : (
           <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -187,7 +198,7 @@ export default function MonitorView({
               return (
                 <span
                   key={tk}
-                  title={watched ? 'İzleniyor (ilk tarama tamam)' : 'İlk tarama bekleniyor'}
+                  title={watched ? t('monWatchedTip') : t('monBaselineTip')}
                   onClick={() => onSelectTicker?.(tk)}
                   style={{ cursor: onSelectTicker ? 'pointer' : 'default', padding: '3px 8px', borderRadius: '10px', border: '1px solid var(--border-color)', background: watched ? 'rgba(63,185,80,0.1)' : 'rgba(255,255,255,0.04)', color: watched ? '#3fb950' : 'var(--text-muted)', fontWeight: 600 }}
                 >
@@ -199,14 +210,14 @@ export default function MonitorView({
         )}
       </div>
       <div style={{ marginTop: '6px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-        {state.last_run ? `Son tarama: ${new Date(state.last_run).toLocaleString('tr-TR')}` : 'Henüz tarama yapılmadı.'}
+        {state.last_run ? t('monLastRun', { time: new Date(state.last_run).toLocaleString(lang === 'tr' ? 'tr-TR' : 'en-US') }) : t('monNeverRun')}
       </div>
 
       {/* FİLTRE + EYLEMLER */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '22px', paddingBottom: '10px', borderBottom: '1px solid var(--border-color)' }}>
         {(['all', 'ownership', 'business', 'capital', 'other'] as FilterKey[]).map((key) => {
           const active = filter === key;
-          const label = key === 'all' ? 'Tümü' : EVENT_META[key].label;
+          const label = key === 'all' ? t('ecoCalFilterAll') : t(EVENT_META[key].labelKey);
           return (
             <button
               key={key}
@@ -221,7 +232,16 @@ export default function MonitorView({
         })}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
           {alerts.length > 0 && (
-            <button type="button" className="small-button" onClick={handleClear}>Temizle</button>
+            confirmClear ? (
+              <>
+                <button type="button" className="small-button" onClick={() => void handleClear()} style={{ background: '#f85149', color: '#fff', fontWeight: 700 }}>
+                  {t('monClearConfirm')}
+                </button>
+                <button type="button" className="small-button" onClick={() => setConfirmClear(false)}>{t('aiCancel')}</button>
+              </>
+            ) : (
+              <button type="button" className="small-button" title={t('monClearHint')} onClick={() => setConfirmClear(true)}>{t('monClear')}</button>
+            )
           )}
         </div>
       </div>
@@ -230,9 +250,7 @@ export default function MonitorView({
       <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {visibleAlerts.length === 0 ? (
           <div className="empty-state" style={{ padding: '36px', fontSize: '0.86rem' }}>
-            {alerts.length === 0
-              ? 'Henüz uyarı yok. İlk tarama mevcut KAP geçmişini temel alır (uyarı üretmez); bundan sonra çıkan yeni bildirimlerden yalnızca materyal olanlar (ortaklık, iş ilişkisi, sermaye) burada belirir. Rutin bildirimler (faaliyet raporu vb.) elenir — tam akış için KAP Feed sekmesini kullanın.'
-              : 'Bu filtrede uyarı yok.'}
+            {alerts.length === 0 ? t('monEmptyAlerts') : t('monEmptyFilter')}
           </div>
         ) : (
           visibleAlerts.map((alert) => <AlertCard key={alert.id} alert={alert} onSelectTicker={onSelectTicker} />)
@@ -243,12 +261,13 @@ export default function MonitorView({
 }
 
 function AlertCard({ alert, onSelectTicker }: { alert: MonitorAlert; onSelectTicker?: (t: string) => void }) {
+  const { t } = useTranslation();
   const meta = EVENT_META[alert.event_type];
   return (
     <div style={{ border: `1px solid ${meta.color}44`, borderLeft: `4px solid ${meta.color}`, borderRadius: '10px', background: 'var(--bg-panel)', padding: '16px', boxShadow: alert.read ? 'none' : `0 0 0 1px ${meta.color}22` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: `${meta.color}22`, color: meta.color }}>
-          {meta.icon} {meta.label}
+          {meta.icon} {t(meta.labelKey)}
         </span>
         <span
           onClick={() => onSelectTicker?.(alert.ticker)}
@@ -274,7 +293,7 @@ function AlertCard({ alert, onSelectTicker }: { alert: MonitorAlert; onSelectTic
       {alert.ai_comment && (
         <div style={{ marginTop: '12px', padding: '12px 14px', background: 'rgba(0,0,0,0.22)', borderRadius: '8px', borderLeft: '3px solid var(--accent-primary)' }}>
           <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--accent-primary)', marginBottom: '6px', fontWeight: 700 }}>
-            🤖 Yapay Zeka Yorumu
+            🤖 {t('monAiComment')}
           </div>
           <div style={{ fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>
             {alert.ai_comment}
@@ -286,10 +305,11 @@ function AlertCard({ alert, onSelectTicker }: { alert: MonitorAlert; onSelectTic
 }
 
 function SeverityDots({ severity }: { severity: number }) {
+  const { t } = useTranslation();
   const level = severity >= 9 ? 3 : severity >= 7 ? 2 : 1;
   const color = level === 3 ? '#f85149' : level === 2 ? '#d29922' : '#8b949e';
   return (
-    <span title={`Önem: ${severity}/10`} style={{ display: 'inline-flex', gap: '2px' }}>
+    <span title={t('monSeverity', { s: severity })} style={{ display: 'inline-flex', gap: '2px' }}>
       {[1, 2, 3].map((i) => (
         <span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: i <= level ? color : 'rgba(255,255,255,0.15)' }} />
       ))}

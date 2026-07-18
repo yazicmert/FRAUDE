@@ -22,6 +22,7 @@ const SettingsView = lazy(() => import('../features/settings/SettingsView'));
 const TickerView = lazy(() => import('../features/ticker/TickerView'));
 const IndexView = lazy(() => import('../features/index/IndexView'));
 const NewsFeedView = lazy(() => import('../features/news/NewsFeedView'));
+const FundsView = lazy(() => import('../features/funds/FundsView'));
 const ModuleCenterView = lazy(() => import('../features/modules/ModuleCenterView'));
 const TeamView = lazy(() => import('../features/team/TeamView'));
 const CorporateActionsView = lazy(() => import('../features/corporate/CorporateActionsView'));
@@ -122,7 +123,7 @@ export const workspaceModules: WorkspaceModule[] = [
       'dashboard',
     ),
     render: (_tab, host) => (
-      <DashboardView onSelectTicker={host.openTicker} onSelectIndex={host.openIndex} />
+      <DashboardView onSelectTicker={host.openTicker} />
     ),
   },
   {
@@ -168,6 +169,22 @@ export const workspaceModules: WorkspaceModule[] = [
       'newsFeed',
     ),
     render: () => <NewsFeedView />,
+  },
+  {
+    kind: 'funds',
+    titleKey: 'funds',
+    manifest: manifest(
+      'fraude.funds',
+      { tr: 'Fonlar', en: 'Funds' },
+      {
+        tr: 'TEFAS yatırım, emeklilik ve borsa yatırım fonları; portföy dağılımı ve kurucu künyesi.',
+        en: 'TEFAS mutual, pension and exchange-traded funds; portfolio breakdown and issuer profile.',
+      },
+      ['api:market-data'],
+      'funds',
+      'funds',
+    ),
+    render: () => <FundsView />,
   },
   {
     kind: 'ai',
@@ -234,6 +251,11 @@ export const workspaceModules: WorkspaceModule[] = [
   {
     kind: 'guide',
     titleKey: 'guide',
+    // Kenar çubuğunda değil, üst çubuktaki kitap ikonunda yaşar (App.tsx);
+    // komut paleti girişini App ayrıca ekler. Açılışta sekme de açmaz —
+    // yalnızca ikondan/paletten istenince gelir.
+    nav: false,
+    defaultTab: false,
     manifest: manifest(
       'fraude.guide',
       { tr: 'Rehber', en: 'Guide' },
@@ -256,6 +278,11 @@ export const workspaceModules: WorkspaceModule[] = [
   {
     kind: 'settings',
     titleKey: 'settings',
+    // Kenar çubuğunda değil, üst çubuktaki dişli ikonunda yaşar (App.tsx, ⌘,);
+    // komut paleti girişini App ayrıca ekler. Açılışta sekme de açmaz —
+    // yalnızca ikondan/paletten (⌘,) istenince gelir.
+    nav: false,
+    defaultTab: false,
     manifest: manifest(
       'fraude.settings',
       { tr: 'Ayarlar', en: 'Settings' },

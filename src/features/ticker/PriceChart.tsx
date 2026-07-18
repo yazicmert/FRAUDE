@@ -1,14 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { AreaSeries, CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, PriceScaleMode, type Time } from 'lightweight-charts';
+// Grafik kurulumu efekt bağımlılıklarına t eklenirse her render'da yeniden
+// çizilirdi; bu yüzden i18next örneği doğrudan kullanılır.
+import i18n from '../../i18n';
 import type { HistoricalQuote } from '../../types';
 
 interface PriceChartProps {
   ticker: string;
   data: HistoricalQuote[];
   range?: string;
+  /** Gecikmeli canlı fiyat; verilirse son bar yerinde güncellenir. */
+  livePrice?: number | null;
 }
 
 type ChartKind = 'candles' | 'line' | 'area';
+
+/** Aralık butonu → görünür pencere (saniye). 'max' ve bilinmeyenler tam sığdırır. */
+const RANGE_SECONDS: Record<string, number> = {
+  '1mo': 31 * 86_400,
+  '3mo': 93 * 86_400,
+  '6mo': 186 * 86_400,
+  '1y': 366 * 86_400,
+  '5y': 1_826 * 86_400,
+};
 
 interface Point { time: Time; value: number }
 
@@ -107,9 +121,14 @@ const toggleStyle = (active: boolean): React.CSSProperties => ({
   cursor: 'pointer',
 });
 
-export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartProps) {
+export default function PriceChart({ ticker, data, range = '6mo', livePrice }: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
+  // Canlı tik grafiği yeniden kurmadan son barı günceller; bu yüzden ana seri
+  // ve son bar effect dışında da erişilebilir tutulur.
+  const activeSeriesRef = useRef<any>(null);
+  const lastBarRef = useRef<{ time: Time; open: number; high: number; low: number; close: number } | null>(null);
+  const kindRef = useRef<ChartKind>('candles');
 
   const [kind, setKind] = useState<ChartKind>('candles');
   const [showSMA20, setShowSMA20] = useState(true);
@@ -209,11 +228,11 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
     if (showBB) {
       const { upper, middle, lower } = calculateBollinger(closeData, 20, 2);
       const bandColor = 'rgba(130, 170, 255, 0.55)';
-      const up = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: 'BB Üst', priceLineVisible: false, lastValueVisible: false });
+      const up = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: i18n.t('bbUpper'), priceLineVisible: false, lastValueVisible: false });
       up.setData(upper);
-      const lo = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: 'BB Alt', priceLineVisible: false, lastValueVisible: false });
+      const lo = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: i18n.t('bbLower'), priceLineVisible: false, lastValueVisible: false });
       lo.setData(lower);
-      const mid = chart.addSeries(LineSeries, { color: 'rgba(130, 170, 255, 0.3)', lineWidth: 1, title: 'BB Orta', priceLineVisible: false, lastValueVisible: false });
+      const mid = chart.addSeries(LineSeries, { color: 'rgba(130, 170, 255, 0.3)', lineWidth: 1, title: i18n.t('bbMiddle'), priceLineVisible: false, lastValueVisible: false });
       mid.setData(middle);
     }
 
@@ -249,15 +268,21 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
       for (let i = 1; i < panes.length; i++) panes[i].setHeight(paneHeight);
     }
 
-    if (range === 'max') {
-      chart.timeScale().fitContent();
+    // Aralık butonu yalnızca görünür pencereyi seçer; veri tam yüklü olduğundan
+    // her aralıkta sola sürükleyerek serinin en başına kadar gidilebilir.
+    const span = RANGE_SECONDS[range];
+    if (span && chartData.length > 1) {
+      const to = chartData[chartData.length - 1].time as number;
+      const from = Math.max(to - span, chartData[0].time as number);
+      chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
     } else {
-      const barsByRange: Record<string, number> = { '1mo': 22, '3mo': 65, '6mo': 130, '1y': 250, '5y': 1250 };
-      const barsToShow = Math.min(chartData.length, barsByRange[range] ?? chartData.length);
-      chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, chartData.length - barsToShow), to: Math.max(0, chartData.length - 1),
-      });
+      chart.timeScale().fitContent();
     }
+
+    // Canlı tik için erişim noktaları
+    activeSeriesRef.current = activeSeries;
+    kindRef.current = effectiveKind;
+    lastBarRef.current = chartData.length > 0 ? { ...chartData[chartData.length - 1] } : null;
 
     // Önceki kapanışa göre değişim için hızlı erişim
     const prevCloseByTime = new Map<number, number>();
@@ -280,7 +305,7 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
       const rsiPoint = rsiSeries ? (param.seriesData.get(rsiSeries) as any) : null;
       if (!dataPoint) return;
 
-      const dateStr = new Date((param.time as number) * 1000).toLocaleDateString('tr-TR');
+      const dateStr = new Date((param.time as number) * 1000).toLocaleDateString(i18n.language === 'tr' ? 'tr-TR' : 'en-US');
       let html = `<div style="font-size: 13px; font-weight: bold; margin-bottom: 4px; color: #fff;">${dateStr} · ${ticker}</div>`;
 
       const close = dataPoint.value !== undefined ? dataPoint.value : dataPoint.close;
@@ -291,21 +316,21 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
         : '';
 
       if (dataPoint.value !== undefined) {
-        html += `<div style="color: #c9d1d9;">Kapanış: <span style="font-weight: bold; color: #fff;">${close.toFixed(2)}</span>${changeHtml}</div>`;
+        html += `<div style="color: #c9d1d9;">${i18n.t('chartClose')}: <span style="font-weight: bold; color: #fff;">${close.toFixed(2)}</span>${changeHtml}</div>`;
       } else {
         const color = dataPoint.close >= dataPoint.open ? '#3fb950' : '#f85149';
         html += `
           <div style="display: grid; grid-template-columns: auto auto; gap: 4px 12px; color: #c9d1d9; font-size: 12px;">
-            <div>Açılış: <span style="font-weight: bold; color: ${color};">${dataPoint.open.toFixed(2)}</span></div>
-            <div>Yüksek: <span style="font-weight: bold; color: #fff;">${dataPoint.high.toFixed(2)}</span></div>
-            <div>Kapanış: <span style="font-weight: bold; color: ${color};">${dataPoint.close.toFixed(2)}</span>${changeHtml}</div>
-            <div>Düşük: <span style="font-weight: bold; color: #fff;">${dataPoint.low.toFixed(2)}</span></div>
+            <div>${i18n.t('chartOpen')}: <span style="font-weight: bold; color: ${color};">${dataPoint.open.toFixed(2)}</span></div>
+            <div>${i18n.t('chartHigh')}: <span style="font-weight: bold; color: #fff;">${dataPoint.high.toFixed(2)}</span></div>
+            <div>${i18n.t('chartClose')}: <span style="font-weight: bold; color: ${color};">${dataPoint.close.toFixed(2)}</span>${changeHtml}</div>
+            <div>${i18n.t('chartLow')}: <span style="font-weight: bold; color: #fff;">${dataPoint.low.toFixed(2)}</span></div>
           </div>`;
       }
       if (volPoint && volPoint.value) {
         const vol = volPoint.value;
         const formattedVol = vol > 1000000 ? (vol / 1000000).toFixed(2) + 'M' : vol > 1000 ? (vol / 1000).toFixed(1) + 'K' : String(vol);
-        html += `<div style="margin-top: 4px; font-size: 12px; color: #8b949e;">Hacim: <span style="color: #c9d1d9;">${formattedVol}</span></div>`;
+        html += `<div style="margin-top: 4px; font-size: 12px; color: #8b949e;">${i18n.t('volumeLabel')}: <span style="color: #c9d1d9;">${formattedVol}</span></div>`;
       }
       if (rsiPoint && rsiPoint.value !== undefined) {
         const rsiColor = rsiPoint.value > 70 ? '#f85149' : rsiPoint.value < 30 ? '#3fb950' : '#c9d1d9';
@@ -321,9 +346,27 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
+      activeSeriesRef.current = null;
+      lastBarRef.current = null;
       chart.remove();
     };
   }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
+
+  // Gecikmeli canlı fiyat son (bugünkü) bara işlenir; grafik yeniden kurulmaz,
+  // göstergeler günlük kaldığından yeniden hesaplanmaz.
+  useEffect(() => {
+    const series = activeSeriesRef.current;
+    const last = lastBarRef.current;
+    if (!series || !last || !livePrice || livePrice <= 0) return;
+    last.high = Math.max(last.high, livePrice);
+    last.low = Math.min(last.low, livePrice);
+    last.close = livePrice;
+    if (kindRef.current === 'candles') {
+      series.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+    } else {
+      series.update({ time: last.time, value: livePrice });
+    }
+  }, [livePrice]);
 
   return (
     <div>
@@ -331,18 +374,18 @@ export default function PriceChart({ ticker, data, range = '6mo' }: PriceChartPr
         <div style={{ display: 'flex', gap: '4px', marginRight: '10px' }}>
           {(['candles', 'line', 'area'] as const).map((k) => (
             <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
-              {k === 'candles' ? 'Mum' : k === 'line' ? 'Çizgi' : 'Alan'}
+              {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
             </button>
           ))}
         </div>
         <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
         <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
         <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
-        <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title="Bollinger Bantları (20, 2)">BB</button>
-        <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>Hacim</button>
+        <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
+        <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
         <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
         <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
-        <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title="Logaritmik fiyat ölçeği">Log</button>
+        <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
       </div>
       <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
         <div

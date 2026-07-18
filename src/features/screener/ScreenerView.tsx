@@ -84,21 +84,19 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
           >
             {t('presetDeepValue')}
           </button>
-          <button 
-            type="button" 
+          {/* "Büyüme" ve "Kalite (marj)" presetleri kaldırıldı: satış/kâr
+              büyümesi ve marj alanları evren düzeyinde hiçbir kaynaktan
+              dolmuyor (İş Yatırım screener yalnız tahmin verir), bu filtreler
+              her zaman boş sonuç üretiyordu. Yerine gerçek veriyle çalışan
+              Değer taraması kondu (F/K + ROE İş Yatırım Cari'den gelir). */}
+          <button
+            type="button"
             className="secondary-button"
-            onClick={() => void execute('where sales_growth > 15 where profit_growth > 15')}
+            onClick={() => void execute('where fk < 10 where roe > 20')}
           >
-            {t('presetGrowth')}
+            {t('presetValue')}
           </button>
-          <button 
-            type="button" 
-            className="secondary-button"
-            onClick={() => void execute('where roe > 15 where net_margin > 10')}
-          >
-            {t('presetQuality')}
-          </button>
-          <button 
+          <button
             type="button" 
             className="secondary-button"
             onClick={() => void execute('where macd > 0 where ema20 > sma50')}

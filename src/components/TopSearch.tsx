@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { getDashboardSnapshot } from '../api/tauriClient';
 import { isDataRuntimeConfigured } from '../api/platformClient';
+import { useTranslation } from '../api/i18n';
 import type { EquityRow } from '../types';
 import { PRESET_SYMBOLS, normalizeSearch, presetMatchesQuery, PresetSymbol } from './symbolCatalog';
 
 interface TopSearchProps {
   placeholder: string;
+  /** Kutunun sağında gösterilen kısayol rozeti (ör. komut paleti ⌘K). */
+  hintKeys?: string[];
   onCommand: (cmd: string) => void;
   onSelectTicker: (ticker: string) => void;
   onSelectIndex: (symbol: string) => void;
@@ -27,7 +30,8 @@ function isCommandInput(value: string): boolean {
  * varlıklarında canlı arama yapar; ask/open/scan gibi girdiler FQL komutu
  * olarak çalıştırılır.
  */
-export default function TopSearch({ placeholder, onCommand, onSelectTicker, onSelectIndex }: TopSearchProps) {
+export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTicker, onSelectIndex }: TopSearchProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -120,6 +124,11 @@ export default function TopSearch({ placeholder, onCommand, onSelectTicker, onSe
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={handleKeyDown}
       />
+      {hintKeys && hintKeys.length > 0 && !value && (
+        <span className="top-input-kbd">
+          {hintKeys.map((key) => <kbd key={key}>{key}</kbd>)}
+        </span>
+      )}
       {open && query.length > 0 && !command && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
@@ -130,7 +139,7 @@ export default function TopSearch({ placeholder, onCommand, onSelectTicker, onSe
         }}>
           {suggestions.length === 0 ? (
             <div style={{ padding: '10px 12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Sonuç bulunamadı. Komutlar: ask, open, scan, kap, sync, help.
+              {t('searchNoResults')}
             </div>
           ) : (
             <>
@@ -156,7 +165,7 @@ export default function TopSearch({ placeholder, onCommand, onSelectTicker, onSe
                       {suggestion.name}
                     </span>
                     <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1px 6px' }}>
-                      Hisse
+                      {t('hintEquity')}
                     </span>
                   </div>
                 ) : (
@@ -179,7 +188,7 @@ export default function TopSearch({ placeholder, onCommand, onSelectTicker, onSe
                 );
               })}
               <div style={{ padding: '5px 12px', fontSize: '0.62rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)' }}>
-                ↑↓ gezin · Enter aç · Esc kapat · Komut için: ask, open, scan...
+                {t('searchFooterHint')}
               </div>
             </>
           )}

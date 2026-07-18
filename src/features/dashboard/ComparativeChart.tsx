@@ -34,7 +34,7 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
   const [loading, setLoading] = useState(false);
 
   const displayName = (sym: string) =>
-    sym === 'PORTFOLIO' ? (t('modelPortfolioLabel') || 'Model Portföy') : (presetBySymbol.get(sym)?.label ?? sym.replace('.IS', ''));
+    sym === 'PORTFOLIO' ? t('modelPortfolioLabel') : (presetBySymbol.get(sym)?.label ?? sym.replace('.IS', ''));
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -252,14 +252,14 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
             fontWeight: symbols.includes('PORTFOLIO') ? 'bold' : 'normal',
           }}
         >
-          Model Portföy
+          {t('modelPortfolioLabel')}
         </button>
         {symbols.filter(s => s !== 'PORTFOLIO').map(sym => (
           <button
             key={sym}
             className="small-button active"
             onClick={() => removeSymbol(sym)}
-            title="Grafikten çıkar"
+            title={t('removeFromChart')}
             style={{ background: COLORS[symbols.indexOf(sym) % COLORS.length], color: '#000', fontWeight: 'bold' }}
           >
             {displayName(sym)} ×
@@ -270,7 +270,7 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
           <div style={{ position: 'relative' }}>
             <input
               type="text"
-              placeholder="Hisse, endeks, emtia ara..."
+              placeholder={t('compareSearchPlaceholder')}
               value={search}
               autoComplete="off"
               onChange={e => { setSearch(e.target.value); setSearchOpen(true); }}
@@ -301,7 +301,7 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
                 ))}
                 {presetMatches.length === 0 && equityMatches.length === 0 && (
                   <div style={{ padding: '8px 10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Sonuç bulunamadı. Yahoo sembolünü doğrudan yazıp "Ekle"ye basabilirsiniz (örn. GC=F, BTC-USD, ^GSPC).
+                    {t('compareNoResults')}
                   </div>
                 )}
                 {presetMatches.map((p, index) => {

@@ -33,7 +33,7 @@ pub struct MarketMetric {
     pub as_of_ts: Option<i64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct EquityRow {
     pub ticker: String,
     pub name: String,

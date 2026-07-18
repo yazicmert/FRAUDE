@@ -1,11 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { runAgentAnalysis } from '../../api/tauriClient';
+import { useTranslation } from '../../api/i18n';
 import type { AgentAnalysisResult, AiAgent, Artifact, SaveArtifactRequest, SaveAiAgentRequest } from '../../types';
 
 export default function TeamView() {
+  const { t } = useTranslation();
   const [agents, setAgents] = useState<AiAgent[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  // Tauri'nin macOS WebView'ü window.confirm desteklemez (sessizce false döner
+  // ve silme hiç çalışmazdı); onay "tekrar tıkla" kalıbıyla alınır.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const timer = setTimeout(() => setPendingDelete(null), 4000);
+    return () => clearTimeout(timer);
+  }, [pendingDelete]);
   
   // Artifact Modal State
   const [showArtifactModal, setShowArtifactModal] = useState(false);
@@ -89,12 +100,13 @@ export default function TeamView() {
   };
 
   const handleDeleteArtifact = async (id: string) => {
-    if (!confirm("Bu artifact'ı silmek istediğinizden emin misiniz? (Bağlı olduğu tüm ajanlardan koparılacaktır)")) return;
     try {
       await invoke('delete_artifact', { id });
       fetchData();
     } catch (e) {
       console.error(e);
+    } finally {
+      setPendingDelete(null);
     }
   };
 
@@ -124,7 +136,7 @@ export default function TeamView() {
       
       {/* AGENTS SECTION */}
       <div style={{ flex: 2, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: 600 }}>Yapay Zeka Ekibi</h2>
+        <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: 600 }}>{t('teamTitle')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
           {agents.map(agent => (
             <div key={agent.id} style={{
@@ -139,16 +151,16 @@ export default function TeamView() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--accent-primary)' }}>{agent.name}</h3>
                 <span style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: '12px', background: agent.is_active ? 'rgba(0,255,157,0.1)' : 'rgba(255,255,255,0.1)', color: agent.is_active ? 'var(--accent-primary)' : 'gray' }}>
-                  {agent.is_active ? 'Aktif' : 'Pasif'}
+                  {agent.is_active ? t('teamActive') : t('teamPassive')}
                 </span>
               </div>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0 0 16px 0', minHeight: '40px' }}>{agent.role_description}</p>
               
               <div style={{ marginTop: 'auto' }}>
-                <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>Bağlı Hisseler ({(agent.linked_tickers || []).length})</h4>
+                <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>{t('teamLinkedTickers')} ({(agent.linked_tickers || []).length})</h4>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
                   {!(agent.linked_tickers && agent.linked_tickers.length > 0) ? (
-                    <span style={{ fontSize: '0.8rem', color: 'gray' }}>Hisse bağlı değil — Ajan Düzenle'den ekleyin.</span>
+                    <span style={{ fontSize: '0.8rem', color: 'gray' }}>{t('teamNoTickers')}</span>
                   ) : (
                     agent.linked_tickers.map(tk => (
                       <span key={tk} style={{ fontSize: '0.75rem', padding: '4px 8px', background: 'rgba(0,255,157,0.08)', borderRadius: '4px', border: '1px solid rgba(0,255,157,0.25)', color: 'var(--accent-primary)', fontWeight: 600 }}>
@@ -169,12 +181,12 @@ export default function TeamView() {
                     fontWeight: 600,
                   }}
                 >
-                  {runningAgentId === agent.id ? '⏳ Analiz ediliyor... (KAP + haberler okunuyor)' : '▶ Analiz Çalıştır'}
+                  {runningAgentId === agent.id ? t('teamAnalyzing') : t('teamRunAnalysis')}
                 </button>
-                <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>Bağlı Artifact'lar ({(agent.linked_artifacts || []).length})</h4>
+                <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>{t('teamLinkedArtifacts')} ({(agent.linked_artifacts || []).length})</h4>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
                   {!(agent.linked_artifacts && agent.linked_artifacts.length > 0) ? (
-                    <span style={{ fontSize: '0.8rem', color: 'gray' }}>Hiçbir belge bağlı değil.</span>
+                    <span style={{ fontSize: '0.8rem', color: 'gray' }}>{t('teamNoArtifacts')}</span>
                   ) : (
                     agent.linked_artifacts.map(artId => {
                       const art = artifacts.find(a => a.id === artId);
@@ -190,7 +202,7 @@ export default function TeamView() {
                   onClick={() => { setEditingAgent(agent); setTickerInput((agent.linked_tickers || []).join(', ')); }}
                   style={{ width: '100%', padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', cursor: 'pointer' }}
                 >
-                  Modülü Yönet / Artifact Bağla
+                  {t('teamManage')}
                 </button>
               </div>
             </div>
@@ -201,24 +213,36 @@ export default function TeamView() {
       {/* ARTIFACTS SECTION */}
       <div style={{ flex: 1, background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px', display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Artifact (Belge) Deposu</h2>
-          <button 
+          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>{t('teamArtifactStore')}</h2>
+          <button
             onClick={() => { setArtifactForm({ title: '', content: '' }); setShowArtifactModal(true); }}
             style={{ padding: '6px 12px', background: 'var(--accent-primary)', color: 'black', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
           >
-            + Yeni Ekle
+            + {t('teamAddNew')}
           </button>
         </div>
         
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {artifacts.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', marginTop: '40px' }}>Sistemde kayıtlı artifact yok.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', marginTop: '40px' }}>{t('teamNoStoredArtifacts')}</p>
           ) : (
             artifacts.map(art => (
               <div key={art.id} style={{ padding: '16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <h3 style={{ margin: 0, fontSize: '1rem' }}>{art.title}</h3>
-                  <button onClick={() => handleDeleteArtifact(art.id)} style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
+                  <button
+                    onClick={() => pendingDelete === art.id ? void handleDeleteArtifact(art.id) : setPendingDelete(art.id)}
+                    title={pendingDelete === art.id ? t('teamDeleteConfirmTip') : t('aiDeleteRecordTitle')}
+                    style={{
+                      background: pendingDelete === art.id ? '#ff4d4f' : 'none',
+                      border: 'none',
+                      color: pendingDelete === art.id ? '#fff' : '#ff4d4f',
+                      borderRadius: '4px', padding: '0 6px',
+                      cursor: 'pointer', fontSize: pendingDelete === art.id ? '0.75rem' : '1.2rem', fontWeight: 700,
+                    }}
+                  >
+                    {pendingDelete === art.id ? t('teamDeleteConfirm') : '×'}
+                  </button>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {art.content}
@@ -236,33 +260,33 @@ export default function TeamView() {
       {showArtifactModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', width: '600px', maxWidth: '90vw', border: '1px solid var(--border-color)' }}>
-            <h2 style={{ marginTop: 0 }}>Yeni Artifact (Belge) Yarat</h2>
+            <h2 style={{ marginTop: 0 }}>{t('teamCreateArtifact')}</h2>
             <form onSubmit={handleSaveArtifact} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem' }}>Belge Başlığı</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem' }}>{t('teamDocTitle')}</label>
                 <input 
                   type="text" 
                   value={artifactForm.title}
                   onChange={e => setArtifactForm({...artifactForm, title: e.target.value})}
                   required
                   style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', boxSizing: 'border-box' }}
-                  placeholder="Örn: Benim Özel Portföy Kurallarım"
+                  placeholder={t('teamDocTitlePh')}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem' }}>İçerik (Kural Seti, Veri vs.)</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem' }}>{t('teamDocContent')}</label>
                 <textarea 
                   value={artifactForm.content}
                   onChange={e => setArtifactForm({...artifactForm, content: e.target.value})}
                   required
                   rows={10}
                   style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', boxSizing: 'border-box', fontFamily: 'monospace' }}
-                  placeholder="Bu ajanın dikkate almasını istediğiniz kalıcı bilgileri veya kuralları buraya yapıştırın..."
+                  placeholder={t('teamDocContentPh')}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                <button type="button" onClick={() => setShowArtifactModal(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', cursor: 'pointer' }}>İptal</button>
-                <button type="submit" style={{ padding: '8px 16px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Kaydet</button>
+                <button type="button" onClick={() => setShowArtifactModal(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', cursor: 'pointer' }}>{t('cancelBtn')}</button>
+                <button type="submit" style={{ padding: '8px 16px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('saveBtn')}</button>
               </div>
             </form>
           </div>
@@ -273,12 +297,11 @@ export default function TeamView() {
       {editingAgent && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', width: '500px', maxWidth: '90vw', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ marginTop: 0, marginBottom: '8px' }}>Ajan Düzenle: {editingAgent.name}</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '8px' }}>{t('teamEditAgent')}: {editingAgent.name}</h2>
 
-            <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>Bağlı Hisseler</h4>
+            <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>{t('teamLinkedTickers')}</h4>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0 0 10px 0' }}>
-              Hisse kodlarını girin (virgülle ayırın). Analiz çalıştırıldığında ajan bu hisselerin
-              KAP bildirimlerini ve haberlerini kendisi çekip okur, özet notu Artifact deposuna kaydeder.
+              {t('teamTickersHint')}
             </p>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
               <input
@@ -286,20 +309,20 @@ export default function TeamView() {
                 value={tickerInput}
                 onChange={e => setTickerInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSaveTickers()}
-                placeholder="Örn: ASELS, THYAO, TUPRS"
+                placeholder={t('teamTickersPh')}
                 style={{ flex: 1, padding: '10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontFamily: 'monospace' }}
               />
               <button onClick={handleSaveTickers} style={{ padding: '10px 16px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-                Kaydet
+                {t('saveBtn')}
               </button>
             </div>
 
-            <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>Bağlı Artifact'lar</h4>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '12px' }}>Ajanın hafızasında kalıcı yer edecek belgeler. Analiz özetleri buraya otomatik eklenir.</p>
+            <h4 style={{ fontSize: '0.8rem', margin: '0 0 8px 0', textTransform: 'uppercase', color: 'gray' }}>{t('teamLinkedArtifacts')}</h4>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '12px' }}>{t('teamArtifactsHint')}</p>
             
             <div style={{ flex: 1, maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
               {artifacts.length === 0 ? (
-                <p style={{ fontSize: '0.9rem', color: 'gray' }}>Sistemde kayıtlı belge yok.</p>
+                <p style={{ fontSize: '0.9rem', color: 'gray' }}>{t('teamNoDocs')}</p>
               ) : (
                 artifacts.map(art => {
                   const isLinked = (editingAgent.linked_artifacts || []).includes(art.id);
@@ -331,7 +354,7 @@ export default function TeamView() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditingAgent(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Tamam</button>
+              <button onClick={() => setEditingAgent(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('okBtn')}</button>
             </div>
           </div>
         </div>
@@ -340,15 +363,15 @@ export default function TeamView() {
       {analysisResult && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
           <div style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', width: '720px', maxWidth: '92vw', maxHeight: '85vh', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ marginTop: 0, marginBottom: '4px' }}>📝 Özet Not Hazır</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '4px' }}>📝 {t('teamSummaryReady')}</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0 0 16px 0' }}>
-              {analysisResult.tickers.join(', ')} · Artifact deposuna kaydedildi ve ajanın hafızasına bağlandı: <em>{analysisResult.artifact_title}</em>
+              {analysisResult.tickers.join(', ')} · {t('teamSummarySaved')} <em>{analysisResult.artifact_title}</em>
             </p>
             <div style={{ flex: 1, overflowY: 'auto', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.65 }}>
               {analysisResult.summary}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-              <button onClick={() => setAnalysisResult(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Tamam</button>
+              <button onClick={() => setAnalysisResult(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('okBtn')}</button>
             </div>
           </div>
         </div>
@@ -358,10 +381,10 @@ export default function TeamView() {
       {analysisError && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
           <div style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', width: '480px', maxWidth: '90vw', border: '1px solid #f8514966' }}>
-            <h3 style={{ marginTop: 0, color: '#f85149' }}>Analiz Başarısız</h3>
+            <h3 style={{ marginTop: 0, color: '#f85149' }}>{t('teamAnalysisFailed')}</h3>
             <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>{analysisError}</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setAnalysisError(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Tamam</button>
+              <button onClick={() => setAnalysisError(null)} style={{ padding: '8px 24px', background: 'var(--accent-primary)', border: 'none', color: 'black', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('okBtn')}</button>
             </div>
           </div>
         </div>

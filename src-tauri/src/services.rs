@@ -20,33 +20,41 @@ pub fn clock_string() -> String {
     format!("unix:{secs}")
 }
 
-pub async fn dashboard(store: &AppStore, client: &reqwest::Client) -> DashboardSnapshot {
-    let mut top_gainers = store.equities.clone();
+/// Canlı piyasa göstergelerini getirir; ağ yoksa aynı listeden yer tutucu üretir.
+///
+/// Ağ erişimi gerektirdiği için store kilidi alınmadan önce çağrılmalıdır.
+pub async fn market_metrics(client: &reqwest::Client) -> Vec<MarketMetric> {
+    let live = crate::yahoo::fetch_market_metrics(client).await;
+    if !live.is_empty() {
+        return live;
+    }
+    // Canlı veri yoksa aynı gösterge listesinden yer tutucu üret; böylece
+    // etiketler frontend'in beklediği anahtarlarla uyumlu kalır.
+    crate::yahoo::MARKET_INDICES
+        .iter()
+        .map(|&(_, label)| MarketMetric {
+            symbol: label.into(),
+            value: "—".into(),
+            change: "—".into(),
+            positive: true,
+            as_of_ts: None,
+        })
+        .collect()
+}
+
+/// Anlık görüntüyü hazır göstergelerle kurar. Ağ erişimi yoktur; store kilidi
+/// altında çağrılması güvenlidir.
+pub fn dashboard(store: &AppStore, market_metrics: Vec<MarketMetric>) -> DashboardSnapshot {
+    // Yükselen/risk listeleri BIST'e özeldir: ABD hisseleri (Global) ve
+    // emtia/döviz satırları elenir; frontend'deki isBistEquity ile aynı kural.
+    let is_bist = |row: &&EquityRow| !row.index_memberships.iter()
+        .any(|group| group == crate::yahoo::GLOBAL_GROUP || group == "Emtialar");
+
+    let mut top_gainers: Vec<EquityRow> = store.equities.iter().filter(is_bist).cloned().collect();
     top_gainers.sort_by(|a, b| b.change_pct.total_cmp(&a.change_pct));
 
-    let mut risk_watch = store.equities.clone();
+    let mut risk_watch: Vec<EquityRow> = store.equities.iter().filter(is_bist).cloned().collect();
     risk_watch.sort_by(|a, b| a.rsi.total_cmp(&b.rsi));
-
-    // Try fetching live market metrics, fall back to hardcoded if it fails
-    let market_metrics = {
-        let live = crate::yahoo::fetch_market_metrics(client).await;
-        if live.is_empty() {
-            vec![
-                MarketMetric { symbol: "BIST 100".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST 30".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST 50".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST BANKA".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST SINAI".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST TEKNOLOJI".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST HIZMETLER".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "BIST HALKA ARZ".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-                MarketMetric { symbol: "USD/TRY".into(), value: "—".into(), change: "—".into(), positive: false, as_of_ts: None },
-                MarketMetric { symbol: "EUR/TRY".into(), value: "—".into(), change: "—".into(), positive: true, as_of_ts: None },
-            ]
-        } else {
-            live
-        }
-    };
 
     DashboardSnapshot {
         generated_at: clock_string(),
@@ -62,10 +70,13 @@ pub async fn dashboard(store: &AppStore, client: &reqwest::Client) -> DashboardS
 
 pub fn ticker_snapshot(store: &AppStore, ticker: &str) -> Result<TickerSnapshot, String> {
     let normalized = ticker.to_uppercase();
+    // Senkron bazı emtia/döviz satırlarını okunur adla saklar (GC=F → "Altın
+    // Ons ($)"); sekmeler Yahoo sembolüyle açıldığından iki ad da yerelde aranır.
+    let display = crate::yahoo::display_ticker(&normalized);
     let equity = store
         .equities
         .iter()
-        .find(|row| row.ticker == normalized)
+        .find(|row| row.ticker == normalized || display.map_or(false, |alias| row.ticker == alias))
         .cloned()
         .ok_or_else(|| format!("{normalized} was not found in the local universe. Run 'sync all' first."))?;
     let kap = filter_kap(
@@ -428,18 +439,66 @@ pub async fn execute(store: &mut AppStore, client: &reqwest::Client, command: &s
     }
 }
 
-pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &str, mode: &str) -> SyncResult {
-    let equities = crate::yahoo::fetch_all_equities(client, false).await;
-    let eq_count = equities.len();
+/// Tam senkronlar arası izin verilen en uzun süre. Artımlı istekler bu yaşı
+/// aşınca tam senkrona yükselir: gün devrilince artımlı fiyat tabanı (önceki
+/// kapanış) ve günlük göstergeler ancak tam senkronla tazelenir.
+const FULL_SYNC_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
 
-    if !equities.is_empty() {
-        store.equities = equities;
+static LAST_FULL_SYNC: std::sync::OnceLock<std::sync::Mutex<Option<std::time::Instant>>> =
+    std::sync::OnceLock::new();
+
+/// Başarılı bir tam senkronun zamanını kaydeder; iki senkron yolu da çağırır.
+pub fn record_full_sync() {
+    *LAST_FULL_SYNC.get_or_init(|| std::sync::Mutex::new(None))
+        .lock().unwrap_or_else(|error| error.into_inner()) = Some(std::time::Instant::now());
+}
+
+fn last_full_sync_age() -> Option<std::time::Duration> {
+    LAST_FULL_SYNC.get_or_init(|| std::sync::Mutex::new(None))
+        .lock().unwrap_or_else(|error| error.into_inner())
+        .map(|instant| instant.elapsed())
+}
+
+fn full_sync_is_stale(age: Option<std::time::Duration>) -> bool {
+    age.map_or(true, |age| age >= FULL_SYNC_MAX_AGE)
+}
+
+/// İstenen senkron modunu fiilen çalışacak moda çevirir.
+///
+/// "incremental" ancak evren doluysa ve yakın zamanda bir tam senkron
+/// yapıldıysa artımlı kalır; aksi halde tam senkrona yükselir. Böylece uygulama
+/// açılışındaki ilk istek her zaman evreni kurar, sonrakiler ucuz kalır.
+pub fn effective_sync_mode(requested: &str, store_is_empty: bool) -> &'static str {
+    if requested != "incremental" || store_is_empty || full_sync_is_stale(last_full_sync_age()) {
+        "full"
+    } else {
+        "incremental"
     }
+}
 
-    if let Ok(news_items) = crate::news::fetch_news(client).await {
-        store.news = news_items;
+/// Taze satırları mevcut evrenin üzerine bindirir: gelen satır ticker'ına göre
+/// güncellenir ya da eklenir; bu turda gelmeyenler (ör. hız sınırına takılıp
+/// düşenler) eski değerleriyle korunur. Böylece kısmen başarılı bir senkron
+/// evreni sessizce küçültemez.
+pub fn merge_equities(existing: &mut Vec<EquityRow>, fresh: Vec<EquityRow>) {
+    let mut index: std::collections::HashMap<String, usize> = existing
+        .iter()
+        .enumerate()
+        .map(|(position, row)| (row.ticker.clone(), position))
+        .collect();
+    for row in fresh {
+        match index.get(&row.ticker) {
+            Some(&position) => existing[position] = row,
+            None => {
+                index.insert(row.ticker.clone(), existing.len());
+                existing.push(row);
+            }
+        }
     }
+}
 
+/// Kaynak durum panosunu store'daki güncel sayılarla yeniden kurar.
+pub fn refresh_source_status(store: &mut AppStore) {
     store.sources = vec![
         BistProvider.status(store.equities.len()),
         FundamentalsProvider.status(store.equities.iter().filter(|row| row.fundamentals_available).count()),
@@ -450,12 +509,51 @@ pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &
         NewsProvider.status(store.news.len()),
         CsvProvider.status(0),
     ];
+}
+
+pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &str, mode: &str) -> SyncResult {
+    let effective = effective_sync_mode(mode, store.equities.is_empty());
+
+    if effective == "incremental" {
+        // Artımlı: fiyatlar iki ucuz toplu kaynaktan tazelenir (İş Yatırım
+        // screener + ~20 global Yahoo isteği); tüm evren yeniden çekilmez.
+        let (closes, global_quotes) = tokio::join!(
+            crate::isyatirim::current_closes(client),
+            crate::yahoo::fetch_global_quotes(client),
+        );
+        let updated = crate::yahoo::apply_incremental_prices(&mut store.equities, &closes, &global_quotes);
+        if let Ok(news_items) = crate::news::fetch_news(client).await {
+            store.news = news_items;
+        }
+        refresh_source_status(store);
+        return SyncResult {
+            source: source.into(),
+            mode: "incremental".into(),
+            status: "completed".into(),
+            message: format!("Incremental sync: {updated} prices refreshed."),
+            updated_records: updated,
+        };
+    }
+
+    let equities = crate::yahoo::fetch_all_equities(client, false).await;
+    let eq_count = equities.len();
+
+    if !equities.is_empty() {
+        merge_equities(&mut store.equities, equities);
+        record_full_sync();
+    }
+
+    if let Ok(news_items) = crate::news::fetch_news(client).await {
+        store.news = news_items;
+    }
+
+    refresh_source_status(store);
 
     SyncResult {
         source: source.into(),
-        mode: mode.into(),
+        mode: "full".into(),
         status: "completed".into(),
-        message: format!("Synced {} equities from Yahoo Finance ({} mode).", eq_count, mode),
+        message: format!("Synced {} equities from Yahoo Finance (full mode).", eq_count),
         updated_records: eq_count + store.kap.len(),
     }
 }
@@ -573,31 +671,57 @@ pub async fn get_news_feed(
     let google_query = format!("({query}) when:30d");
     let kap_query = format!("site:kap.org.tr/tr/Bildirim ({query}) when:30d");
 
-    // These endpoints require no API key. Requests run concurrently so a slow or
-    // temporarily unavailable provider cannot hold up the entire feed.
-    let (gdelt, google, kap, bloomberg) = tokio::join!(
+    let yahoo_rss_url = if let Some(t) = ticker {
+        Some(format!("https://feeds.finance.yahoo.com/rss/2.0/headline?s={t}&region=US&lang=en-US"))
+    } else {
+        None
+    };
+
+    let (gdelt, google, google_en, kap, bloomberg, yahoo_rss) = tokio::join!(
         fetch_gdelt(client, &query, normalized_ticker.as_deref(), "1month"),
-        fetch_google_news(client, &google_query, normalized_ticker.as_deref(), false),
-        fetch_google_news(client, &kap_query, normalized_ticker.as_deref(), true),
+        fetch_google_news(client, &google_query, normalized_ticker.as_deref(), false, "tr"),
+        fetch_google_news(client, &google_query, normalized_ticker.as_deref(), false, "en"),
+        fetch_google_news(client, &kap_query, normalized_ticker.as_deref(), true, "tr"),
         fetch_rss(client, "Bloomberg HT", "https://www.bloomberght.com/rss", normalized_ticker.as_deref(), false),
+        async {
+            if let Some(url) = yahoo_rss_url {
+                fetch_rss(client, "Yahoo Finance", &url, normalized_ticker.as_deref(), false).await
+            } else {
+                Ok(Vec::new())
+            }
+        }
     );
 
     let mut all_news = Vec::new();
     let mut errors = Vec::new();
-    for result in [gdelt, google, kap, bloomberg] {
+    for result in [gdelt, google, google_en, kap, bloomberg, yahoo_rss] {
         match result {
             Ok(items) => all_news.extend(items),
             Err(error) => errors.push(error),
         }
     }
 
-    let query_terms: Vec<String> = normalized_ticker
+    let mut query_terms: Vec<String> = normalized_ticker
         .iter()
         .map(|value| value.to_lowercase())
-        .chain(company.into_iter().map(|value| value.to_lowercase()))
         .collect();
 
-    if normalized_ticker.is_some() {
+    if let Some(comp) = company {
+        let comp_lower = comp.to_lowercase();
+        query_terms.push(comp_lower.clone());
+        if let Some(first_word) = comp_lower.split_whitespace().next() {
+            if first_word.len() > 2 {
+                query_terms.push(first_word.to_string());
+            }
+        }
+        // Eğer isim S&P 500 gibi bir endeksse, & işaretini ve boşlukları kaldırarak "sp500" gibi versiyonları da ekle
+        let clean_comp = comp_lower.replace("&", "").replace(" ", "");
+        if clean_comp != comp_lower {
+            query_terms.push(clean_comp);
+        }
+    }
+
+    if normalized_ticker.is_some() || company.is_some() {
         all_news.retain(|item| {
             item.is_kap
                 || query_terms
@@ -648,7 +772,7 @@ pub async fn research_entity_news(
 
     let (gdelt, google) = tokio::join!(
         fetch_gdelt(client, &quoted, None, gdelt_timespan),
-        fetch_google_news(client, &google_query, None, false),
+        fetch_google_news(client, &google_query, None, false, "tr"),
     );
 
     let mut all_news = Vec::new();
@@ -686,9 +810,10 @@ pub async fn research_entity_news(
     Ok(all_news)
 }
 
-/// Bir hissenin gerçek KAP bildirimlerini Google News'in kap.org.tr'ye
-/// daraltılmış aramasıyla getirir. KAP'ın kendi API'si Cloudflare arkasında
-/// olduğundan bu, kimlik doğrulamasız erişilebilen en güvenilir yoldur.
+/// Bir hissenin KAP bildirimlerini Google News'in KAP aramasıyla getirir.
+///
+/// Yedek yol: asıl kaynak `kap::ticker_disclosures` (gerçek KAP, son ~4
+/// hafta); bu arama daha geriye (90 gün) bakar ama haber niteliğindedir.
 pub async fn fetch_kap_disclosures(
     client: &reqwest::Client,
     ticker: &str,
@@ -698,7 +823,7 @@ pub async fn fetch_kap_disclosures(
     // kap.org.tr sayfa başlıkları jenerik olduğundan site kısıtı yerine
     // bildirimleri haberleştiren sonuçları da kapsayan "KAP" sorgusu kullanılır
     let query = format!("({}) KAP when:90d", company_query(Some(&normalized), company));
-    let items = fetch_google_news(client, &query, Some(&normalized), true).await?;
+    let items = fetch_google_news(client, &query, Some(&normalized), true, "tr").await?;
 
     let announcements = items
         .into_iter()
@@ -726,7 +851,7 @@ mod news_reader_tests {
     #[ignore = "requires live Google News access"]
     async fn live_google_news_link_resolves_to_article_html() {
         let client = reqwest::Client::new();
-        let items = super::fetch_google_news(&client, "(ASELS OR Aselsan) when:7d", Some("ASELS"), false)
+        let items = super::fetch_google_news(&client, "(ASELS OR Aselsan) when:7d", Some("ASELS"), false, "tr")
             .await
             .unwrap();
         let item = items
@@ -966,10 +1091,17 @@ pub async fn run_completion(
 fn company_query(ticker: Option<&str>, company: Option<&str>) -> String {
     match (ticker, company) {
         (Some(symbol), Some(name)) if !name.trim().is_empty() => {
-            format!("\"{}\" OR \"{}\"", symbol, name.trim())
+            let mut query = format!("\"{}\" OR \"{}\"", symbol, name.trim());
+            // Eğer isim çok uzunsa ve ilk kelimesi anlamlıysa onu da ekle (örnek: "Apple Inc." -> "Apple")
+            if let Some(first_word) = name.trim().split_whitespace().next() {
+                if first_word.len() > 3 && first_word.to_lowercase() != symbol.to_lowercase() {
+                    query.push_str(&format!(" OR \"{}\"", first_word));
+                }
+            }
+            query
         }
         (Some(symbol), _) => format!("\"{}\"", symbol),
-        _ => "\"Borsa İstanbul\" OR BIST OR \"Türk şirketleri\"".into(),
+        _ => "\"Borsa İstanbul\" OR BIST OR \"Türk şirketleri\" OR \"Wall Street\" OR \"Global Markets\"".into(),
     }
 }
 
@@ -1046,17 +1178,28 @@ async fn fetch_google_news(
     query: &str,
     ticker: Option<&str>,
     is_kap: bool,
+    lang: &str,
 ) -> Result<Vec<crate::domain::NewsItem>, String> {
     let mut url = reqwest::Url::parse("https://news.google.com/rss/search")
         .map_err(|error| format!("Google News URL: {error}"))?;
-    url.query_pairs_mut()
-        .append_pair("q", query)
-        .append_pair("hl", "tr")
-        .append_pair("gl", "TR")
-        .append_pair("ceid", "TR:tr");
+    
+    if lang == "en" {
+        url.query_pairs_mut()
+            .append_pair("q", query)
+            .append_pair("hl", "en")
+            .append_pair("gl", "US")
+            .append_pair("ceid", "US:en");
+    } else {
+        url.query_pairs_mut()
+            .append_pair("q", query)
+            .append_pair("hl", "tr")
+            .append_pair("gl", "TR")
+            .append_pair("ceid", "TR:tr");
+    }
+
     fetch_rss(
         client,
-        if is_kap { "KAP (Google News)" } else { "Google News" },
+        if is_kap { "KAP (Google News)" } else { if lang == "en" { "Google News (EN)" } else { "Google News (TR)" } },
         url.as_str(),
         ticker,
         is_kap,
@@ -1521,5 +1664,33 @@ mod news_tests {
         );
         assert!(is_forbidden_news_host("192.168.1.12"));
         assert!(!is_forbidden_news_host("example.com"));
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+
+    fn row(ticker: &str, price: f64) -> EquityRow {
+        EquityRow { ticker: ticker.into(), price, ..Default::default() }
+    }
+
+    /// Kısmi senkron evreni küçültmez: gelen satır güncellenir, gelmeyen korunur.
+    #[test]
+    fn merge_keeps_rows_missing_from_partial_sync() {
+        let mut existing = vec![row("ASELS", 10.0), row("THYAO", 20.0)];
+        merge_equities(&mut existing, vec![row("ASELS", 11.0), row("GARAN", 30.0)]);
+        assert_eq!(existing.len(), 3);
+        assert_eq!(existing[0].price, 11.0);
+        assert_eq!(existing[1].price, 20.0);
+        assert_eq!(existing[2].ticker, "GARAN");
+    }
+
+    /// Tam senkron hiç yapılmadıysa ya da eskidiyse artımlı istek tam moda yükselir.
+    #[test]
+    fn stale_or_missing_full_sync_escalates() {
+        assert!(full_sync_is_stale(None));
+        assert!(full_sync_is_stale(Some(FULL_SYNC_MAX_AGE)));
+        assert!(!full_sync_is_stale(Some(std::time::Duration::from_secs(60))));
     }
 }

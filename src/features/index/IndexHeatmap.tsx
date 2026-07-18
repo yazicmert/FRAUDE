@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as d3 from 'd3-hierarchy';
 import type { DashboardSnapshot, IndexConstituent } from '../../types';
+import { useTranslation } from '../../api/i18n';
+import { changeColor } from '../../lib/heatmapScale';
 
 interface IndexHeatmapProps {
   constituents: IndexConstituent[];
   snapshot: DashboardSnapshot | null;
   onSelectTicker: (ticker: string) => void;
+  /** Ölçüm gelene kadarki ilk yerleşim genişliği; sonrası kabın gerçek ölçüsü. */
   width?: number;
   height?: number;
 }
@@ -20,25 +23,50 @@ interface TreemapData {
 }
 
 export default function IndexHeatmap({ constituents, snapshot, onSelectTicker, width = 800, height = 600 }: IndexHeatmapProps) {
-  
+  const { t } = useTranslation();
+  // Kap genişliği pencereyle/panelle birlikte değişir; yerleşim ölçülen gerçek
+  // boyutla kurulur. Callback-ref kullanılır: kap, veri gelene kadar hiç render
+  // edilmeyebilir; sabit ref + tek seferlik efekt o durumda gözlemciyi asla
+  // bağlayamazdı.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState({ width, height });
+
+  useEffect(() => {
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          setDimensions({ width: entry.contentRect.width, height: entry.contentRect.height });
+        }
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [container]);
+
   const rootNode = useMemo(() => {
     if (!constituents.length || !snapshot) return null;
     
     // Create data hierarchy
-    const children = constituents.map(c => {
+    // Ağırlık yalnızca piyasa değerinden gelir (BIST kuralına uygun olarak
+    // fiili dolaşım oranıyla çarpılır). Eski hacim×fiyat yedeği elmalarla
+    // armutları karıştırıyordu: piyasa değeri eksik bir hisse, o günkü işlem
+    // hacmine göre absürt büyük/küçük kutu alabiliyordu. Değeri olmayan satır
+    // haritada hiç yer almaz; ağırlık yüzdeleri böylece gerçek kalır.
+    const children = constituents.flatMap(c => {
       const eq = snapshot.equities.find(e => e.ticker === c.ticker);
-      // BIST Endekslerinde ağırlık Fiili Dolaşımdaki Pay Piyasa Değerine göre hesaplanır
-      const ratio = (eq?.free_float_ratio !== undefined && eq?.free_float_ratio !== null) ? (eq.free_float_ratio / 100.0) : 1.0;
-      const value = (eq?.market_cap || (eq?.volume ? eq.volume * eq.price : 1)) * ratio;
-      
-      return {
+      if (!eq?.market_cap || eq.market_cap <= 0) return [];
+      const ratio = (eq.free_float_ratio !== undefined && eq.free_float_ratio !== null) ? (eq.free_float_ratio / 100.0) : 1.0;
+
+      return [{
         name: c.name,
         ticker: c.ticker,
-        value: value,
-        change: eq?.change_pct || 0,
-        price: eq?.price || 0,
-      } as TreemapData;
+        value: eq.market_cap * ratio,
+        change: eq.change_pct || 0,
+        price: eq.price || 0,
+      } as TreemapData];
     });
+    if (children.length === 0) return null;
 
     const data: TreemapData = {
       name: "Index",
@@ -50,27 +78,19 @@ export default function IndexHeatmap({ constituents, snapshot, onSelectTicker, w
       .sort((a, b) => (b.value || 0) - (a.value || 0));
 
     d3.treemap<TreemapData>()
-      .size([width, height])
+      .size([dimensions.width, dimensions.height])
       .paddingInner(2)
       (root);
 
     return root;
-  }, [constituents, snapshot, width, height]);
+  }, [constituents, snapshot, dimensions.width, dimensions.height]);
 
   if (!rootNode) {
-    return <div style={{ padding: '20px', color: 'var(--text-muted)' }}>Isı haritası için veri bekleniyor...</div>;
+    return <div style={{ padding: '20px', color: 'var(--text-muted)' }}>{t('heatmapDataWaiting')}</div>;
   }
 
-  const getBackgroundColor = (change: number) => {
-    if (change > 3) return '#059669'; // Strong Green
-    if (change > 0) return '#10B981'; // Green
-    if (change === 0) return '#4B5563'; // Gray
-    if (change > -3) return '#EF4444'; // Red
-    return '#DC2626'; // Strong Red
-  };
-
   return (
-    <div style={{ position: 'relative', width: `${width}px`, height: `${height}px`, background: 'var(--bg-default)', borderRadius: '8px', overflow: 'hidden' }}>
+    <div ref={setContainer} style={{ position: 'relative', width: '100%', height: `${height}px`, background: 'var(--bg-default)', borderRadius: '8px', overflow: 'hidden' }}>
       {rootNode.leaves().map(leaf => {
         const node = leaf as d3.HierarchyRectangularNode<TreemapData>;
         const { x0, x1, y0, y1, data } = node;
@@ -87,7 +107,7 @@ export default function IndexHeatmap({ constituents, snapshot, onSelectTicker, w
               top: y0,
               width: boxWidth,
               height: boxHeight,
-              background: getBackgroundColor(data.change || 0),
+              background: changeColor(data.change ?? 0),
               color: 'white',
               display: 'flex',
               flexDirection: 'column',
@@ -99,7 +119,7 @@ export default function IndexHeatmap({ constituents, snapshot, onSelectTicker, w
               padding: '4px',
               transition: 'transform 0.1s, z-index 0.1s',
             }}
-            title={`${data.ticker}: ${data.name}\nFiyat: ${data.price?.toFixed(2)}\nDeğişim: %${data.change?.toFixed(2)}\nEndeks Ağırlığı: %${((data.value || 0) / (rootNode.value || 1) * 100).toFixed(2)}`}
+            title={`${data.ticker}: ${data.name}\n${t('price')}: ${data.price?.toFixed(2)}\n${t('change')}: %${data.change?.toFixed(2)}\n${t('indexWeight')}: %${((data.value || 0) / (rootNode.value || 1) * 100).toFixed(2)}`}
             onMouseEnter={e => {
               e.currentTarget.style.transform = 'scale(1.02)';
               e.currentTarget.style.zIndex = '10';
@@ -117,7 +137,7 @@ export default function IndexHeatmap({ constituents, snapshot, onSelectTicker, w
                 <span style={{ fontSize: '0.8rem' }}>%{data.change?.toFixed(2)}</span>
                 {boxHeight > 65 && (
                   <span style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '2px' }}>
-                    Ağırlık: %{((data.value || 0) / (rootNode.value || 1) * 100).toFixed(2)}
+                    {t('weight')}: %{((data.value || 0) / (rootNode.value || 1) * 100).toFixed(2)}
                   </span>
                 )}
               </>

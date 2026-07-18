@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getDashboardSnapshot } from '../api/tauriClient';
+import { isDataRuntimeConfigured } from '../api/platformClient';
+import { useTranslation } from '../api/i18n';
+import type { EquityRow } from '../types';
+import { PRESET_SYMBOLS, normalizeSearch, presetMatchesQuery } from './symbolCatalog';
 
 export interface PaletteCommand {
   id: string;
@@ -29,12 +34,28 @@ const box: React.CSSProperties = {
   boxShadow: '0 20px 60px rgba(0,0,0,0.55)', overflow: 'hidden',
 };
 
-const TICKER_RE = /^[a-zA-Z]{2,6}$/;
-
 export default function CommandPalette({ open, onClose, commands, onOpenTicker, onRunFql, recentTickers }: CommandPaletteProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [equities, setEquities] = useState<EquityRow[]>([]);
+
+  useEffect(() => {
+    if (!isDataRuntimeConfigured()) return;
+    let cancelled = false;
+    const load = () => {
+      getDashboardSnapshot()
+        .then(snapshot => { if (!cancelled) setEquities(snapshot.equities ?? []); })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener('fraude-sync-completed', load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('fraude-sync-completed', load);
+    };
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -46,15 +67,28 @@ export default function CommandPalette({ open, onClose, commands, onOpenTicker, 
 
   const items = useMemo<PaletteCommand[]>(() => {
     const q = query.trim();
-    const lower = q.toLowerCase();
+    const lower = normalizeSearch(q);
     const out: PaletteCommand[] = [];
 
     if (q) {
-      if (TICKER_RE.test(q)) {
-        const sym = q.toUpperCase();
-        out.push({ id: 'open-ticker', label: `Hisse aç · ${sym}`, hint: 'ENTER', run: () => onOpenTicker(sym) });
+      // Akıllı Hisse / Sembol araması
+      const equityMatches = equities
+        .filter(eq => normalizeSearch(eq.ticker).includes(lower) || normalizeSearch(eq.name).includes(lower))
+        .slice(0, 5);
+      
+      const presetMatches = PRESET_SYMBOLS
+        .filter(p => presetMatchesQuery(p, lower) && !equityMatches.some(e => e.ticker === p.symbol))
+        .slice(0, 3);
+
+      for (const eq of equityMatches) {
+        out.push({ id: `eq-${eq.ticker}`, label: `${eq.ticker} · ${eq.name}`, hint: t('hintEquity'), run: () => onOpenTicker(eq.ticker) });
       }
-      out.push({ id: 'run-fql', label: `Terminalde çalıştır · ${q}`, hint: 'FQL', run: () => onRunFql(q) });
+      for (const p of presetMatches) {
+        out.push({ id: `preset-${p.symbol}`, label: `${p.symbol} · ${p.label}`, hint: t('hintPreset'), run: () => onOpenTicker(p.symbol) });
+      }
+
+      // FQL Komutu çalıştırma (Eğer bir sembol seçmezse)
+      out.push({ id: 'run-fql', label: `${t('paletteRunFql')} · ${q}`, hint: 'FQL', run: () => onRunFql(q) });
     }
 
     const matches = (c: PaletteCommand) => {
@@ -64,15 +98,13 @@ export default function CommandPalette({ open, onClose, commands, onOpenTicker, 
     };
     out.push(...commands.filter(matches));
 
-    if (recentTickers.length > 0) {
-      for (const tk of recentTickers.slice(0, 8)) {
-        if (!lower || tk.toLowerCase().includes(lower)) {
-          out.push({ id: `recent-${tk}`, label: tk, hint: 'son bakılan', run: () => onOpenTicker(tk) });
-        }
+    if (recentTickers.length > 0 && !q) {
+      for (const tk of recentTickers.slice(0, 6)) {
+        out.push({ id: `recent-${tk}`, label: tk, hint: t('hintRecent'), run: () => onOpenTicker(tk) });
       }
     }
     return out;
-  }, [query, commands, recentTickers, onOpenTicker, onRunFql]);
+  }, [query, commands, recentTickers, onOpenTicker, onRunFql, equities]);
 
   useEffect(() => { setSel(0); }, [query]);
 
@@ -100,7 +132,7 @@ export default function CommandPalette({ open, onClose, commands, onOpenTicker, 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Komut, hisse kodu veya FQL yaz… (örn. GARAN, scan BIST100 where rsi < 30)"
+          placeholder={t('paletteInputPlaceholder')}
           style={{
             width: '100%', padding: '14px 16px', fontSize: '0.95rem',
             background: 'var(--bg-dark)', border: 'none', borderBottom: '1px solid var(--border-color)',
@@ -109,7 +141,7 @@ export default function CommandPalette({ open, onClose, commands, onOpenTicker, 
         />
         <div style={{ maxHeight: '48vh', overflow: 'auto' }}>
           {items.length === 0 ? (
-            <div style={{ padding: '18px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Eşleşme yok.</div>
+            <div style={{ padding: '18px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('paletteNoMatch')}</div>
           ) : (
             items.map((it, i) => (
               <div
@@ -130,7 +162,7 @@ export default function CommandPalette({ open, onClose, commands, onOpenTicker, 
           )}
         </div>
         <div style={{ padding: '7px 16px', borderTop: '1px solid var(--border-color)', fontSize: '0.66rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          ↑↓ gez · ENTER seç · ESC kapat
+          {t('paletteFooterHint')}
         </div>
       </div>
     </div>

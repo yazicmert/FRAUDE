@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getDashboardSnapshot } from '../api/tauriClient';
 import { isDataRuntimeConfigured } from '../api/platformClient';
+import { isBistEquity } from '../lib/equityGroups';
+// Bülten metinleri React dışında (derleme anında) kurulduğu için hook yerine
+// i18next örneği kullanılır; seçili dile göre üretilir.
+import i18n from '../i18n';
 import type { DashboardSnapshot, EquityRow } from '../types';
 import type { WatchlistItem } from './useWatchlist';
 import { notify } from '../lib/notify';
@@ -39,7 +43,8 @@ function readWatchlist(): WatchlistItem[] {
 }
 
 // Watchlist toplam getirisi: maliyet girilmiş kalemler adet ağırlıklı hesaplanır.
-function watchlistSummary(snapshot: DashboardSnapshot): string | null {
+// Banner ve günlük özet popup'ı (MorningBriefModal) aynı satırı paylaşır.
+export function watchlistSummary(snapshot: DashboardSnapshot): string | null {
   const items = readWatchlist();
   if (items.length === 0) return null;
   const byTicker = new Map<string, EquityRow>();
@@ -66,17 +71,36 @@ function watchlistSummary(snapshot: DashboardSnapshot): string | null {
     }
   }
   const dayAvg = dayWeight > 0 ? dayChangeWeighted / dayWeight : null;
-  const parts: string[] = [`Takip listesi: ${items.length} hisse`];
-  if (dayAvg !== null) parts.push(`bugün ort. ${dayAvg >= 0 ? '+' : ''}${dayAvg.toFixed(2)}%`);
+  const parts: string[] = [i18n.t('wlSummary', { n: items.length })];
+  if (dayAvg !== null) parts.push(i18n.t('wlDayAvg', { v: `${dayAvg >= 0 ? '+' : ''}${dayAvg.toFixed(2)}%` }));
   if (priced > 0 && cost > 0) {
     const ret = ((value - cost) / cost) * 100;
-    parts.push(`maliyete göre ${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%`);
+    parts.push(i18n.t('wlVsCost', { v: `${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%` }));
   }
   return parts.join(' · ');
 }
 
+import { getMarketStatus } from '../lib/marketHours';
+
 function composeBrief(snapshot: DashboardSnapshot): MorningBrief {
-  const equities = snapshot.equities ?? [];
+  const status = getMarketStatus();
+  const day = new Date().getDay();
+  const isWeekend = day === 0 || day === 6;
+  const isHoliday = Boolean(status.holidayName);
+
+  // Eğer haftasonu veya tatil ise, sadece bilgilendirme yapıp fiyatları göstermiyoruz.
+  if (isWeekend || isHoliday) {
+    const reason = isWeekend ? i18n.t('briefWeekend') : status.holidayName ?? '';
+    return {
+      date: todayKey(),
+      headline: i18n.t('briefMarketClosedReason', { reason }),
+      lines: [i18n.t('briefClosedLine')]
+    };
+  }
+
+  // Sabah özeti BIST'e özeldir: genişlik ve aşırı satım sayıları ABD hisseleri
+  // ile emtiaları kapsamaz (günün lideri zaten backend'de BIST'le sınırlı).
+  const equities = (snapshot.equities ?? []).filter(isBistEquity);
   let up = 0;
   let down = 0;
   for (const e of equities) {
@@ -89,21 +113,21 @@ function composeBrief(snapshot: DashboardSnapshot): MorningBrief {
   const lines: string[] = [];
   const bist = snapshot.market_metrics.find((m) => /100|xu100|bist/i.test(m.symbol));
   if (bist) lines.push(`${bist.symbol}: ${bist.value} (${bist.change})`);
-  if (up + down > 0) lines.push(`Piyasa genişliği: ${up} artan · ${down} düşen`);
+  if (up + down > 0) lines.push(i18n.t('briefBreadthLine', { up, down }));
 
   const topGainer = snapshot.top_gainers?.[0];
-  if (topGainer) lines.push(`Günün lideri: ${topGainer.ticker} ${topGainer.change_pct >= 0 ? '+' : ''}${topGainer.change_pct.toFixed(2)}%`);
-  if (oversold > 0) lines.push(`Aşırı satım (RSI<30): ${oversold} hisse`);
+  if (topGainer) lines.push(i18n.t('briefLeaderLine', { ticker: topGainer.ticker, change: `${topGainer.change_pct >= 0 ? '+' : ''}${topGainer.change_pct.toFixed(2)}%` }));
+  if (oversold > 0) lines.push(i18n.t('briefOversoldLine', { n: oversold }));
 
   const wl = watchlistSummary(snapshot);
   if (wl) lines.push(wl);
 
   const kapCount = snapshot.kap_announcements?.length ?? 0;
-  if (kapCount > 0) lines.push(`Bekleyen KAP bildirimi: ${kapCount}`);
+  if (kapCount > 0) lines.push(i18n.t('briefKapLine', { n: kapCount }));
 
   const headline = up + down > 0
-    ? (up >= down ? `Piyasa pozitif açılışa hazır (${up}/${down})` : `Piyasa baskı altında (${up}/${down})`)
-    : 'Günlük piyasa özeti hazır';
+    ? (up >= down ? i18n.t('briefReadyPositive', { up, down }) : i18n.t('briefUnderPressure', { up, down }))
+    : i18n.t('briefReady');
 
   return { date: todayKey(), headline, lines };
 }
@@ -149,7 +173,7 @@ export function useMorningBrief() {
         if (!alreadyNotified) {
           try { localStorage.setItem(BRIEF_DATE_KEY, key); } catch { /* yok say */ }
           void notify({
-            title: '☀️ Günaydın · FRAUDE',
+            title: i18n.t('briefGoodMorning'),
             body: [composed.headline, ...composed.lines.slice(0, 3)].join('\n'),
             kind: 'info',
           });

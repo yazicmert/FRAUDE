@@ -1,0 +1,452 @@
+
+
+Haziran-2026
+BVM-ALBATROSS P.1.HİSSE SENEDİSERBEST(TL)FON(HSYF)
+
+I-FONU TANITICI BİLGİLER
+
+A-)Fonun Adı
+
+B-)Kurucunun Ünvanı
+
+C-)Yöneticinin Ünvanı
+
+D-)Toplam Değer/Net Varlık Değeri
+
+E-) Katılma Payı Sayısı
+
+F-)Fonun Kuruluş Tarihi
+
+G-)Fonun Süresi
+ :
+
+:
+
+:
+
+:
+
+:
+
+:
+
+:
+ ALLBATROSS PORTFÖY YÖNETİMİ A.Ş.
+
+BVM-ALBATROSS P.1.HİSSE SENEDİSERBEST(TL)FON(HSYF)
+
+01 Temmuz 2022
+
+Süresizdir.
+
+11.270.979,000
+
+15.440.456,83
+
+ALLBATROSS PORTFÖY YÖNETİMİ A.Ş.
+
+A-)Ay Sonu Pay Fiyatı (TL)
+
+B-)Önceki Ay Pay Fiyatı (TL)
+
+C-)Aylık Pay Fiyatı Artış Oranı (TL)
+
+D-)Yılbaşına Göre Fiyat Artış Oranı
+
+E-)Yıllık Pay Fiyatı Artış Oranı
+
+F-)Aylık Ortalama Portföydeki Menkul Kıymetler Yüzdesi
+
+a-)Hisse Senedi
+
+b-)Hazine Bonosu
+ :
+
+:
+
+:
+
+:
+
+:
+
+:
+
+:
+
+a-)Hisse Senedi
+
+b-)Hazine Bonosu
+
+G-)Aylık Ortalama Portföy Devir Hızı
+
+H-)Portföyün Ortalama Vadesi
+ :
+
+:
+
+:
+ 1,319517
+
+1,369930
+
+87,17
+
+0,00
+
+-54,47
+
+10,38
+
+3,82
+
+0,16
+
+0,00
+
+c-)Devlet Tahvili : 0,00
+
+d-)Özel Sektör Tahvili : 0,00
+
+c-)Devlet Tahvili : 0,00
+
+0,00:m-)Diğer
+ 0,44:f-)Diğer
+
+r-)Repo-Trepo : 0,00
+
+g-)TPP-TPP Borçlanma 0,00:
+
+h-)Opsiyon 0,00:
+
+j-)Değerli Maden : 0,00
+
+0,00:d-)Opsiyon
+
+k-)Mevduat 0,00:
+ 0,00l-) Katilim Hesabı :
+
+i-) Varant 0,00:
+ 0,00:e-)Varant
+
+II-FONUN PERFORMANSINA İLİŞKİN BİLGİLER
+
+I-)Katılma Payı İhraçlarından Kaynaklanan Nakit Girişleri (TL)
+
+İ-)Katılma Payı İadelerinden Kaynaklanan Nakit Çıkışları (TL)
+ :
+
+:
+ 0,00
+
+0,00
+
+0,00n-)Teminat :
+
+o-)Yatırım Fonu
+
+p-)Borsa Yatırım Fonu
+ :
+
+:
+ 12,83
+
+0,00
+
+e-)Kira Sertifikaları : 0,00
+
+0,00
+
+0,00
+
+:
+
+:
+
+f-)Finansman Bonusu
+
+s-)Taahhütlü Alış-Satış İşlemleri
+ 0.00:t-) Vaad Sözleşmesi İşlemleri
+
+g2-)BPP-BPP Borçlanma 0,00:
+
+III-FON PORTFÖY DEĞERİ TABLOSU
+ TOPLAM
+(FPD
+GÖRE)
+
+GRUP
+(%)
+TOPLAM DEĞER
+GÜNLÜK BR
+DEĞER
+REPO TEMİNAT
+TUTARI
+
+İÇ
+İSKONTO
+ORANI (%)
+
+SATIN
+ALIŞ
+TARİHİ
+
+BİRİM ALIŞ
+FİYATI
+NOMİNAL DEĞER
+NOMİNAL
+FAİZ
+ORANI
+
+VADEYE
+KALAN
+GÜN
+
+VADE
+TARİHİ
+İHRAÇCI
+KURUM
+MENKUL KIYMET NET DÖNÜŞ
+TUTARI
+DÖVİZ
+CİNSİ
+ BORSA
+SÖZLEŞM
+E NO
+
+FAİZ
+ÖDEME
+SAYISI
+ TOPLAM
+(FTD
+GÖRE)
+ISIN KODU
+
+HİSSE SENETLERİ
+
+Hisse Türk
+
+AEFES ANADOLU
+EFES
+BİRACILIK
+VE MALT
+SANAYİİ
+A.Ş.
+ 100.000,00 21,720000 20/02/26 21,040000 2.104.000,00 15,59 13,39TL 80100511 13,63
+
+TRAAEFES91A9
+
+BIMAS BİM
+BİRLEŞİK
+MAĞAZALA
+R A.Ş.
+ 6.000,00 386,916667 23/06/26 365,250000 2.191.500,00 16,24 13,95TL 80100511 14,19
+TREBIMM00018
+
+EREGL EREĞLİ
+DEMİR VE
+ÇELİK
+FABRİKALA
+RI T.A.Ş
+ 125.000,00 30,190000 07/05/26 40,480000 5.060.000,00 37,50 32,22TL 80100517 32,77
+
+TRAEREGL91G3
+
+GARAN GARANTI
+BANKASI
+A.Ş.
+ 5.000,00 163,000000 11/03/26 138,000000 690.000,00 5,11 4,39TL 80100517 4,47
+TRAGARAN91N1
+
+KLKIM KALEKİM
+KİMYEVİ
+MADDELER
+SANAYİ VE
+TİCARET
+A.Ş.
+ 50.000,00 42,910954 20/02/26 30,000000 1.500.000,00 11,11 9,55TL 80100511 9,71
+
+TREKLKM00025
+
+PGSUS PEGASUS
+HAVA
+TAŞIMACILI
+ĞI A.Ş.
+ 0,80 210,700000 17/02/26 175,100000 140,08 0,00 0,00TL 80100511 0,00
+TREPEGS00016
+
+SAHOL HACI
+ÖMER
+SABANCI
+HOLDİNG
+A.Ş.
+ 20.000,00 111,750000 20/02/26 97,500000 1.950.000,00 14,45 12,41TL 80100511 12,63
+
+TRASAHOL91Q5
+ 306.000,80 13.495.640,08 85,91100,00  GRUP TOPLAMI 87,40
+
+Haziran-2026
+BVM-ALBATROSS P.1.HİSSE SENEDİSERBEST(TL)FON(HSYF)
+
+VI-A-GEÇEN AY İÇİNDE RÜÇHAN HAKKI KULLANIMI,BEDELSİZ HİSSE SENEDİ ALIMI, TEMMETTÜ VE ANAPARA TAHSİLATINA İLİŞKİN AÇIKLAMALAR
+
+Sirketin Unvani BDL-BDZ Tarihi Nominal Değeriİşlem Tipi TUTAR
+
+EREGL 05/06/26 68.750,00Temmettü 68.750,00
+
+B-Geçen Ay İçinde Yatırım Fonlarına İlişkin Mevzuatta Meydana Gelen Değişme ve Hukuki İhtilaflarla İlgili Açıklamalar
+
+V-AY İÇİNDE YAPILAN GİDERLER
+
+AÇIKLAMA TUTAR ORAN%
+
+Portföye Alımlarda ve portföyden
+Satımlarda Ödenen Komisyonlar 146,25 0,0009 %
+
+Fon Yönetim Ücreti 5.589,85 0,0362 %
+
+Mevzuat Gereği Yapılması Zorunlu Tescil
+ve İlan Giderleri 6.636,00 0,0430 %
+
+Kayda Alma Ücreti 386,86 0,0025 %
+
+Portföydeki Varlıkların Saklanması
+Hizmetleri İçin Ödenen Ücretler 61.453,80 0,3980 %
+
+Fonun Mükellefi Olduğu Vergi Ödemeleri 3.164,00 0,0205 %
+
+Bağımsız Denetim Kuruluşlarına Ödenen
+Denetim Ücreti 8.950,50 0,0580 %
+
+Varlıkların Nakde Çevrilmesi ve
+Transferinde Ödenen Ücretler 782,09 0,0051 %
+
+Diğer Harcamalar 1.242,60 0,0080 %
+
+SMMM ve Noter Hizmet Giderleri 4.260,00 0,0276 %
+
+92.611,95 0,5998 %
+
+IV-FON TOPLAM DEĞERİ TABLOSU
+
+AÇIKLAMA TUTAR ORAN%
+
+A-)FON PORTFÖY DEĞERİ
+
+B-)HAZIR DEĞERLER
+
+C-)ALACAKLAR
+
+D-)DİĞER VARLIKLAR
+
+E-)BORÇLAR
+
+F-)İHTİYAT
+
+G-)VERGİ
+ 15.708.131,35
+
+7.108,85
+
+0,00
+
+0,00
+
+-274.783,37
+
+0,00
+
+0,00
+ 101,73 %
+
+0,05 %
+
+0,00 %
+
+0,00 %
+
+-1,78 %
+
+0,00 %
+
+0,00 %
+
+FON TOPLAM DEĞERİ 15.440.456,83 100,00 %
+ TOPLAM
+(FPD
+GÖRE)
+
+GRUP
+(%)
+TOPLAM DEĞER
+GÜNLÜK BR
+DEĞER
+REPO TEMİNAT
+TUTARI
+
+İÇ
+İSKONTO
+ORANI (%)
+
+SATIN
+ALIŞ
+TARİHİ
+
+BİRİM ALIŞ
+FİYATI
+NOMİNAL DEĞER
+NOMİNAL
+FAİZ
+ORANI
+
+VADEYE
+KALAN
+GÜN
+
+VADE
+TARİHİ
+İHRAÇCI
+KURUM
+MENKUL KIYMET NET DÖNÜŞ
+TUTARI
+DÖVİZ
+CİNSİ
+ BORSA
+SÖZLEŞM
+E NO
+
+FAİZ
+ÖDEME
+SAYISI
+ TOPLAM
+(FTD
+GÖRE)
+ISIN KODU
+ 306.000,80 13.495.640,08 85,91100,00GRUP TOPLAMI 87,40
+
+DİĞER
+
+Y.Fonu Türk
+
+KKL ALLBATRO
+SS
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 429.310,00 2,259908 26/06/26 2,339921 1.004.551,48 45,40 6,40TL 6,51
+
+TRYALBT00341
+
+PRU ALLBATRO
+SS
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 352.047,00 3,324434 30/06/26 3,431189 1.207.939,79 54,60 7,69TL 7,82
+
+TRYALBT00119
+ 781.357,00 2.212.491,27 14,09100,00  GRUP TOPLAMI 14,33
+
+781.357,00 2.212.491,27 14,09100,00GRUP TOPLAMI 14,33
+
+15.708.131,35FON PORTFÖY DEĞERİ 100,00

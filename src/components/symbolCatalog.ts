@@ -10,7 +10,11 @@ export interface PresetSymbol {
   group: string;
   /** Etiket/sembolde geçmeyen yaygın arama terimleri (XAU, gold, bitcoin...) */
   keywords?: string[];
-  /** BIST endeksleri için IndexView'in beklediği ad; varsa endeks sekmesi açılır */
+  /**
+   * IndexView'in beklediği ad; varsa endeks sekmesi bu adla açılır. Etiket
+   * IndexView'in SYMBOL_MAP anahtarından farklı olduğunda zorunludur
+   * (ör. etiket "Dolar/TL", SYMBOL_MAP anahtarı "USD/TRY").
+   */
   indexName?: string;
 }
 
@@ -21,9 +25,9 @@ export const PRESET_SYMBOLS: PresetSymbol[] = [
   { symbol: 'XUSIN.IS', label: 'BIST Sınai', group: 'Endeks', indexName: 'BIST SINAI' },
   { symbol: 'XUTEK.IS', label: 'BIST Teknoloji', group: 'Endeks', indexName: 'BIST TEKNOLOJI' },
   { symbol: 'XHARZ.IS', label: 'BIST Halka Arz', group: 'Endeks', keywords: ['ipo'], indexName: 'BIST HALKA ARZ' },
-  { symbol: 'USDTRY=X', label: 'Dolar/TL', group: 'Döviz', keywords: ['usd', 'usdtry', 'dolar', 'dollar'] },
-  { symbol: 'EURTRY=X', label: 'Euro/TL', group: 'Döviz', keywords: ['eur', 'eurtry', 'euro'] },
-  { symbol: 'GBPTRY=X', label: 'Sterlin/TL', group: 'Döviz', keywords: ['gbp', 'pound'] },
+  { symbol: 'USDTRY=X', label: 'Dolar/TL', group: 'Döviz', keywords: ['usd', 'usdtry', 'dolar', 'dollar'], indexName: 'USD/TRY' },
+  { symbol: 'EURTRY=X', label: 'Euro/TL', group: 'Döviz', keywords: ['eur', 'eurtry', 'euro'], indexName: 'EUR/TRY' },
+  { symbol: 'GBPTRY=X', label: 'Sterlin/TL', group: 'Döviz', keywords: ['gbp', 'pound'], indexName: 'GBP/TRY' },
   { symbol: 'GRAM ALTIN', label: 'Gram Altın (TL)', group: 'Emtia', keywords: ['xau', 'gold', 'altin'] },
   { symbol: 'GRAM GÜMÜŞ', label: 'Gram Gümüş (TL)', group: 'Emtia', keywords: ['xag', 'silver', 'gumus'] },
   { symbol: 'GC=F', label: 'Altın Ons ($)', group: 'Emtia', keywords: ['xau', 'gold', 'altin', 'ons'] },
@@ -32,9 +36,11 @@ export const PRESET_SYMBOLS: PresetSymbol[] = [
   { symbol: 'CL=F', label: 'WTI Petrol ($)', group: 'Emtia', keywords: ['oil', 'petrol', 'wti'] },
   { symbol: 'NG=F', label: 'Doğalgaz ($)', group: 'Emtia', keywords: ['gas', 'dogalgaz'] },
   { symbol: 'HG=F', label: 'Bakır ($)', group: 'Emtia', keywords: ['copper', 'bakir'] },
-  { symbol: '^GSPC', label: 'S&P 500', group: 'Global', keywords: ['sp500', 'spx'] },
-  { symbol: '^IXIC', label: 'Nasdaq', group: 'Global' },
-  { symbol: '^GDAXI', label: 'DAX', group: 'Global' },
+  { symbol: '^GSPC', label: 'S&P 500', group: 'Global', keywords: ['sp500', 'spx'], indexName: 'S&P 500' },
+  { symbol: '^IXIC', label: 'Nasdaq', group: 'Global', keywords: ['nasdaq', 'ixic'], indexName: 'NASDAQ' },
+  { symbol: '^DJI', label: 'Dow Jones', group: 'Global', keywords: ['dow', 'dji'], indexName: 'DOW JONES' },
+  { symbol: '^GDAXI', label: 'DAX', group: 'Global', keywords: ['dax'], indexName: 'DAX' },
+  { symbol: '^FTSE', label: 'FTSE 100', group: 'Global', keywords: ['ftse'], indexName: 'FTSE 100' },
   { symbol: 'BTC-USD', label: 'Bitcoin ($)', group: 'Kripto', keywords: ['btc', 'kripto', 'crypto'] },
   { symbol: 'ETH-USD', label: 'Ethereum ($)', group: 'Kripto', keywords: ['eth', 'kripto', 'crypto'] },
   { symbol: 'SOL-USD', label: 'Solana ($)', group: 'Kripto', keywords: ['sol', 'kripto', 'crypto'] },

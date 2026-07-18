@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getCorporateEvents, getIpoCalendar } from '../../api/tauriClient';
+import { useTranslation } from '../../api/i18n';
 import type { CorporateEventsPayload, IpoCalendarPayload } from '../../types';
 
 type ActiveTab = 'dividends' | 'capital' | 'ipo';
@@ -9,6 +10,7 @@ interface CorporateActionsViewProps {
 }
 
 export default function CorporateActionsView({ onSelectTicker }: CorporateActionsViewProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dividends');
   const [filter, setFilter] = useState('');
   const [events, setEvents] = useState<CorporateEventsPayload | null>(null);
@@ -29,7 +31,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
   );
   const daysUntil = (iso: string) => {
     const diff = Math.round((new Date(iso).getTime() - Date.now()) / 86400000);
-    return diff <= 0 ? 'Bugün' : `${diff} gün`;
+    return diff <= 0 ? t('today') : t('caDaysLeft', { n: diff });
   };
   const filteredSplits = (events?.splits ?? []).filter(
     (c) => !normalizedFilter || c.ticker.startsWith(normalizedFilter)
@@ -95,18 +97,18 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
   return (
     <div style={{ padding: '20px', overflow: 'auto', flex: 1 }}>
       <h1 style={{ fontSize: '1.3rem', color: '#fff', marginBottom: '16px' }}>
-        Kurumsal Aksiyonlar
+        {t('corporateActions')}
       </h1>
 
       <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '20px' }}>
         <button type="button" style={tabStyle('dividends')} onClick={() => setActiveTab('dividends')}>
-          💰 Temettü
+          💰 {t('caDividends')}
         </button>
         <button type="button" style={tabStyle('capital')} onClick={() => setActiveTab('capital')}>
-          📈 Sermaye Artırımı
+          📈 {t('caCapital')}
         </button>
         <button type="button" style={tabStyle('ipo')} onClick={() => setActiveTab('ipo')}>
-          🏛️ Halka Arz
+          🏛️ {t('caIpo')}
         </button>
       </div>
 
@@ -116,7 +118,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filtrele (ör: THYAO)"
+            placeholder={t('caFilterPh')}
             style={{
               flex: 1, maxWidth: '300px', padding: '10px 14px',
               background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
@@ -125,43 +127,43 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
           />
           {events?.last_updated && (
             <span style={{ color: '#8b949e', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
-              Son güncelleme: {events.last_updated}
+              {t('lastUpdatedLabel')}: {events.last_updated}
             </span>
           )}
         </div>
       )}
 
-      {loading && <div className="empty-state">Yükleniyor...</div>}
+      {loading && <div className="empty-state">{t('loadingData')}</div>}
 
       {/* Dividends Tab: piyasa geneli, en yeniden eskiye */}
       {activeTab === 'dividends' && (
         eventsLoading ? (
-          <div className="empty-state">Yükleniyor...</div>
+          <div className="empty-state">{t('loadingData')}</div>
         ) : events && !events.ready ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px' }}>
             <div style={{ fontSize: '3rem', marginBottom: '16px' }}>⏳</div>
             <div style={{ color: '#8b949e', fontSize: '0.9rem', lineHeight: 1.7 }}>
-              Piyasa geneli veriler arka planda toplanıyor (~600 hisse, birkaç dakika sürebilir).<br />
-              Uygulama açık kaldıkça otomatik tamamlanır; sekmeye tekrar girerek kontrol edebilirsiniz.
+              {t('caCollectingL1')}<br />
+              {t('caCollectingL2')}
             </div>
           </div>
         ) : filteredDividends.length === 0 ? (
-          <div className="empty-state">{normalizedFilter ? `${normalizedFilter} için son 24 ayda temettü kaydı yok.` : 'Temettü verisi bulunamadı.'}</div>
+          <div className="empty-state">{normalizedFilter ? t('caNoDivFiltered', { f: normalizedFilter }) : t('caNoDividends')}</div>
         ) : (
           <>
           {filteredUpcoming.length > 0 && (
             <div className="panel" style={{ overflow: 'auto', marginBottom: '16px', border: '1px solid #23863655' }}>
               <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                <strong style={{ color: '#3fb950', fontSize: '0.9rem' }}>📅 Yaklaşan Temettüler</strong>
-                <span style={{ color: '#8b949e', fontSize: '0.72rem' }}>açıklanmış hak düşüm tarihleri · {filteredUpcoming.length} şirket</span>
+                <strong style={{ color: '#3fb950', fontSize: '0.9rem' }}>📅 {t('caUpcoming')}</strong>
+                <span style={{ color: '#8b949e', fontSize: '0.72rem' }}>{t('caUpcomingSub', { n: filteredUpcoming.length })}</span>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Hisse</th>
-                    <th style={thStyle}>Hak Düşüm Tarihi</th>
-                    <th style={thStyle}>Kalan</th>
-                    <th style={thStyle}>Yıllık Temettü (tahmini)</th>
+                    <th style={thStyle}>{t('ticker')}</th>
+                    <th style={thStyle}>{t('caExDate')}</th>
+                    <th style={thStyle}>{t('caRemaining')}</th>
+                    <th style={thStyle}>{t('caAnnualDividend')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -179,7 +181,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                         {u.ex_date}
                         {u.installment >= 2 && (
                           <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 'bold', background: '#58a6ff22', color: '#58a6ff' }}>
-                            {u.installment}. Taksit
+                            {t('installmentN', { n: u.installment })}
                           </span>
                         )}
                       </td>
@@ -197,15 +199,15 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
           )}
           <div className="panel" style={{ overflow: 'auto' }}>
             <div style={{ marginBottom: '10px', color: '#8b949e', fontSize: '0.78rem' }}>
-              Son 24 ayın temettüleri · {filteredDividends.length} kayıt{filteredDividends.length > 200 ? ' (ilk 200 gösteriliyor — daraltmak için filtreleyin)' : ''}
+              {t('caLast24', { n: filteredDividends.length })}{filteredDividends.length > 200 ? t('caTruncated') : ''}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Hisse</th>
-                  <th style={thStyle}>Hak Düşüm Tarihi</th>
-                  <th style={thStyle}>Hisse Başı (TL)</th>
-                  <th style={thStyle}>Verim (%)</th>
+                  <th style={thStyle}>{t('ticker')}</th>
+                  <th style={thStyle}>{t('caExDate')}</th>
+                  <th style={thStyle}>{t('caPerShareTl')}</th>
+                  <th style={thStyle}>{t('caYieldPct')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -223,7 +225,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                       {d.ex_date}
                       {d.installment >= 2 && (
                           <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 'bold', background: '#58a6ff22', color: '#58a6ff' }}>
-                            {d.installment}. Taksit
+                            {t('installmentN', { n: d.installment })}
                           </span>
                         )}
                     </td>
@@ -241,30 +243,30 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
       {/* Capital Increases Tab: piyasa geneli, en yeniden eskiye */}
       {activeTab === 'capital' && (
         eventsLoading ? (
-          <div className="empty-state">Yükleniyor...</div>
+          <div className="empty-state">{t('loadingData')}</div>
         ) : events && !events.ready ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '60px 20px' }}>
             <div style={{ fontSize: '3rem', marginBottom: '16px' }}>⏳</div>
             <div style={{ color: '#8b949e', fontSize: '0.9rem', lineHeight: 1.7 }}>
-              Piyasa geneli veriler arka planda toplanıyor (~600 hisse, birkaç dakika sürebilir).<br />
-              Uygulama açık kaldıkça otomatik tamamlanır; sekmeye tekrar girerek kontrol edebilirsiniz.
+              {t('caCollectingL1')}<br />
+              {t('caCollectingL2')}
             </div>
           </div>
         ) : filteredSplits.length === 0 ? (
-          <div className="empty-state">{normalizedFilter ? `${normalizedFilter} için son 5 yılda bölünme kaydı yok.` : 'Bölünme verisi bulunamadı.'}</div>
+          <div className="empty-state">{normalizedFilter ? t('caNoSplitFiltered', { f: normalizedFilter }) : t('caNoSplits')}</div>
         ) : (
           <div className="panel" style={{ overflow: 'auto' }}>
             <div style={{ marginBottom: '10px', color: '#8b949e', fontSize: '0.78rem' }}>
-              Son 5 yılın bedelsiz / birleştirme olayları · {filteredSplits.length} kayıt{filteredSplits.length > 200 ? ' (ilk 200 gösteriliyor — daraltmak için filtreleyin)' : ''}
+              {t('caLast5y', { n: filteredSplits.length })}{filteredSplits.length > 200 ? t('caTruncated') : ''}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Hisse</th>
-                  <th style={thStyle}>Tarih</th>
-                  <th style={thStyle}>Tür</th>
-                  <th style={thStyle}>Oran</th>
-                  <th style={thStyle}>Kaynak</th>
+                  <th style={thStyle}>{t('ticker')}</th>
+                  <th style={thStyle}>{t('dateLabel')}</th>
+                  <th style={thStyle}>{t('typeLabel')}</th>
+                  <th style={thStyle}>{t('ratioLabel')}</th>
+                  <th style={thStyle}>{t('caSource')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -297,9 +299,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
               </tbody>
             </table>
             <div style={{ marginTop: '10px', fontSize: '0.7rem', color: '#8b949e' }}>
-              Kaynak: Yahoo Finance bölünme olayları. Bedelsiz artırımlar ve birleştirmeler (ters bölünme)
-              listelenir; bedelli (rüçhanlı) artırımlar bu kaynakta yer almaz — bedelli duyuruları için
-              hisse profilindeki KAP Bildirimleri bölümüne bakın.
+              {t('caSplitSourceNote')}
             </div>
           </div>
         )
@@ -308,7 +308,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
       {/* IPO Tab */}
       {activeTab === 'ipo' && !loading && (
         ipos.length === 0 ? (
-          <div className="empty-state">Halka arz verisi bulunamadı. İnternet bağlantınızı kontrol edip Yenile deneyin.</div>
+          <div className="empty-state">{t('caNoIpo')}</div>
         ) : (
           <div className="panel" style={{ overflow: 'auto' }}>
             {ipoData && !ipoData.scrape_ok && (
@@ -317,7 +317,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                 background: '#f0883e22', border: '1px solid #f0883e55', color: '#f0883e',
                 fontSize: '0.78rem', fontFamily: 'var(--font-mono)',
               }}>
-                ⚠ Canlı halka arz verisi alınamadı — yerel arşivden gösteriliyor. Yenile ile tekrar deneyebilirsiniz.
+                {t('caIpoStale')}
               </div>
             )}
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
@@ -330,7 +330,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                   color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
                 }}
               >
-                Tamamlanan / Aktif
+                {t('caIpoDone')}
               </button>
               <button
                 onClick={() => setIpoSubTab('taslak')}
@@ -341,12 +341,12 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                   color: ipoSubTab === 'taslak' ? '#58a6ff' : '#8b949e',
                 }}
               >
-                Taslak Halka Arzlar
+                {t('caIpoDraft')}
               </button>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
                 {ipoData?.last_updated && (
                   <span style={{ color: '#8b949e', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
-                    Son güncelleme: {ipoData.last_updated}
+                    {t('lastUpdatedLabel')}: {ipoData.last_updated}
                   </span>
                 )}
                 <button
@@ -360,26 +360,26 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                     fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 'bold',
                   }}
                 >
-                  {ipoRefreshing ? 'Yenileniyor...' : '⟳ Yenile'}
+                  {ipoRefreshing ? t('caRefreshing') : `⟳ ${t('kapRefresh')}`}
                 </button>
               </div>
             </div>
             <div style={{ marginBottom: '12px', color: '#8b949e', fontSize: '0.8rem' }}>
-              Toplam {ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length} halka arz listeleniyor
+              {t('caIpoCount', { n: ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length })}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Hisse</th>
-                  <th style={thStyle}>Şirket</th>
-                  <th style={thStyle}>Talep Toplama</th>
-                  <th style={thStyle}>İşleme Başlama</th>
-                  <th style={thStyle}>Dağıtım Türü</th>
-                  <th style={thStyle}>Katılımcı</th>
-                  <th style={thStyle}>Arz Fiyatı</th>
-                  <th style={thStyle}>Güncel</th>
-                  <th style={{ ...thStyle }} title="Arz sonrası bedelsiz/bölünme düzeltmesi uygulanır">Getiri (%) ⓘ</th>
-                  <th style={thStyle}>Durum</th>
+                  <th style={thStyle}>{t('ticker')}</th>
+                  <th style={thStyle}>{t('caCompany')}</th>
+                  <th style={thStyle}>{t('caBookBuilding')}</th>
+                  <th style={thStyle}>{t('caTradingStart')}</th>
+                  <th style={thStyle}>{t('caDistribution')}</th>
+                  <th style={thStyle}>{t('caParticipants')}</th>
+                  <th style={thStyle}>{t('caIpoPrice')}</th>
+                  <th style={thStyle}>{t('caCurrent')}</th>
+                  <th style={{ ...thStyle }} title={t('caReturnTip')}>{t('caReturn')} ⓘ</th>
+                  <th style={thStyle}>{t('caStatus')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -394,7 +394,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                           <button
                             type="button"
                             onClick={() => onSelectTicker(ipo.ticker)}
-                            title={`${ipo.ticker} hisse profilini aç`}
+                            title={t('caOpenProfile', { ticker: ipo.ticker })}
                             style={{
                               background: 'none', border: 'none', padding: 0,
                               color: '#58a6ff', cursor: 'pointer', fontWeight: 'bold',
@@ -416,7 +416,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                       <td style={{ ...tdStyle, color: retColor, fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                         {ipo.return_pct !== null ? `${ipo.return_pct >= 0 ? '+' : ''}${ipo.return_pct.toFixed(2)}%` : '—'}
                         {(ipo.split_factor ?? 1) > 1 && (
-                          <span title={`Bedelsiz/bölünme düzeltmesi: ×${ipo.split_factor!.toFixed(2)}`}
+                          <span title={t('caSplitAdj', { f: ipo.split_factor!.toFixed(2) })}
                             style={{ marginLeft: '5px', fontSize: '0.65rem', color: '#8b949e', fontWeight: 'normal' }}>
                             ×{ipo.split_factor!.toFixed(1)}
                           </span>

@@ -1,5 +1,6 @@
 import { FormEvent, useState, useEffect, useRef } from 'react';
 import { getTickerSnapshot, askAi, listAiHistory, listAiAgents, deleteAiHistory, clearAiHistory } from '../../api/tauriClient';
+import { useTranslation } from '../../api/i18n';
 import type { AiHistoryRecord, AiAgent, AiChatMessage } from '../../types';
 import ReactMarkdown from 'react-markdown';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -43,6 +44,7 @@ function AssistantMarkdown({ content }: { content: string }) {
 }
 
 export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelProps) {
+  const { t, lang } = useTranslation();
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -150,7 +152,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
       { role: 'user', content: record.prompt },
       { role: 'assistant', content: record.response },
     ]);
-    setProviderInfo({ provider: 'Geçmiş Kayıt', model: formatTimestamp(record.timestamp) });
+    setProviderInfo({ provider: t('aiHistoryRecord'), model: formatTimestamp(record.timestamp) });
   };
 
   const newChat = () => {
@@ -163,7 +165,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
     try {
       setHistory(await deleteAiHistory(id));
     } catch (e) {
-      setHistoryError(`Kayıt silinemedi: ${String(e)}`);
+      setHistoryError(t('aiDeleteFailed', { e: String(e) }));
     }
   };
 
@@ -173,7 +175,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
       await clearAiHistory();
       setHistory([]);
     } catch (e) {
-      setHistoryError(`Geçmiş temizlenemedi: ${String(e)}`);
+      setHistoryError(t('aiClearFailed', { e: String(e) }));
     } finally {
       setConfirmClear(false);
     }
@@ -190,7 +192,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
   const formatTimestamp = (value: string) => {
     const match = value.match(/^unix:(\d+)$/);
     if (!match) return value;
-    return new Date(Number(match[1]) * 1000).toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' });
+    return new Date(Number(match[1]) * 1000).toLocaleString(lang === 'tr' ? 'tr-TR' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
   };
 
   return (
@@ -207,7 +209,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
           padding: '24px 16px'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '8px' }}>
-            <h2 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, color: 'var(--text-muted)' }}>Geçmiş Konuşmalar</h2>
+            <h2 style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, color: 'var(--text-muted)' }}>{t('aiHistoryTitle')}</h2>
             {history.length > 0 && (
               confirmClear ? (
                 <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -216,24 +218,24 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                     onClick={clearAll}
                     style={{ padding: '2px 8px', fontSize: '0.7rem', background: '#f85149', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                   >
-                    Evet, hepsini sil
+                    {t('aiConfirmClearYes')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmClear(false)}
                     style={{ padding: '2px 8px', fontSize: '0.7rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
                   >
-                    Vazgeç
+                    {t('aiCancel')}
                   </button>
                 </span>
               ) : (
                 <button
                   type="button"
                   onClick={() => setConfirmClear(true)}
-                  title="Tüm geçmişi sil"
+                  title={t('aiClearAllTitle')}
                   style={{ padding: '2px 8px', fontSize: '0.7rem', background: 'transparent', color: '#f85149', border: '1px solid rgba(248, 81, 73, 0.4)', borderRadius: '4px', cursor: 'pointer' }}
                 >
-                  Tümünü Sil
+                  {t('aiClearAll')}
                 </button>
               )
             )}
@@ -245,13 +247,13 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
           )}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {history.length === 0 ? (
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Henüz geçmiş bulunmuyor.</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('aiNoHistory')}</p>
             ) : (
               history.map(record => (
                 <div
                   key={record.id}
                   onClick={() => loadHistoricalRecord(record)}
-                  title="Bu kayıttan yeni sohbet başlat"
+                  title={t('aiLoadRecordTitle')}
                   style={{
                     background: 'var(--bg-panel)',
                     padding: '12px',
@@ -267,7 +269,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                     <p style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', margin: '0 0 8px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{record.prompt}</p>
                     <button
                       type="button"
-                      title="Bu kaydı sil"
+                      title={t('aiDeleteRecordTitle')}
                       onClick={(e) => { e.stopPropagation(); void removeRecord(record.id); }}
                       style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1, padding: '0 2px' }}
                       onMouseEnter={(e) => e.currentTarget.style.color = '#f85149'}
@@ -296,9 +298,9 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
         {compact ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <strong style={{ fontSize: '0.9rem', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>✨ AI Sohbet</strong>
+              <strong style={{ fontSize: '0.9rem', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>✨ {t('aiChat')}</strong>
               <span
-                title={`Bağlam: ${activeContext || 'Global'}`}
+                title={`${t('aiContext')}: ${activeContext || 'Global'}`}
                 style={{
                   fontSize: '0.65rem', padding: '2px 8px', borderRadius: '10px',
                   background: 'rgba(0, 255, 157, 0.08)', color: 'var(--accent-primary)',
@@ -314,7 +316,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                 <button
                   type="button"
                   onClick={newChat}
-                  title="Yeni Sohbet"
+                  title={t('aiNewChat')}
                   style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.95rem', lineHeight: 1, cursor: 'pointer' }}
                 >
                   +
@@ -323,7 +325,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
               <select
                 value={selectedAgentId}
                 onChange={(e) => setSelectedAgentId(e.target.value)}
-                title="AI ajanı"
+                title={t('aiAgentTitle')}
                 style={{ maxWidth: '110px', padding: '3px 4px', borderRadius: '6px', background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}
               >
                 <option value="">Global AI</option>
@@ -335,7 +337,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
           <div className="view-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <p className="eyebrow">AI Analyst</p>
-              <h1>Yapay Zeka Araştırma</h1>
+              <h1>{t('aiResearch')}</h1>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {messages.length > 0 && (
@@ -344,7 +346,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                   onClick={newChat}
                   style={{ padding: '4px 12px', borderRadius: '6px', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-color)', fontSize: '0.8rem', cursor: 'pointer' }}
                 >
-                  + Yeni Sohbet
+                  + {t('aiNewChat')}
                 </button>
               )}
               <select
@@ -356,7 +358,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                 {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               <span style={{ fontSize: '0.8rem', padding: '4px 10px', background: 'rgba(0, 255, 157, 0.1)', color: 'var(--accent-primary)', borderRadius: '12px', border: '1px solid rgba(0, 255, 157, 0.2)' }}>
-                Context: {activeContext || 'Global'}
+                {t('aiContext')}: {activeContext || 'Global'}
               </span>
             </div>
           </div>
@@ -374,11 +376,9 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
               textAlign: 'center'
             }}>
               <div style={{ fontSize: compact ? '1.8rem' : '3rem', marginBottom: compact ? '10px' : '16px' }}>✨</div>
-              <h2 style={{ marginBottom: '8px', fontWeight: 500, fontSize: compact ? '0.95rem' : undefined }}>Yapay Zeka Hazır</h2>
+              <h2 style={{ marginBottom: '8px', fontWeight: 500, fontSize: compact ? '0.95rem' : undefined }}>{t('aiReady')}</h2>
               <p style={{ maxWidth: '400px', fontSize: compact ? '0.78rem' : '0.9rem', lineHeight: 1.5, padding: compact ? '0 8px' : 0 }}>
-                {compact
-                  ? 'Sorunuzu yazın; sohbet boyunca önceki mesajlar hatırlanır.'
-                  : 'Piyasa veya şirketlerle ilgili analiz gerektiren sorunuzu yazın. Sohbetiniz boyunca önceki mesajlar hatırlanır; yeni bir konuya geçerken "Yeni Sohbet"i kullanın.'}
+                {compact ? t('aiIntroCompact') : t('aiIntroFull')}
               </p>
             </div>
           ) : (
@@ -408,11 +408,11 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
               {loading && (
                 <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                   <div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTop: '2px solid var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                  Yanıt hazırlanıyor...
+                  {t('aiPreparing')}
                 </div>
               )}
               <p style={{ margin: '4px 0 0', fontSize: compact ? '0.65rem' : '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                ⚠️ Bu çıktı yatırım tavsiyesi değildir.
+                {t('aiDisclaimer')}
                 {providerInfo && ` · ${providerInfo.provider} / ${providerInfo.model}`}
               </p>
             </div>
@@ -430,7 +430,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                   void submit(e as unknown as FormEvent);
                 }
               }}
-              placeholder={messages.length > 0 ? 'Sohbete devam edin...' : compact ? 'Sorunuzu yazın...' : 'Analiz edilmesini istediğiniz soruyu buraya yazın...'}
+              placeholder={messages.length > 0 ? t('aiContinuePlaceholder') : compact ? t('aiAskPlaceholderCompact') : t('aiAskPlaceholderFull')}
               style={{
                 width: '100%',
                 minHeight: compact ? '46px' : '60px',
@@ -454,7 +454,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
             />
             {compact ? (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Enter ile gönder</span>
+                <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('aiEnterToSend')}</span>
                 <button
                   type="submit"
                   disabled={loading || !prompt.trim()}
@@ -476,9 +476,9 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                   {loading ? (
                     <>
                       <div style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid currentColor', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                      İşleniyor
+                      {t('aiProcessing')}
                     </>
-                  ) : 'Gönder'}
+                  ) : t('aiSend')}
                 </button>
               </div>
             ) : (
@@ -506,9 +506,9 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
                 {loading ? (
                   <>
                     <div style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid currentColor', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    İşleniyor
+                    {t('aiProcessing')}
                   </>
-                ) : 'Gönder'}
+                ) : t('aiSend')}
               </button>
             )}
           </form>

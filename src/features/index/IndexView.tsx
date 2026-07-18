@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
-import { getDashboardSnapshot, getPriceHistory, getBistIndices, updateBistIndices } from '../../api/tauriClient';
+import { getDashboardSnapshot, getPriceHistory, getBistIndices, updateBistIndices, getNewsFeed } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import type { DashboardSnapshot, HistoricalQuote, EquityRow, IndexConstituent, IndexChange } from '../../types';
+import type { DashboardSnapshot, HistoricalQuote, EquityRow, IndexConstituent, IndexChange, NewsItem } from '../../types';
 import PriceChart from '../ticker/PriceChart';
 import IndexHeatmap from './IndexHeatmap';
+import { NewsList } from '../news/NewsFeedView';
 
 const FALLBACK_INDEX_CONSTITUENTS: Record<string, string[]> = {
   'BIST 100': ["ASELS", "THYAO", "SISE", "EREGL", "GARAN", "AKBNK", "YKBNK", "KCHOL", "SAHOL", "TUPRS", "BIMAS"],
   'BIST 30': ["ASELS", "THYAO", "SISE", "EREGL", "GARAN", "AKBNK", "YKBNK", "KCHOL", "SAHOL", "TUPRS", "BIMAS"],
+  'S&P 500': ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "BRK-B", "TSLA", "LLY", "AVGO", "JPM", "V", "XOM", "UNH", "WMT", "MA", "PG", "JNJ", "HD"],
+  'NASDAQ': ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "ASML", "COST", "NFLX", "AMD", "PEP", "CSCO", "TMUS"],
+  'DOW JONES': ["UNH", "GS", "MSFT", "HD", "MCD", "CAT", "CRM", "V", "BA", "TRV", "AMGN", "AAPL", "IBM", "JPM", "AXP", "CVX", "JNJ", "PG", "WMT", "MRK"]
 };
 
 const SYMBOL_MAP: Record<string, string> = {
@@ -20,7 +24,25 @@ const SYMBOL_MAP: Record<string, string> = {
   'BIST HIZMETLER': 'XUHIZ.IS',
   'BIST HALKA ARZ': 'XHARZ.IS',
   'USD/TRY': 'USDTRY=X',
-  'EUR/TRY': 'EURTRY=X'
+  'EUR/TRY': 'EURTRY=X',
+  'GBP/TRY': 'GBPTRY=X',
+  'S&P 500': '^GSPC',
+  'NASDAQ': '^IXIC',
+  'DOW JONES': '^DJI',
+  'DAX': '^GDAXI',
+  'FTSE 100': '^FTSE',
+  'Gram Altın (TL)': 'GRAM ALTIN',
+  'Gram Gümüş (TL)': 'GRAM GÜMÜŞ',
+  'Altın Ons ($)': 'GC=F',
+  'Gümüş Ons ($)': 'SI=F',
+  'Brent Petrol ($)': 'BZ=F',
+  'WTI Petrol ($)': 'CL=F',
+  'Doğalgaz ($)': 'NG=F',
+  'Bakır ($)': 'HG=F',
+  'Bitcoin ($)': 'BTC-USD',
+  'Ethereum ($)': 'ETH-USD',
+  'Solana ($)': 'SOL-USD',
+  'Ripple ($)': 'XRP-USD'
 };
 
 interface IndexViewProps {
@@ -28,8 +50,18 @@ interface IndexViewProps {
   onSelectTicker: (ticker: string) => void;
 }
 
-export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
+export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexViewProps) {
   const { t } = useTranslation();
+
+  let displaySymbol = rawSymbol;
+  for (const [key, value] of Object.entries(SYMBOL_MAP)) {
+    if (value === rawSymbol) {
+      displaySymbol = key;
+      break;
+    }
+  }
+
+  const symbol = displaySymbol;
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [history, setHistory] = useState<HistoricalQuote[]>([]);
   
@@ -44,6 +76,9 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'heatmap'>('list');
 
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
   const yahooSymbol = SYMBOL_MAP[symbol] || symbol;
   
   // Transform symbol to BIST code if possible
@@ -53,6 +88,10 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
                    symbol === 'BIST BANKA' ? 'XBANK' : 
                    symbol === 'BIST SINAI' ? 'XUSIN' :
                    symbol === 'BIST TEKNOLOJI' ? 'XUTEK' : symbol;
+
+  const isGlobalIndex = symbol === 'S&P 500' || symbol === 'NASDAQ' || symbol === 'DOW JONES';
+  const isBistIndex = symbol.startsWith('BIST') || isGlobalIndex;
+  const showBistButton = symbol.startsWith('BIST');
 
   const loadData = async () => {
     try {
@@ -79,7 +118,7 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
       setIndexChanges(changes);
     } catch (err) {
       console.error("Failed to update indices from BIST:", err);
-      alert("Endeks güncellemesi başarısız oldu: " + err);
+      alert(t('indexUpdateFailed') + err);
     } finally {
       setIsUpdatingIndices(false);
     }
@@ -106,9 +145,29 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
         }
       })
       .finally(() => {
-        if (!cancelled) setHistoryLoading(false);
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
       });
-    return () => { cancelled = true; };
+      
+    let newsCancelled = false;
+    setNewsLoading(true);
+    getNewsFeed(yahooSymbol)
+      .then(items => {
+        if (!newsCancelled) {
+          setNews(items);
+          setNewsLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error("News fetch error:", err);
+        if (!newsCancelled) setNewsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      newsCancelled = true;
+    };
   }, [yahooSymbol, range]);
 
   if (loading) return <div className="empty-state">{t('loadingIndex')}</div>;
@@ -139,24 +198,26 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
           <h1>{symbol}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <button 
-            onClick={handleUpdateIndices}
-            disabled={isUpdatingIndices}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              background: 'var(--bg-panel)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-primary)',
-              cursor: isUpdatingIndices ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.85rem'
-            }}
-          >
-            {isUpdatingIndices ? '⏳ Güncelleniyor...' : '📥 BIST CSV Güncelle'}
-          </button>
+          {showBistButton && (
+            <button 
+              onClick={handleUpdateIndices}
+              disabled={isUpdatingIndices}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                color: 'var(--text-primary)',
+                cursor: isUpdatingIndices ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.85rem'
+              }}
+            >
+              {isUpdatingIndices ? t('updating') : t('updateBistCsv')}
+            </button>
+          )}
           
           <div className="price-block">
             <strong>{metric.value}</strong>
@@ -168,7 +229,8 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
       </div>
 
       <div className="split-grid">
-        <section className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
+        {isBistIndex && (
+          <section className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ margin: 0 }}>{t('constituentStocks')} ({equities.length})</h2>
             <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-default)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
@@ -184,7 +246,7 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
                   fontWeight: viewMode === 'list' ? 'bold' : 'normal',
                   cursor: 'pointer'
                 }}
-              >Liste</button>
+              >{t('list')}</button>
               <button 
                 onClick={() => setViewMode('heatmap')}
                 style={{
@@ -197,17 +259,16 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
                   fontWeight: viewMode === 'heatmap' ? 'bold' : 'normal',
                   cursor: 'pointer'
                 }}
-              >Isı Haritası</button>
+              >{t('heatmap')}</button>
             </div>
           </div>
           
           <div style={{ flex: 1, overflowY: 'auto', minHeight: '400px' }}>
             {viewMode === 'heatmap' ? (
-              <IndexHeatmap 
+              <IndexHeatmap
                 constituents={currentConstituents}
                 snapshot={snapshot}
                 onSelectTicker={onSelectTicker}
-                width={500}
                 height={500}
               />
             ) : equities.length > 0 ? (
@@ -266,8 +327,9 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
             )}
           </div>
         </section>
+        )}
 
-        <section className="panel">
+        <section className="panel" style={{ gridColumn: isBistIndex ? 'auto' : '1 / -1' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h2>{t('indexDynamics')}</h2>
             <div className="range-selector" style={{ display: 'flex', gap: '6px' }}>
@@ -300,6 +362,17 @@ export default function IndexView({ symbol, onSelectTicker }: IndexViewProps) {
             <PriceChart ticker={symbol} data={history} range={range} />
           ) : (
             <div className="empty-state" style={{ height: '350px' }}>Loading chart dynamics for {symbol}...</div>
+          )}
+        </section>
+      </div>
+
+      <div className="split-grid" style={{ marginTop: '24px' }}>
+        <section className="panel" style={{ gridColumn: '1 / -1' }}>
+          <h2>{t('newsFeed')}</h2>
+          {newsLoading ? (
+            <div className="empty-state">{t('loadingData')}</div>
+          ) : (
+            <NewsList news={news} />
           )}
         </section>
       </div>

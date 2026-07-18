@@ -5,9 +5,12 @@ import DOMPurify from 'dompurify';
 import { getNewsFeed, getNewsPreview, getNewsHtml } from '../../api/tauriClient';
 import type { NewsItem } from '../../types';
 import { useTranslation } from '../../api/i18n';
+// Modül düzeyi yardımcılar bileşen dışı çalıştığından hook yerine i18next
+// örneği kullanılır.
+import i18n from '../../i18n';
 
 function formatDate(value: string) {
-  if (!value) return 'Tarih yok';
+  if (!value) return i18n.t('noDate');
   const gdeltMatch = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
   const normalized = gdeltMatch
     ? `${gdeltMatch[1]}-${gdeltMatch[2]}-${gdeltMatch[3]}T${gdeltMatch[4]}:${gdeltMatch[5]}:${gdeltMatch[6]}Z`
@@ -15,7 +18,7 @@ function formatDate(value: string) {
   const date = new Date(normalized);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    : new Intl.DateTimeFormat(i18n.language === 'tr' ? 'tr-TR' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
 function fallbackSummary(item: NewsItem) {
@@ -26,10 +29,11 @@ function fallbackSummary(item: NewsItem) {
     .replace(/&nbsp;|&#160;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return `${publisher} kaynağındaki habere göre: ${headline}${/[.!?]$/.test(headline) ? '' : '.'}`;
+  return i18n.t('newsFallbackSummary', { publisher, headline: `${headline}${/[.!?]$/.test(headline) ? '' : '.'}` });
 }
 
 export function NewsList({ news }: { news: NewsItem[] }) {
+  const { t } = useTranslation();
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
@@ -145,7 +149,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
               <p style={{ margin: '0 0 12px', color: '#c9d1d9', lineHeight: 1.6 }}>
                 {item.summary
                   ?? previews[item.link]
-                  ?? (previewLoading === item.link ? 'Kısa özet hazırlanıyor...' : 'Özet yükleniyor...')}
+                  ?? (previewLoading === item.link ? t('newsLoadingPreview') : t('newsNoSummary'))}
               </p>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
@@ -153,7 +157,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
                   className="primary-button"
                   onClick={() => void openUrl(item.link)}
                 >
-                  Kaynakta oku ↗
+                  {t('newsReadAtSource')}
                 </button>
                 {!item.is_kap && (
                   <button
@@ -174,16 +178,16 @@ export function NewsList({ news }: { news: NewsItem[] }) {
                         } else {
                           // Tauri'nin macOS WebView'ü alert() desteklemez; hata okuyucuda gösterilir.
                           setActiveArticle({
-                            title: 'İçerik okunamadı',
-                            html: '<p>Bu haber sayfası FRAUDE içinde okumak için uygun formatta değil. "Orijinal Habere Git" ile kaynakta açabilirsiniz.</p>',
+                            title: t('readerUnreadableTitle'),
+                            html: t('readerUnreadableBody'),
                             link: item.link,
                           });
                         }
                       } catch (err) {
                         const detail = err instanceof Error ? err.message : String(err);
                         setActiveArticle({
-                          title: 'İçerik alınamadı',
-                          html: DOMPurify.sanitize(`<p>${detail || 'Haber içeriği çekilemedi veya korumalı bir kaynak.'}</p>`, { USE_PROFILES: { html: true } }),
+                          title: t('readerFailedTitle'),
+                          html: DOMPurify.sanitize(`<p>${detail || t('readerFailedFallback')}</p>`, { USE_PROFILES: { html: true } }),
                           link: item.link,
                         });
                       } finally {
@@ -191,7 +195,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
                       }
                     }}
                   >
-                    {readerLoading === item.link ? 'Yükleniyor...' : 'Fraude\'da Oku'}
+                    {readerLoading === item.link ? t('loadingData') : t('readInFraude')}
                   </button>
                 )}
               </div>
@@ -233,7 +237,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
             />
             <div style={{ padding: '20px 24px', borderTop: '1px solid #30363d', textAlign: 'center' }}>
               <button type="button" className="primary-button" onClick={() => void openUrl(activeArticle.link)}>
-                Orijinal Habere Git ↗
+                {t('openOriginal')}
               </button>
             </div>
           </div>
@@ -303,27 +307,27 @@ export default function NewsFeedView() {
     <div className="view">
       <div className="view-header">
         <div>
-          <p className="eyebrow">Anahtarsız şirket haberleri</p>
+          <p className="eyebrow">{t('newsEyebrow')}</p>
           <h1>{t('newsFeed')}{activeTicker ? ` · ${activeTicker}` : ''}</h1>
-          <p>GDELT, Google News RSS ve KAP'a yönlenen herkese açık sonuçlar.</p>
+          <p>{t('newsHeaderDesc')}</p>
         </div>
         <form onSubmit={submitTicker} style={{ display: 'flex', gap: '8px' }}>
           <input
             className="top-input"
-            aria-label="Hisse kodu"
+            aria-label={t('tickerCodeLabel')}
             placeholder="ASELS, THYAO..."
             value={tickerInput}
             onChange={(event) => setTickerInput(event.target.value)}
             style={{ width: '170px' }}
           />
-          <button type="submit" className="primary-button">Hisse Haberleri</button>
-          <button type="button" className="small-button" onClick={() => void loadNews()}>Yenile</button>
+          <button type="submit" className="primary-button">{t('tickerNewsBtn')}</button>
+          <button type="button" className="small-button" onClick={() => void loadNews()}>{t('kapRefresh')}</button>
         </form>
       </div>
 
       <div className="panel" style={{ marginBottom: '12px', padding: '10px 14px' }}>
         <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>
-          KAP etiketi resmi ücretli KAP API'sinden değil, KAP bildirim sayfalarını indeksleyen ücretsiz haber aramasından gelir; gecikme veya eksik sonuç olabilir.
+          {t('kapSearchDisclaimer')}
         </span>
       </div>
 

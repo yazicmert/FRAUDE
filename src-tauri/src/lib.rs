@@ -8,6 +8,11 @@ mod indicators;
 mod isyatirim;
 mod isyatirim_price;
 mod market_calendar;
+mod economic_calendar;
+mod live_quotes;
+mod kap_pdr;
+mod tefas;
+mod tefas_issuer;
 mod news_tagger;
 mod ai_tagger;
 mod providers;
@@ -199,6 +204,15 @@ pub fn run() {
             commands::delete_artifact,
             commands::get_price_history,
             commands::get_market_holidays,
+            commands::get_economic_calendar,
+            commands::get_funds,
+            commands::get_fund_allocation,
+            commands::get_fund_history,
+            commands::get_fund_issuer,
+            commands::get_fund_disclosures,
+            commands::get_fund_holdings,
+            commands::get_fund_returns,
+            commands::get_live_quotes,
             commands::get_news_feed,
             commands::get_news_preview,
             commands::get_news_html,

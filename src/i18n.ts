@@ -7,11 +7,14 @@ const resources = {
   tr: { translation: translations.tr }
 };
 
+// Kayıtlı dil tercihi açılışta uygulanır; yazma tarafı useTranslation.setLanguage'dedir.
+const savedLang = localStorage.getItem("i18nextLng");
+
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: "tr", // default language
+    lng: savedLang === "en" || savedLang === "tr" ? savedLang : "tr",
     fallbackLng: "en",
     interpolation: {
       escapeValue: false // react already safes from xss

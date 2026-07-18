@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { notify } from '../../lib/notify';
+import { useTranslation } from '../../api/i18n';
 
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
@@ -66,6 +67,7 @@ function mergeByKey(existing: any[], incoming: any[], keyOf: (x: any) => string)
 }
 
 export default function ShareModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const [importText, setImportText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -96,15 +98,15 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    void notify({ title: 'Yedek indirildi', body: 'Dosya İndirilenler klasörüne kaydedildi.', kind: 'success', toastOnly: true });
+    void notify({ title: t('shareDownloaded'), body: t('shareDownloadedBody'), kind: 'success', toastOnly: true });
   };
 
   const doCopy = async () => {
     try {
       await navigator.clipboard.writeText(exportText);
-      void notify({ title: 'Panoya kopyalandı', kind: 'success', toastOnly: true });
+      void notify({ title: t('shareCopied'), kind: 'success', toastOnly: true });
     } catch {
-      void notify({ title: 'Kopyalanamadı', body: 'Aşağıdaki metni elle seçip kopyalayın.', kind: 'danger', toastOnly: true });
+      void notify({ title: t('shareCopyFailed'), body: t('shareCopyFailedBody'), kind: 'danger', toastOnly: true });
     }
   };
 
@@ -113,11 +115,11 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
     try {
       parsed = JSON.parse(text);
     } catch {
-      void notify({ title: 'Geçersiz dosya', body: 'JSON çözümlenemedi.', kind: 'danger', toastOnly: true });
+      void notify({ title: t('shareInvalidFile'), body: t('shareInvalidJson'), kind: 'danger', toastOnly: true });
       return;
     }
     if (!parsed || parsed.app !== 'fraude' || !parsed.data) {
-      void notify({ title: 'Tanınmayan yedek', body: 'Bu bir FRAUDE yedeği değil.', kind: 'danger', toastOnly: true });
+      void notify({ title: t('shareUnknownBackup'), body: t('shareNotFraude'), kind: 'danger', toastOnly: true });
       return;
     }
     const d = parsed.data;
@@ -145,9 +147,9 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
     }
 
     if (changed === 0) {
-      void notify({ title: 'İçe aktarılacak veri yok', kind: 'warning', toastOnly: true });
+      void notify({ title: t('shareNothingToImport'), kind: 'warning', toastOnly: true });
     } else {
-      void notify({ title: 'İçe aktarıldı', body: `${changed} bölüm birleştirildi.`, kind: 'success', toastOnly: true });
+      void notify({ title: t('shareImported'), body: t('shareImportedBody', { n: changed }), kind: 'success', toastOnly: true });
       onClose();
     }
   };
@@ -164,37 +166,36 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
     <div style={overlay} onClick={onClose}>
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <strong style={{ fontSize: '1.05rem' }}>📤 Yedekle & Paylaş</strong>
+          <strong style={{ fontSize: '1.05rem' }}>📤 {t('paletteShare')}</strong>
           <button type="button" onClick={onClose} style={{ ...btn, padding: '4px 10px' }}>✕</button>
         </div>
 
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-          Takip listen + günlüğün, alarmların ve kayıtlı screener'ların tek dosyada. Başka bir cihaza taşımak
-          veya bir arkadaşınla paylaşmak için dışa aktar; gelen dosyayı içe aktardığında mevcutlarla birleştirilir.
+          {t('shareDesc')}
         </p>
 
         <div style={{ display: 'flex', gap: '10px', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px', flexWrap: 'wrap' }}>
-          <span>📋 Takip: <strong style={{ color: 'var(--text-main)' }}>{counts.watchlist}</strong></span>
-          <span>⏰ Alarm: <strong style={{ color: 'var(--text-main)' }}>{counts.alerts}</strong></span>
+          <span>📋 {t('shareWatchlist')}: <strong style={{ color: 'var(--text-main)' }}>{counts.watchlist}</strong></span>
+          <span>⏰ {t('setAlert')}: <strong style={{ color: 'var(--text-main)' }}>{counts.alerts}</strong></span>
           <span>🔍 Screener: <strong style={{ color: 'var(--text-main)' }}>{counts.presets}</strong></span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <button type="button" style={{ ...btn, background: 'var(--accent-primary)', color: '#000', fontWeight: 'bold' }} onClick={doDownload}>⬇️ Dosya indir</button>
-          <button type="button" style={btn} onClick={doCopy}>📋 Panoya kopyala</button>
+          <button type="button" style={{ ...btn, background: 'var(--accent-primary)', color: '#000', fontWeight: 'bold' }} onClick={doDownload}>⬇️ {t('shareDownload')}</button>
+          <button type="button" style={btn} onClick={doCopy}>📋 {t('shareCopy')}</button>
         </div>
 
         <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
-          <strong style={{ fontSize: '0.9rem' }}>İçe aktar</strong>
+          <strong style={{ fontSize: '0.9rem' }}>{t('shareImportTitle')}</strong>
           <div style={{ display: 'flex', gap: '8px', margin: '10px 0', flexWrap: 'wrap' }}>
-            <button type="button" style={btn} onClick={() => fileRef.current?.click()}>📁 Dosya seç…</button>
+            <button type="button" style={btn} onClick={() => fileRef.current?.click()}>📁 {t('shareChooseFile')}</button>
             <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={onFile} />
-            <button type="button" style={btn} disabled={!importText.trim()} onClick={() => applyImport(importText)}>Yapıştırılanı içe aktar</button>
+            <button type="button" style={btn} disabled={!importText.trim()} onClick={() => applyImport(importText)}>{t('shareImportPasted')}</button>
           </div>
           <textarea
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
-            placeholder="…veya yedek JSON'unu buraya yapıştır"
+            placeholder={t('sharePastePlaceholder')}
             style={{ width: '100%', minHeight: '90px', resize: 'vertical', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '6px', padding: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}
           />
         </div>

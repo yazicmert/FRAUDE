@@ -25,7 +25,7 @@ export function readInstalledModules(): InstalledModule[] {
 
     const parsed = JSON.parse(stored) as InstalledModule[];
     const known = new Map(parsed.map((item) => [item.id, item]));
-    return moduleCatalog.map((module) => {
+    const merged = moduleCatalog.map((module) => {
       const existing = known.get(module.id);
       return existing ? {
         ...existing,
@@ -38,6 +38,10 @@ export function readInstalledModules(): InstalledModule[] {
         artifactHash: module.artifact?.sha256 ?? embeddedArtifactId(module),
       };
     });
+    // Hiçbir modülün açık olmadığı durum meşru bir yapılandırma değil, bozuk
+    // kayıttır: çalışma alanı sekmesiz/menüsüz simsiyah kalır ve kullanıcı
+    // Modül Merkezi'ne bile ulaşamaz. Varsayılana dönerek kendini onarır.
+    return merged.some((module) => module.enabled) ? merged : defaults();
   } catch {
     return defaults();
   }

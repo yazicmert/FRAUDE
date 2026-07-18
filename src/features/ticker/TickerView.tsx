@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, type PriceSource } from '../../api/tauriClient';
@@ -11,6 +11,9 @@ import { dispatchAiAsk, dispatchOpenAlerts } from '../../lib/actions';
 import FinancialsTab from './FinancialsTab';
 import WatchlistJournal from './WatchlistJournal';
 import FlashValue from '../../components/FlashValue';
+import { useLiveQuotes } from '../../hooks/useLiveQuotes';
+import { hasCorporateData } from '../../lib/instrumentKind';
+import { BellIcon, SparklesIcon, StarIcon } from '../../components/icons';
 
 const OWNER_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00ced1', '#f0883e', '#7ee787'];
 
@@ -74,6 +77,10 @@ const googleSearchUrl = (name: string) =>
 export default function TickerView({ ticker }: { ticker: string }) {
   const { t } = useTranslation();
   const { isInWatchlist, toggleWatchlist } = useWatchlist();
+  // Fiyat, ağır anlık görüntüden bağımsız olarak gecikmeli canlı uçtan tazelenir;
+  // yalnızca fiyat bloğu yeniden çizilir, sayfanın geri kalanı yerinde kalır.
+  const liveSymbols = useMemo(() => [ticker], [ticker]);
+  const live = useLiveQuotes(liveSymbols);
   const [snapshot, setSnapshot] = useState<TickerSnapshot | null>(null);
   const [history, setHistory] = useState<HistoricalQuote[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -98,7 +105,11 @@ export default function TickerView({ ticker }: { ticker: string }) {
   // Fiyat kaynağı: Yahoo (mum + hacim) veya İş Yatırım (düzeltilmiş kapanış-only).
   // Yalnız BIST hisseleri için anlamlı; endeks/emtia/yabancı sembollerde gizlenir.
   const [priceSource, setPriceSource] = useState<PriceSource>('yahoo');
-  const isBistStock = /^[A-Z0-9]+$/.test(ticker) && !ticker.startsWith('X');
+  // Kurumsal bölümler (KAP, ortaklık, temettü/bedelsiz, mali tablolar, İş
+  // Yatırım kaynağı) tek merkezden açılıp kapanır: emtia/endeks/döviz/kripto
+  // sayfalarında bu veriler ne çekilir ne gösterilir. Anlık görüntü gelince
+  // backend etiketi (ör. AAPL → "Global") sınıflandırmayı keskinleştirir.
+  const corporate = hasCorporateData(ticker, snapshot?.equity.index_memberships ?? null);
   const [activeTab, setActiveTab] = useState<'overview' | 'financials'>('overview');
 
   useEffect(() => {
@@ -136,17 +147,25 @@ export default function TickerView({ ticker }: { ticker: string }) {
       .finally(() => setNewsLoading(false));
   }, [ticker]);
 
-  // Gerçek KAP bildirimleri (kap.org.tr araması) + temettü ve bölünme geçmişi
+  // Gerçek KAP bildirimleri (resmi KAP API'si; yoksa haber araması) + temettü
+  // ve bölünme geçmişi
   useEffect(() => {
     setKapItems([]);
+    setDividends([]);
+    setCapitalIncreases([]);
+    // Kurumsal olmayan enstrümanlarda (emtia/endeks/döviz/kripto) KAP,
+    // temettü ve bedelsiz kavramları yoktur; istek hiç atılmaz.
+    if (!corporate) {
+      setKapLoading(false);
+      setHistoryLoading(false);
+      return;
+    }
     setKapLoading(true);
     getKapForTicker(ticker)
       .then(setKapItems)
       .catch((err: unknown) => console.error('Failed to load KAP disclosures:', err))
       .finally(() => setKapLoading(false));
 
-    setDividends([]);
-    setCapitalIncreases([]);
     setHistoryLoading(true);
     Promise.allSettled([getDividends(ticker), getCapitalIncreases(ticker)])
       .then(([div, cap]) => {
@@ -154,7 +173,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
         if (cap.status === 'fulfilled') setCapitalIncreases(cap.value);
       })
       .finally(() => setHistoryLoading(false));
-  }, [ticker]);
+  }, [ticker, corporate]);
 
   // Ortaklık yapısı ilk açılışta bir kez çekilip diske yazılır; sonraki
   // açılışlar önbellekten gelir, değişiklik takibi KAP bildirimlerindedir.
@@ -169,8 +188,13 @@ export default function TickerView({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     setShareholders(null);
+    setShareholdersError(null);
+    if (!corporate) {
+      setShareholdersLoading(false);
+      return;
+    }
     loadShareholders();
-  }, [ticker]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ticker, corporate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bağlı ortaklık / iştirak tablosu KAP Genel Bilgiler sayfasından bir kez
   // çekilip diske yazılır; "Yenile" ile tazelenir.
@@ -185,8 +209,13 @@ export default function TickerView({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     setSubsidiaries(null);
+    setSubsidiariesError(null);
+    if (!corporate) {
+      setSubsidiariesLoading(false);
+      return;
+    }
     loadSubsidiaries();
-  }, [ticker]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ticker, corporate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ortak etiketine tıklanınca haber araştırması: şirketlerde son dönem,
   // patronlarda geniş pencereli geçmiş araması yapılır.
@@ -216,6 +245,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
 
   const { equity } = snapshot;
 
+  // Gecikmeli canlı fiyat varsa onu göster; yoksa (global hisse, seans kapalı,
+  // sağlayıcı erişilemedi) anlık görüntüdeki değer korunur.
+  const quote = live.get(ticker.trim().replace(/\.IS$/i, '').toUpperCase());
+  const price = quote?.price ?? equity.price;
+  const changePct = quote?.change_pct ?? equity.change_pct;
+
   // Labeled zones for RSI
   const getRsiZone = (val: number) => {
     if (val < 30) return t('rsiOversold');
@@ -244,48 +279,42 @@ export default function TickerView({ ticker }: { ticker: string }) {
           <p className="eyebrow">{t('tickerDetail')}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <h1>{equity.ticker}</h1>
-            <button 
-              className={`small-button ${isInWatchlist(ticker) ? 'active' : ''}`}
+            <button
+              type="button"
+              className={`ticker-action-btn${isInWatchlist(ticker) ? ' active' : ''}`}
               onClick={() => toggleWatchlist(ticker, equity.price)}
-              style={{ 
-                padding: '4px 12px', 
-                fontSize: '0.85rem', 
-                background: isInWatchlist(ticker) ? 'var(--accent-primary)' : 'transparent',
-                color: isInWatchlist(ticker) ? '#000' : 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: isInWatchlist(ticker) ? 'bold' : 'normal'
-              }}
-              title={isInWatchlist(ticker) ? "Portföyden Çıkar" : "Portföye Ekle"}
+              title={isInWatchlist(ticker) ? t('removeFromWatchlist') : t('addToWatchlist')}
             >
-              {isInWatchlist(ticker) ? '⭐ Portföyümde' : '☆ Portföye Ekle'}
+              <StarIcon filled={isInWatchlist(ticker)} />
+              {isInWatchlist(ticker) ? t('inWatchlist') : t('addToWatchlist')}
             </button>
             <button
-              className="small-button"
+              type="button"
+              className="ticker-action-btn"
               onClick={() => dispatchAiAsk(
-                `${equity.ticker} (${equity.name}) hissesinde bugünkü %${equity.change_pct.toFixed(2)} hareketin olası nedenlerini ve teknik görünümü (fiyat ${equity.price.toFixed(2)}, RSI ${equity.rsi.toFixed(1)}, F/K ${equity.pe?.toFixed(2) ?? 'yok'}) kısaca yorumla. Yatırım tavsiyesi verme.`,
+                `${equity.ticker} (${equity.name}) ${corporate ? 'hissesinde' : 'enstrümanında'} bugünkü %${equity.change_pct.toFixed(2)} hareketin olası nedenlerini ve teknik görünümü (fiyat ${equity.price.toFixed(2)}, RSI ${equity.rsi.toFixed(1)}${corporate ? `, F/K ${equity.pe?.toFixed(2) ?? 'yok'}` : ''}) kısaca yorumla. Yatırım tavsiyesi verme.`,
               )}
-              style={{ padding: '4px 12px', fontSize: '0.85rem', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer' }}
-              title="Bu hareketi AI ile yorumla"
+              title={t('explainMoveHint')}
             >
-              🤖 Hareketi Açıkla
+              <SparklesIcon />
+              {t('explainMove')}
             </button>
             <button
-              className="small-button"
+              type="button"
+              className="ticker-action-btn"
               onClick={() => dispatchOpenAlerts(equity.ticker)}
-              style={{ padding: '4px 12px', fontSize: '0.85rem', background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer' }}
-              title="Bu hisse için fiyat/teknik alarm kur"
+              title={t('setAlertHint')}
             >
-              ⏰ Alarm
+              <BellIcon />
+              {t('setAlert')}
             </button>
           </div>
           <p>{equity.name}</p>
         </div>
-        <div className="price-block">
-          <strong><FlashValue value={equity.price} format={(v) => v.toFixed(2)} style={{ borderRadius: '4px', padding: '0 4px' }} /></strong>
-          <span className={equity.change_pct >= 0 ? 'positive' : 'negative'}>
-            {equity.change_pct >= 0 ? '+' : ''}{equity.change_pct.toFixed(2)}%
+        <div className="price-block" title={quote ? t('liveDelayedHint') : undefined}>
+          <strong><FlashValue value={price} format={(v) => v.toFixed(2)} style={{ borderRadius: '4px', padding: '0 4px' }} /></strong>
+          <span className={changePct >= 0 ? 'positive' : 'negative'}>
+            {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
           </span>
         </div>
       </div>
@@ -294,7 +323,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <strong>{t('priceHistory')}</strong>
-            {isBistStock && (
+            {corporate && (
               <div className="source-selector" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('chartSource')}:</span>
                 {(['yahoo', 'isyatirim'] as const).map((s) => (
@@ -343,7 +372,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
           </div>
         </div>
         {history.length > 0 ? (
-          <PriceChart ticker={ticker} data={history} range={range} />
+          <PriceChart ticker={ticker} data={history} range={range} livePrice={quote?.price ?? null} />
         ) : (
           <div className="empty-state" style={{ height: '350px' }}>{t('loadingChart')} {ticker}...</div>
         )}
@@ -359,20 +388,22 @@ export default function TickerView({ ticker }: { ticker: string }) {
         >
           {t('overview') || 'Genel Bakış'}
         </button>
-        <button
-          className={activeTab === 'financials' ? 'active' : ''}
-          onClick={() => setActiveTab('financials')}
-          style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: activeTab === 'financials' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: activeTab === 'financials' ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: 'pointer', fontWeight: activeTab === 'financials' ? 'bold' : 'normal' }}
-        >
-          {t('financialsDetail') || 'Mali Tablolar'}
-        </button>
+        {corporate && (
+          <button
+            className={activeTab === 'financials' ? 'active' : ''}
+            onClick={() => setActiveTab('financials')}
+            style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: activeTab === 'financials' ? '2px solid var(--accent-primary)' : '2px solid transparent', color: activeTab === 'financials' ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: 'pointer', fontWeight: activeTab === 'financials' ? 'bold' : 'normal' }}
+          >
+            {t('financialsDetail') || 'Mali Tablolar'}
+          </button>
+        )}
       </div>
 
-      {activeTab === 'financials' ? (
+      {activeTab === 'financials' && corporate ? (
         <FinancialsTab ticker={equity.ticker} />
       ) : (
       <>
-      <div className="split-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div className="split-grid" style={{ display: 'grid', gridTemplateColumns: corporate ? '1fr 1fr' : '1fr', gap: '16px' }}>
         <section className="panel">
           <h2>{t('technicals')}</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '12px' }}>
@@ -416,6 +447,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
           </div>
         </section>
 
+        {corporate && (
         <section className="panel">
           <h2>{t('fundamentals')}</h2>
           {!equity.fundamentals_available ? (
@@ -494,15 +526,17 @@ export default function TickerView({ ticker }: { ticker: string }) {
           </>
           )}
         </section>
+        )}
       </div>
 
+      {corporate && (
       <section className="panel" style={{ marginTop: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-          <h2>Ortaklık Yapısı</h2>
+          <h2>{t('ownershipStructure')}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {shareholders && (
               <span style={{ fontSize: '0.72rem', color: '#8b949e' }}>
-                İş Yatırım · {shareholders.as_of} tarihinde çekildi
+                {t('shFetchedAt', { date: shareholders.as_of })}
               </span>
             )}
             <button
@@ -511,12 +545,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
               disabled={shareholdersLoading}
               onClick={() => loadShareholders(true)}
             >
-              {shareholdersLoading ? 'Yükleniyor...' : 'Yenile'}
+              {shareholdersLoading ? t('loadingData') : t('kapRefresh')}
             </button>
           </div>
         </div>
         {shareholdersLoading && !shareholders ? (
-          <div className="empty-state" style={{ padding: '20px' }}>Ortaklık yapısı yükleniyor...</div>
+          <div className="empty-state" style={{ padding: '20px' }}>{t('loadingOwnership')}</div>
         ) : shareholdersError ? (
           <div className="empty-state error" style={{ padding: '20px', fontSize: '0.82rem' }}>{shareholdersError}</div>
         ) : shareholders && shareholders.holders.length > 0 ? (
@@ -560,7 +594,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                 {corporateHolders.length > 0 && (
                   <div>
                     <span style={{ fontSize: '0.72rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                      🏢 Ortak Şirketler — etikete tıklayın, haberleri araştırılır
+                      {t('corporateHoldersLabel')}
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                       {corporateHolders.map((holder) => (
@@ -568,7 +602,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                           key={holder.name}
                           type="button"
                           onClick={() => openResearch(shortenCompanyName(holder.name), 'company')}
-                          title={`${holder.name} haberlerini araştır`}
+                          title={t('researchNewsTitle', { name: holder.name })}
                           style={{
                             padding: '4px 10px', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer',
                             background: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.35)',
@@ -584,7 +618,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                 {personHolders.length > 0 && (
                   <div>
                     <span style={{ fontSize: '0.72rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                      👤 Patronlar (Gerçek Kişi Ortaklar) — geçmişi haberlerde, X ve LinkedIn'de araştırılır
+                      {t('personHoldersLabel')}
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                       {personHolders.map((holder) => (
@@ -592,7 +626,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                           key={holder.name}
                           type="button"
                           onClick={() => openResearch(holder.name, 'person')}
-                          title={`${holder.name} geçmişini araştır`}
+                          title={t('researchHistoryTitle', { name: holder.name })}
                           style={{
                             padding: '4px 10px', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer',
                             background: 'rgba(210,153,34,0.08)', border: '1px solid rgba(210,153,34,0.4)',
@@ -610,7 +644,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
             {ownershipKapItems.length > 0 && (
               <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #21262d' }}>
                 <span style={{ fontSize: '0.75rem', color: '#d29922', fontWeight: 'bold' }}>
-                  ⚠ Ortaklıkla ilgili son KAP bildirimleri — yapı değişmiş olabilir:
+                  {t('ownershipKapWarning')}
                 </span>
                 <ul style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
                   {ownershipKapItems.slice(0, 4).map((item) => (
@@ -627,21 +661,21 @@ export default function TickerView({ ticker }: { ticker: string }) {
               </div>
             )}
             <p style={{ margin: '12px 0 0', fontSize: '0.68rem', color: '#8b949e' }}>
-              Ortaklık yapısı bir kez çekilip yerel olarak saklanır; pay değişimleri KAP bildirimlerinden izlenir, gerektiğinde "Yenile" ile güncellenir.
+              {t('ownershipCacheNote')}
             </p>
           </>
         ) : (
-          <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>Ortaklık yapısı verisi bulunamadı.</div>
+          <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>{t('ownershipNotFound')}</div>
         )}
 
         <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #21262d' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
             <span style={{ fontSize: '0.72rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-              🏭 Bağlı Ortaklıklar & İştirakler{subsidiaries ? ` (${subsidiaries.items.length})` : ''} — etikete tıklayın, haberleri araştırılır
+              {t('subsidiariesLabel')}{subsidiaries ? ` (${subsidiaries.items.length})` : ''} — {t('clickTagToResearch')}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {subsidiaries && (
-                <span style={{ fontSize: '0.7rem', color: '#8b949e' }}>KAP Genel Bilgiler · {subsidiaries.as_of}</span>
+                <span style={{ fontSize: '0.7rem', color: '#8b949e' }}>{t('subFetchedAt', { date: subsidiaries.as_of })}</span>
               )}
               <button
                 type="button"
@@ -649,12 +683,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
                 disabled={subsidiariesLoading}
                 onClick={() => loadSubsidiaries(true)}
               >
-                {subsidiariesLoading ? 'Yükleniyor...' : 'Yenile'}
+                {subsidiariesLoading ? t('loadingData') : t('kapRefresh')}
               </button>
             </div>
           </div>
           {subsidiariesLoading && !subsidiaries ? (
-            <div style={{ padding: '12px 0', fontSize: '0.8rem', color: '#8b949e' }}>KAP'tan bağlı ortaklıklar yükleniyor...</div>
+            <div style={{ padding: '12px 0', fontSize: '0.8rem', color: '#8b949e' }}>{t('loadingSubsidiaries')}</div>
           ) : subsidiariesError ? (
             <div style={{ padding: '12px 0', fontSize: '0.78rem', color: '#f85149' }}>{subsidiariesError}</div>
           ) : subsidiaries && subsidiaries.items.length > 0 ? (
@@ -685,22 +719,24 @@ export default function TickerView({ ticker }: { ticker: string }) {
             </div>
           ) : (
             <div style={{ padding: '12px 0', fontSize: '0.78rem', color: '#8b949e' }}>
-              KAP kaydında bildirilmiş bağlı ortaklık / iştirak bulunamadı.
+              {t('subsidiariesNotFound')}
             </div>
           )}
         </div>
       </section>
+      )}
 
+      {corporate && (
       <section className="panel" style={{ marginTop: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <h2>KAP Bildirimleri</h2>
-          <span style={{ fontSize: '0.72rem', color: '#8b949e' }}>kap.org.tr araması · son 90 gün</span>
+          <h2>{t('kapDisclosures')}</h2>
+          <span style={{ fontSize: '0.72rem', color: '#8b949e' }}>{t('kapDisclosuresSubtitle')}</span>
         </div>
         {kapLoading ? (
-          <div className="empty-state" style={{ padding: '20px' }}>KAP bildirimleri aranıyor...</div>
+          <div className="empty-state" style={{ padding: '20px' }}>{t('kapSearching')}</div>
         ) : kapItems.length === 0 ? (
           <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>
-            {equity.ticker} için son 90 günde KAP bildirimi bulunamadı.
+            {t('kapNoneFound', { ticker: equity.ticker })}
           </div>
         ) : (
           <div className="kap-list">
@@ -722,21 +758,23 @@ export default function TickerView({ ticker }: { ticker: string }) {
           </div>
         )}
       </section>
+      )}
 
+      {corporate && (
       <div className="split-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
         <section className="panel">
-          <h2>Temettü Geçmişi</h2>
+          <h2>{t('dividendHistory')}</h2>
           {historyLoading ? (
-            <div className="empty-state" style={{ padding: '20px' }}>Yükleniyor...</div>
+            <div className="empty-state" style={{ padding: '20px' }}>{t('loadingData')}</div>
           ) : dividends.length === 0 ? (
-            <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>Temettü kaydı bulunamadı.</div>
+            <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>{t('dividendsNotFound')}</div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Hak Düşüm</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Hisse Başı</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Verim</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('exDate')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('perShare')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('yieldLabel')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -746,7 +784,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                       {d.ex_date}
                       {d.installment >= 2 && (
                         <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 'bold', background: '#58a6ff22', color: '#58a6ff' }}>
-                          {d.installment}. Taksit
+                          {t('installmentN', { n: d.installment })}
                         </span>
                       )}
                     </td>
@@ -760,18 +798,18 @@ export default function TickerView({ ticker }: { ticker: string }) {
         </section>
 
         <section className="panel">
-          <h2>Bölünme / Bedelsiz Geçmişi</h2>
+          <h2>{t('splitHistory')}</h2>
           {historyLoading ? (
-            <div className="empty-state" style={{ padding: '20px' }}>Yükleniyor...</div>
+            <div className="empty-state" style={{ padding: '20px' }}>{t('loadingData')}</div>
           ) : capitalIncreases.length === 0 ? (
-            <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>Bölünme / bedelsiz kaydı bulunamadı.</div>
+            <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>{t('splitsNotFound')}</div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Tarih</th>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Tür</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>Oran</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('dateLabel')}</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('typeLabel')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('ratioLabel')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -794,12 +832,13 @@ export default function TickerView({ ticker }: { ticker: string }) {
           )}
         </section>
       </div>
+      )}
 
       <section className="panel" style={{ marginTop: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <div>
-            <h2 style={{ marginBottom: '4px' }}>Şirket Haberleri</h2>
-            <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>GDELT · Google News RSS · ücretsiz KAP arama sonuçları</span>
+            <h2 style={{ marginBottom: '4px' }}>{corporate ? t('companyNews') : t('relatedNews')}</h2>
+            <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>{corporate ? t('newsSourcesCorporate') : t('newsSources')}</span>
           </div>
           <button
             type="button"
@@ -809,11 +848,11 @@ export default function TickerView({ ticker }: { ticker: string }) {
               getNewsFeed(ticker).then(setNews).finally(() => setNewsLoading(false));
             }}
           >
-            Yenile
+            {t('kapRefresh')}
           </button>
         </div>
-        {newsLoading && <div className="empty-state">{ticker} haberleri yükleniyor...</div>}
-        {!newsLoading && news.length === 0 && <div className="empty-state">Bu hisse için güncel haber bulunamadı.</div>}
+        {newsLoading && <div className="empty-state">{t('newsLoadingFor', { ticker })}</div>}
+        {!newsLoading && news.length === 0 && <div className="empty-state">{t('newsNotFound')}</div>}
         {!newsLoading && news.length > 0 && <NewsList news={news} />}
       </section>
       </>
@@ -837,7 +876,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
                   background: research.kind === 'company' ? '#58a6ff22' : '#d2992222',
                   color: research.kind === 'company' ? '#58a6ff' : '#d29922',
                 }}>
-                  {research.kind === 'company' ? 'ORTAK ŞİRKET · HABER ARAŞTIRMASI' : 'PATRON · GEÇMİŞ ARAŞTIRMASI'}
+                  {research.kind === 'company' ? t('researchCompanyBadge') : t('researchPersonBadge')}
                 </span>
               </div>
               <button type="button" onClick={() => setResearch(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.4rem', lineHeight: 1 }}>×</button>
@@ -855,29 +894,28 @@ export default function TickerView({ ticker }: { ticker: string }) {
                 ))}
                 style={{ cursor: 'pointer' }}
               >
-                {research.kind === 'person' ? `𝕏 X'te Ara (${equity.ticker} bağlamlı)` : "𝕏 X'te Ara"}
+                {research.kind === 'person' ? t('searchOnXContext', { ticker: equity.ticker }) : t('searchOnX')}
               </button>
               <button type="button" className="small-button" onClick={() => void openUrl(linkedInSearchUrl(research.name, research.kind))} style={{ cursor: 'pointer' }}>
-                💼 LinkedIn'de Ara
+                {t('searchOnLinkedIn')}
               </button>
               <button type="button" className="small-button" onClick={() => void openUrl(googleSearchUrl(research.name))} style={{ cursor: 'pointer' }}>
-                🌐 Google'da Ara
+                {t('searchOnGoogle')}
               </button>
             </div>
             <p style={{ margin: '0 0 12px', fontSize: '0.7rem', color: '#8b949e' }}>
-              Haberler GDELT ve Google News'ten aranır ({research.kind === 'person' ? 'geniş pencere — geçmiş araştırması' : 'son 90 gün'});
-              X ve LinkedIn sonuçları oturum gerektirdiğinden tarayıcıda açılır.
-              {research.kind === 'person' && ` X araması yalnızca isimle değil, ${equity.ticker} / #${equity.ticker} / "${shortenCompanyName(equity.name)}" bağlamıyla daraltılır.`}
+              {t('researchModalNote', { window: research.kind === 'person' ? t('researchWindowPerson') : t('researchWindowCompany') })}
+              {research.kind === 'person' && ` ${t('researchXNote', { context: `${equity.ticker} / #${equity.ticker} / "${shortenCompanyName(equity.name)}"` })}`}
             </p>
 
             <div style={{ flex: 1, overflowY: 'auto', minHeight: '120px' }}>
               {researchLoading ? (
-                <div className="empty-state" style={{ padding: '24px' }}>"{research.name}" için haberler aranıyor...</div>
+                <div className="empty-state" style={{ padding: '24px' }}>{t('researchSearching', { name: research.name })}</div>
               ) : researchError ? (
                 <div className="empty-state error" style={{ padding: '24px', fontSize: '0.82rem' }}>{researchError}</div>
               ) : researchNews.length === 0 ? (
                 <div className="empty-state" style={{ padding: '24px', fontSize: '0.82rem' }}>
-                  Haber bulunamadı. X, LinkedIn veya Google aramasını deneyin.
+                  {t('researchEmpty')}
                 </div>
               ) : (
                 <NewsList news={researchNews} />

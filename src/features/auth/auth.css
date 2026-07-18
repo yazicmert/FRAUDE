@@ -1,0 +1,451 @@
+/* ---------- Giriş introsu: mumlar ekrandan geçer, ardından FRAUDE belirir ---------- */
+
+.intro-splash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: linear-gradient(180deg, #141b26 0%, #0a0d12 100%);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.intro-splash.intro-out {
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+
+.intro-strip {
+  position: absolute;
+  top: 50vh;
+  left: 0;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  will-change: transform;
+}
+
+.intro-strip-near { animation: intro-sweep 2.6s linear forwards; }
+.intro-strip-far {
+  gap: 10px;
+  opacity: 0.32;
+  filter: blur(1px);
+  animation: intro-sweep 3.4s linear forwards;
+}
+
+@keyframes intro-sweep {
+  from { transform: translate(100vw, -50%); }
+  to   { transform: translate(-110%, -50%); }
+}
+
+.intro-candle {
+  position: relative;
+  width: 16px;
+  height: 200px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intro-candle i {
+  position: absolute;
+  width: 2px;
+  border-radius: 1px;
+}
+
+.intro-candle b {
+  position: relative;
+  width: 10px;
+  border-radius: 3px;
+}
+
+.intro-strip-far .intro-candle { width: 11px; }
+.intro-strip-far .intro-candle b { width: 7px; }
+
+.intro-candle.up i, .intro-candle.up b { background: #00d488; }
+.intro-candle.down i, .intro-candle.down b { background: #f0554a; }
+.intro-candle.up b { box-shadow: 0 0 16px rgba(0, 212, 136, 0.35); }
+.intro-candle.down b { box-shadow: 0 0 16px rgba(240, 85, 74, 0.3); }
+
+.intro-brand {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+}
+
+.intro-letter {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: clamp(56px, 11vw, 104px);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: #e8f0f7;
+  opacity: 0;
+  animation: intro-letter 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+.intro-letter.green {
+  color: #00e896;
+  text-shadow: 0 0 36px rgba(0, 232, 150, 0.45);
+}
+
+@keyframes intro-letter {
+  from { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+
+.intro-tagline {
+  align-self: center;
+  margin-left: 18px;
+  font-size: clamp(11px, 1.6vw, 15px);
+  letter-spacing: 0.7em;
+  color: #8b949e;
+  opacity: 0;
+  animation: intro-letter 0.5s ease 0.7s forwards;
+}
+
+/* ---------- Login ekranı ---------- */
+
+.auth-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(1200px 800px at 50% -10%, #16202c 0%, #0a0d12 62%);
+  overflow: hidden;
+}
+
+/* Zemin: soluk grafik ızgarası — merkezde görünür, kenarlarda erir */
+.auth-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    linear-gradient(rgba(139, 148, 158, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 148, 158, 0.06) 1px, transparent 1px);
+  background-size: 88px 88px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 78%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 78%);
+  pointer-events: none;
+}
+
+/* Akan veri çizgisi: kesikli izler patika boyunca yürür */
+.auth-spark {
+  position: absolute;
+  left: 0;
+  top: 18%;
+  width: 100%;
+  height: 44%;
+  pointer-events: none;
+}
+
+.auth-spark path { fill: none; stroke: url(#sparkGrad); }
+.auth-spark-base { stroke-width: 1.5; opacity: 0.16; }
+.auth-spark-flow {
+  stroke-width: 2;
+  stroke-dasharray: 4 15;
+  opacity: 0.45;
+  animation: spark-flow 1.3s linear infinite;
+}
+
+@keyframes spark-flow { to { stroke-dashoffset: -19; } }
+
+/* Sonsuz mum bandı: iki eş yarı, -%50 kaydırma ile dikişsiz döngü */
+.auth-tape {
+  position: absolute;
+  left: 0;
+  display: flex;
+  width: max-content;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.auth-tape-half {
+  display: flex;
+  gap: 14px;
+  padding-right: 14px;
+  align-items: center;
+}
+
+.auth-tape-near {
+  bottom: 4%;
+  opacity: 0.22;
+  animation: tape-scroll 55s linear infinite;
+}
+
+.auth-tape-far {
+  top: 30%;
+  opacity: 0.09;
+  filter: blur(2px);
+  animation: tape-scroll 95s linear infinite reverse;
+}
+
+@keyframes tape-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Mum gövdeleri canlı piyasa gibi hafifçe nefes alır */
+.auth-tape .intro-candle b {
+  transform-origin: center;
+  animation: candle-breathe 3.8s ease-in-out infinite alternate;
+}
+
+.auth-tape .intro-candle:nth-child(2n) b { animation-duration: 4.7s; animation-delay: -1.3s; }
+.auth-tape .intro-candle:nth-child(3n) b { animation-duration: 3.1s; animation-delay: -2.1s; }
+.auth-tape .intro-candle:nth-child(5n) b { animation-duration: 5.4s; animation-delay: -0.7s; }
+
+@keyframes candle-breathe {
+  from { transform: scaleY(0.9); }
+  to   { transform: scaleY(1.08); }
+}
+
+/* Kart */
+.auth-card {
+  position: relative;
+  width: min(400px, calc(100vw - 48px));
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 34px 32px 26px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  animation: card-in 0.55s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+}
+
+/* Kart kenarında yavaşça dolanan ışık */
+@property --auth-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.auth-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 17px;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--auth-angle),
+    transparent 0deg,
+    transparent 300deg,
+    rgba(0, 232, 150, 0.55) 332deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: border-spin 8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes border-spin { to { --auth-angle: 360deg; } }
+
+.auth-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.auth-logo svg {
+  border-radius: 14px;
+  filter: drop-shadow(0 8px 28px rgba(0, 232, 150, 0.28));
+  animation: logo-float 5s ease-in-out infinite;
+}
+
+@keyframes logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.auth-title {
+  margin: 0;
+  text-align: center;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #e8f0f7;
+}
+
+.auth-title .green { color: #00e896; }
+
+.auth-tagline {
+  margin: 6px 0 22px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted, #8b949e);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+}
+
+.auth-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted, #8b949e);
+  pointer-events: none;
+  transition: color 0.15s ease;
+}
+
+.auth-input:focus-within > svg { color: #00e896; }
+
+.auth-input input {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-main, #c9d1d9);
+  border-radius: 8px;
+  padding: 10px 12px 10px 38px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-input input:focus {
+  border-color: #00e896;
+  box-shadow: 0 0 0 3px rgba(0, 232, 150, 0.12);
+}
+
+.auth-eye {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  padding: 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+}
+
+.auth-eye:hover { color: var(--text-main, #c9d1d9); }
+
+.auth-error {
+  margin: 0;
+  min-height: 16px;
+  font-size: 13px;
+  color: #ff6a5e;
+}
+
+.auth-submit {
+  position: relative;
+  overflow: hidden;
+  margin-top: 6px;
+  padding: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #00e896, #00b877);
+  color: #05130d;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(0, 232, 150, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 30px rgba(0, 232, 150, 0.28);
+}
+
+.auth-submit:disabled { opacity: 0.6; cursor: default; }
+
+/* Düğme üzerinde süzülen parlama */
+.auth-submit::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -70%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  animation: btn-shine 3.8s ease-in-out infinite;
+}
+
+@keyframes btn-shine {
+  0%, 55% { left: -70%; }
+  85%, 100% { left: 130%; }
+}
+
+.auth-submit-arrow { transition: transform 0.15s ease; }
+.auth-submit:hover:not(:disabled) .auth-submit-arrow { transform: translateX(3px); }
+
+.auth-switch {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted, #8b949e);
+}
+
+.auth-switch button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-secondary, #00c3ff);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.auth-note {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  opacity: 0.8;
+}
+
+/* Hareket azaltma tercihi: tüm süs animasyonları durur */
+@media (prefers-reduced-motion: reduce) {
+  .intro-strip,
+  .auth-tape,
+  .auth-tape .intro-candle b,
+  .auth-spark-flow,
+  .auth-card,
+  .auth-card::before,
+  .auth-submit::after,
+  .auth-logo svg {
+    animation: none;
+  }
+  .intro-letter, .intro-tagline { animation-duration: 0.01s; }
+}

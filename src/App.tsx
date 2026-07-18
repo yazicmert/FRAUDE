@@ -4,6 +4,8 @@ import { isDataRuntimeConfigured } from './api/platformClient';
 import TabBar from './features/tabs/TabBar';
 import TerminalPanel from './features/terminal/TerminalPanel';
 import TopSearch from './components/TopSearch';
+import MarketMarquee, { type MarqueeMode } from './components/MarketMarquee';
+import { PRESET_SYMBOLS } from './components/symbolCatalog';
 import { useTranslation } from './api/i18n';
 import {
   getWorkspaceModule,
@@ -21,6 +23,11 @@ import AlertsModal from './features/alerts/AlertsModal';
 import ShareModal from './features/share/ShareModal';
 import ToastHost from './components/Toast';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
+import MorningBriefModal from './components/MorningBriefModal';
+import HotkeyTip from './components/HotkeyTip';
+import EconomicCalendar from './components/EconomicCalendar';
+import { ActivityIcon, BellIcon, BookOpenIcon, CalendarIcon, GearIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon } from './components/icons';
+import { matchesShortcut, shortcutKeys } from './lib/shortcuts';
 import { getMarketStatus, type MarketStatus } from './lib/marketHours';
 import { setFetchedHolidays } from './lib/marketHolidays';
 import { ensureNotificationPermission } from './lib/notify';
@@ -50,9 +57,12 @@ interface TerminalEntry {
 
 /** Build the initial set of open tabs from the enabled, default-tab modules. */
 function initialOpenTabs(installed: InstalledModule[]): WorkspaceTab[] {
-  return workspaceModules
+  const tabs = workspaceModules
     .filter((module) => moduleIsDefaultTab(module) && isModuleEnabled(module, installed))
     .map((module) => ({ id: module.kind, kind: module.kind }));
+  // Modül durumu ne olursa olsun çalışma alanı asla boş açılmaz; pano her
+  // zaman son çaredir.
+  return tabs.length > 0 ? tabs : [{ id: 'dashboard', kind: 'dashboard' }];
 }
 
 /** Static (non-dynamic) title used for context labels. */
@@ -75,6 +85,10 @@ export default function App() {
   const [aiQuickPrompt, setAiQuickPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  // Rozet: bugünün yüksek etkili makro duyuru sayısı (takvim bileşeni bildirir).
+  const [calendarHighToday, setCalendarHighToday] = useState(0);
 
   const [openTabs, setOpenTabs] = useState<WorkspaceTab[]>(() => initialOpenTabs(installedModules));
   const [activeTabId, setActiveTabId] = useState('dashboard');
@@ -96,21 +110,15 @@ export default function App() {
     return saved ? JSON.parse(saved) : true;
   });
 
-  const toggleSidebar = () => {
-    const next = !showSidebar;
-    setShowSidebar(next);
-    localStorage.setItem('fraude-show-sidebar', JSON.stringify(next));
-  };
-  const toggleTerminal = () => {
-    const next = !showTerminal;
-    setShowTerminal(next);
-    localStorage.setItem('fraude-show-terminal', JSON.stringify(next));
-  };
-  const toggleRightPanel = () => {
-    const next = !showRightPanel;
-    setShowRightPanel(next);
-    localStorage.setItem('fraude-show-right-panel', JSON.stringify(next));
-  };
+  const toggleSidebar = useCallback(() => setShowSidebar((v: boolean) => !v), []);
+  const toggleTerminal = useCallback(() => setShowTerminal((v: boolean) => !v), []);
+  const toggleRightPanel = useCallback(() => setShowRightPanel((v: boolean) => !v), []);
+
+  // Panel görünürlüğü tek noktadan kalıcılaştırılır; toggle'lar böylece
+  // klavye kısayolu dinleyicisinde de güvenle (bayat kapanış olmadan) kullanılır.
+  useEffect(() => { localStorage.setItem('fraude-show-sidebar', JSON.stringify(showSidebar)); }, [showSidebar]);
+  useEffect(() => { localStorage.setItem('fraude-show-terminal', JSON.stringify(showTerminal)); }, [showTerminal]);
+  useEffect(() => { localStorage.setItem('fraude-show-right-panel', JSON.stringify(showRightPanel)); }, [showRightPanel]);
 
   // Sidebar navigation entries: every enabled module that opts into nav, in
   // registry order.
@@ -130,6 +138,9 @@ export default function App() {
         if (!module?.manifest) return true;
         return isModuleEnabled(module, installedModules);
       });
+      // Süzme her sekmeyi kapatacaksa pano son çare olarak kalır; çalışma
+      // alanı hiçbir modül durumunda boş kalamaz.
+      if (next.length === 0) return [{ id: 'dashboard', kind: 'dashboard' }];
       return next.length === current.length ? current : next;
     });
   }, [installedModules]);
@@ -157,6 +168,9 @@ export default function App() {
   const activeContext = activeTab
     ? (activeTab.kind === 'ticker' ? String(activeTab.data?.ticker ?? activeTab.title ?? '') : staticTitle(activeTab, t))
     : '';
+
+  // Şerit panoda endeksleri, diğer sayfalarda BIST gün içi hareketlerini akıtır.
+  const marqueeMode: MarqueeMode = activeTab?.kind === 'dashboard' ? 'indices' : 'movers';
 
   const upsertTickerTab = useCallback((ticker: string) => {
     setOpenTabs((current) => {
@@ -350,22 +364,14 @@ export default function App() {
       const prompt = (e as CustomEvent<{ prompt?: string }>).detail?.prompt;
       if (!prompt) return;
       setShowRightPanel(true);
-      localStorage.setItem('fraude-show-right-panel', JSON.stringify(true));
       setAiQuickPrompt({ text: prompt, nonce: Date.now() });
     };
     const onOpenPalette = () => setPaletteOpen(true);
     const onOpenShare = () => setShareOpen(true);
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
-    };
     window.addEventListener('fraude-open-alerts', onOpenAlerts);
     window.addEventListener('fraude-ai-ask', onAiAsk);
     window.addEventListener('fraude-open-palette', onOpenPalette);
     window.addEventListener('fraude-open-share', onOpenShare);
-    window.addEventListener('keydown', onKey);
     // Sağlam kaynaktan (Nager.Date, Rust get_market_holidays) resmi tatilleri
     // çek; yerleştir ve rozeti hemen güncelle. Çevrimdışıysa gömülü yedek takvim
     // (marketHolidays.ts) devrede kalır.
@@ -381,7 +387,6 @@ export default function App() {
       window.removeEventListener('fraude-ai-ask', onAiAsk);
       window.removeEventListener('fraude-open-palette', onOpenPalette);
       window.removeEventListener('fraude-open-share', onOpenShare);
-      window.removeEventListener('keydown', onKey);
       clearInterval(statusTimer);
     };
   }, []);
@@ -396,21 +401,79 @@ export default function App() {
     return module ? isModuleEnabled(module, installedModules) : false;
   }, [installedModules]);
 
+  // Rehber ve Ayarlar kenar çubuğunda değil üst çubukta yaşar (nav: false);
+  // modül devre dışı bırakılmışsa ikonları da palet girişleri de gizlenir.
+  const guideEnabled = useMemo(() => {
+    const module = getWorkspaceModule('guide');
+    return module ? isModuleEnabled(module, installedModules) : false;
+  }, [installedModules]);
+  const settingsEnabled = useMemo(() => {
+    const module = getWorkspaceModule('settings');
+    return module ? isModuleEnabled(module, installedModules) : false;
+  }, [installedModules]);
+
+  // Klavye kısayolları: tanımların tek kaynağı src/lib/shortcuts.ts. Üst çubuk
+  // ipuçları ve kılavuz aynı listeden okuduğu için gösterilen her kısayol
+  // burada gerçekten çalışır.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (matchesShortcut(e, 'palette')) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (matchesShortcut(e, 'sidebar')) {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (matchesShortcut(e, 'terminal')) {
+        e.preventDefault();
+        toggleTerminal();
+      } else if (matchesShortcut(e, 'aiPanel')) {
+        e.preventDefault();
+        toggleRightPanel();
+      } else if (matchesShortcut(e, 'alerts')) {
+        e.preventDefault();
+        setAlertsTicker(undefined);
+        setAlertsOpen((v) => !v);
+      } else if (matchesShortcut(e, 'monitor')) {
+        if (!monitorEnabled) return;
+        e.preventDefault();
+        openModuleTab('monitor');
+      } else if (matchesShortcut(e, 'sync')) {
+        e.preventDefault();
+        void handleCommand('sync all incremental');
+      } else if (matchesShortcut(e, 'settings')) {
+        e.preventDefault();
+        openModuleTab('settings');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleSidebar, toggleTerminal, toggleRightPanel, openModuleTab, handleCommand, monitorEnabled]);
+
   // Komut paleti eylemleri: navigasyon modülleri + panel aç/kapatma + alarm + senkron.
   const paletteCommands = useMemo<PaletteCommand[]>(() => {
     const cmds: PaletteCommand[] = [];
     for (const m of navModules) {
       const title = m.title ? m.title(host, { id: m.kind, kind: m.kind }) : t(m.titleKey ?? m.kind);
-      cmds.push({ id: `open-${m.kind}`, label: `Aç · ${title}`, keywords: `${m.kind} ${title} panel modül`, hint: 'panel', run: () => openModuleTab(m.kind) });
+      cmds.push({ id: `open-${m.kind}`, label: `${t('paletteOpen')} · ${title}`, keywords: `${m.kind} ${title} panel modül`, hint: t('hintPanel'), run: () => openModuleTab(m.kind) });
     }
-    cmds.push({ id: 'toggle-sidebar', label: 'Kenar çubuğunu aç/kapat', keywords: 'sidebar kenar', run: toggleSidebar });
-    cmds.push({ id: 'toggle-terminal', label: 'Terminali aç/kapat', keywords: 'terminal konsol', run: toggleTerminal });
-    cmds.push({ id: 'toggle-ai', label: 'AI panelini aç/kapat', keywords: 'ai yapay zeka panel', run: toggleRightPanel });
-    cmds.push({ id: 'open-alerts', label: 'Alarmları aç', keywords: 'alarm alert fiyat teknik', hint: 'alarm', run: () => { setAlertsTicker(undefined); setAlertsOpen(true); } });
-    cmds.push({ id: 'sync', label: 'Verileri şimdi senkronla', keywords: 'sync senkron güncelle veri', run: () => void handleCommand('sync all incremental') });
-    cmds.push({ id: 'share', label: 'Yedekle & Paylaş', keywords: 'yedek paylaş export import dışa içe aktar', hint: 'yedek', run: () => setShareOpen(true) });
+    // Rehber ve Ayarlar nav dışı (üst çubuk ikonları); palete elle eklenir.
+    if (guideEnabled) {
+      cmds.push({ id: 'open-guide', label: `${t('paletteOpen')} · ${t('guide')}`, keywords: 'guide rehber kılavuz yardım help', hint: t('hintPanel'), run: () => openModuleTab('guide') });
+    }
+    if (settingsEnabled) {
+      cmds.push({ id: 'open-settings', label: `${t('paletteOpen')} · ${t('settings')}`, keywords: 'settings ayarlar yapılandırma config', hint: t('hintPanel'), run: () => openModuleTab('settings') });
+    }
+    cmds.push({ id: 'toggle-sidebar', label: t('paletteToggleSidebar'), keywords: 'sidebar kenar', run: toggleSidebar });
+    cmds.push({ id: 'toggle-terminal', label: t('paletteToggleTerminal'), keywords: 'terminal konsol', run: toggleTerminal });
+    cmds.push({ id: 'toggle-ai', label: t('paletteToggleAi'), keywords: 'ai yapay zeka panel', run: toggleRightPanel });
+    cmds.push({ id: 'open-alerts', label: t('paletteOpenAlerts'), keywords: 'alarm alert fiyat teknik', hint: t('hintAlert'), run: () => { setAlertsTicker(undefined); setAlertsOpen(true); } });
+    cmds.push({ id: 'open-calendar', label: t('paletteOpenCalendar'), keywords: 'takvim calendar ekonomik makro tatil holiday', hint: t('hintCalendar'), run: () => setCalendarOpen(true) });
+    // Banner kapatılmış olsa bile günlük özet buradan açılabilir.
+    cmds.push({ id: 'daily-brief', label: t('paletteOpenBrief'), keywords: 'özet bülten brief piyasa günaydın sabah', hint: t('hintBrief'), run: () => setBriefOpen(true) });
+    cmds.push({ id: 'sync', label: t('paletteSyncNow'), keywords: 'sync senkron güncelle veri', run: () => void handleCommand('sync all incremental') });
+    cmds.push({ id: 'share', label: t('paletteShare'), keywords: 'yedek paylaş export import dışa içe aktar', hint: t('hintBackup'), run: () => setShareOpen(true) });
     return cmds;
-  }, [navModules, host, t, openModuleTab, handleCommand]);
+  }, [navModules, host, t, openModuleTab, handleCommand, guideEnabled, settingsEnabled]);
 
   const recentTickers = useMemo<string[]>(() => {
     if (!paletteOpen) return [];
@@ -422,9 +485,23 @@ export default function App() {
     }
   }, [paletteOpen]);
 
+  // Şerit sembolü katalogda bir endekse karşılık geliyorsa endeks sekmesi,
+  // yoksa hisse sekmesi açılır.
+  const openFromMarquee = useCallback((symbol: string) => {
+    const preset = PRESET_SYMBOLS.find((item) => item.symbol === symbol);
+    if (preset?.indexName) {
+      upsertIndexTab(preset.indexName);
+    } else {
+      upsertTickerTab(symbol);
+    }
+  }, [upsertIndexTab, upsertTickerTab]);
+
+  // Satır sayısı App.css'teki grid-template-areas ile birebir aynı olmak
+  // ZORUNDA (topbar/marquee/workspace/terminal): eksik satır esnek alanı boş
+  // şerit satırına kaydırır ve çalışma alanı pencere dışına itilir.
   const shellStyle = {
     gridTemplateColumns: `${showSidebar ? '208px' : '0px'} minmax(0, 1fr) ${showRightPanel ? '300px' : '0px'}`,
-    gridTemplateRows: `52px minmax(0, 1fr) ${showTerminal ? 'auto' : '0px'}`,
+    gridTemplateRows: `52px auto minmax(0, 1fr) ${showTerminal ? 'auto' : '0px'}`,
   };
 
   return (
@@ -448,234 +525,194 @@ export default function App() {
           </nav>
         </aside>
       )}
-      <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flex: 1 }}>
+      <header className="topbar">
+        <div className="topbar-group topbar-search">
           <TopSearch
             placeholder={t('searchOrCommand')}
+            hintKeys={shortcutKeys('palette')}
             onCommand={(cmd) => void handleCommand(cmd)}
             onSelectTicker={upsertTickerTab}
             onSelectIndex={upsertIndexTab}
           />
-          <div className="connection-pill" style={{ opacity: 0.8 }}>{t('aiContext')}: {activeContext}</div>
+          <div className="context-chip">
+            <span className="context-chip-label">{t('aiContext')}</span>
+            <span>{activeContext}</span>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {/* Language Toggle */}
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginRight: '8px' }}>
-            <button
-              type="button"
-              onClick={() => setLanguage('tr')}
-              style={{
-                padding: '4px 8px',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                background: lang === 'tr' ? 'var(--accent-primary)' : 'transparent',
-                color: lang === 'tr' ? '#000' : 'var(--text-muted)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              TR
-            </button>
-            <button
-              type="button"
-              onClick={() => setLanguage('en')}
-              style={{
-                padding: '4px 8px',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                background: lang === 'en' ? 'var(--accent-primary)' : 'transparent',
-                color: lang === 'en' ? '#000' : 'var(--text-muted)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
-            >
-              EN
-            </button>
-          </div>
-
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
-
+        <div className="topbar-group">
           {/* BIST seans durumu */}
-          <div
-            title={`Borsa İstanbul · ${marketStatus.istanbulTime} (TR)`}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '4px 10px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)',
-              color: marketStatus.color, border: '1px solid var(--border-color)',
-              borderRadius: '4px', whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={{
-              display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%',
-              background: marketStatus.color,
-              animation: marketStatus.state === 'open' ? 'pulse-dot 1.6s ease-in-out infinite' : 'none',
-            }} />
-            {marketStatus.label}
-          </div>
+          <HotkeyTip label={`Borsa İstanbul · ${marketStatus.istanbulTime} (TR)`}>
+            <div className="market-status" style={{ color: marketStatus.color }}>
+              <span
+                className="status-dot"
+                style={{
+                  background: marketStatus.color,
+                  animation: marketStatus.state === 'open' ? 'pulse-dot 1.6s ease-in-out infinite' : 'none',
+                }}
+              />
+              {marketStatus.state === 'open' ? t('marketOpen') : marketStatus.state === 'pre' ? t('marketPreOpen') : t('marketClosed')}
+              {marketStatus.holidayName ? ` · ${marketStatus.holidayName}` : ''}
+            </div>
+          </HotkeyTip>
 
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
+          {/* Eşitleme durumu; tıklanınca artımlı senkron başlar */}
+          <HotkeyTip label={t('syncNow')} keys={shortcutKeys('sync')}>
+            <button
+              type="button"
+              className={`sync-chip${isSyncing ? ' syncing' : ''}`}
+              onClick={() => void handleCommand('sync all incremental')}
+              disabled={isSyncing}
+            >
+              <span
+                className="status-dot"
+                style={{
+                  background: isSyncing ? 'var(--accent-primary)' : (lastSyncTime ? '#3fb950' : '#8b949e'),
+                  animation: isSyncing ? 'pulse-dot 1.2s ease-in-out infinite' : 'none',
+                }}
+              />
+              {isSyncing ? t('syncing') : formatSyncTime(lastSyncTime, t)}
+            </button>
+          </HotkeyTip>
+
+          <span className="topbar-sep" />
 
           {/* Fiyat & teknik alarm zili */}
-          <button
-            type="button"
-            onClick={() => { setAlertsTicker(undefined); setAlertsOpen(true); }}
-            title="Fiyat & Teknik Alarmlar"
-            style={{
-              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '32px', height: '28px', fontSize: '0.95rem',
-              background: alertsOpen ? 'var(--accent-primary)' : 'var(--bg-panel)',
-              border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer',
-            }}
-          >
-            <span>⏰</span>
-            {alertUnread > 0 && (
-              <span style={{
-                position: 'absolute', top: '-6px', right: '-6px', minWidth: '16px', height: '16px',
-                padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: '#d29922', color: '#000', fontSize: '0.62rem', fontWeight: 700,
-                borderRadius: '8px', boxSizing: 'border-box',
-              }}>
-                {alertUnread > 99 ? '99+' : alertUnread}
-              </span>
-            )}
-          </button>
+          <HotkeyTip label={t('priceAlerts')} keys={shortcutKeys('alerts')}>
+            <button
+              type="button"
+              className={`topbar-icon-btn${alertsOpen ? ' active' : ''}`}
+              onClick={() => { setAlertsTicker(undefined); setAlertsOpen(true); }}
+            >
+              <BellIcon />
+              {alertUnread > 0 && (
+                <span className="topbar-badge amber">{alertUnread > 99 ? '99+' : alertUnread}</span>
+              )}
+            </button>
+          </HotkeyTip>
 
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
-
-          {/* İzleme Radarı zil rozeti — yalnızca modül etkinken görünür */}
-          {monitorEnabled && (
-            <>
+          {/* Ekonomik takvim — makro duyurular + resmi tatiller */}
+          <HotkeyTip label={t('economicCalendar')}>
+            <div className="eco-cal-trigger">
               <button
                 type="button"
-                onClick={() => openModuleTab('monitor')}
-                title={monitorState
-                  ? `İzleme Radarı · ${monitorState.config.tickers.length} hisse izleniyor${monitorState.unread > 0 ? ` · ${monitorState.unread} yeni uyarı` : ''}`
-                  : 'İzleme Radarı'}
-                style={{
-                  position: 'relative',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '32px',
-                  height: '28px',
-                  fontSize: '0.95rem',
-                  background: activeTabId === 'monitor' ? 'var(--accent-primary)' : 'var(--bg-panel)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
+                className={`topbar-icon-btn${calendarOpen ? ' active' : ''}`}
+                // mousedown'u durdurmak, dropdown'ın "dışarı tıklandı" kapatması
+                // ile toggle'ın çakışıp menünün anında yeniden açılmasını önler.
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setCalendarOpen((v) => !v)}
               >
-                <span style={{ filter: monitorState?.config.enabled ? 'none' : 'grayscale(1) opacity(0.5)' }}>🔔</span>
-                {monitorState && monitorState.unread > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-6px',
-                    right: '-6px',
-                    minWidth: '16px',
-                    height: '16px',
-                    padding: '0 4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#f85149',
-                    color: '#fff',
-                    fontSize: '0.62rem',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    boxSizing: 'border-box',
-                  }}>
-                    {monitorState.unread > 99 ? '99+' : monitorState.unread}
-                  </span>
+                <CalendarIcon />
+                {calendarHighToday > 0 && (
+                  <span className="topbar-badge red">{calendarHighToday}</span>
                 )}
               </button>
+              <EconomicCalendar
+                open={calendarOpen}
+                onClose={() => setCalendarOpen(false)}
+                onCount={(_total, highToday) => setCalendarHighToday(highToday)}
+              />
+            </div>
+          </HotkeyTip>
 
-              <div style={{ width: '1px', height: '20px', background: 'var(--border-color)' }} />
-            </>
+          {/* İzleme Radarı — yalnızca modül etkinken görünür */}
+          {monitorEnabled && (
+            <HotkeyTip label={t('monitor')} keys={shortcutKeys('monitor')}>
+              <button
+                type="button"
+                className={`topbar-icon-btn${activeTabId === 'monitor' ? ' active' : ''}`}
+                onClick={() => openModuleTab('monitor')}
+                style={{ opacity: monitorState?.config.enabled ? 1 : 0.5 }}
+              >
+                <ActivityIcon />
+                {monitorState && monitorState.unread > 0 && (
+                  <span className="topbar-badge red">{monitorState.unread > 99 ? '99+' : monitorState.unread}</span>
+                )}
+              </button>
+            </HotkeyTip>
           )}
 
-          {/* Last Sync Indicator */}
-          <div className="sync-indicator" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '4px 10px',
-            fontSize: '0.7rem',
-            fontFamily: 'var(--font-mono)',
-            color: isSyncing ? 'var(--accent-primary)' : 'var(--text-muted)',
-            background: isSyncing ? 'rgba(0, 255, 157, 0.08)' : 'transparent',
-            border: '1px solid var(--border-color)',
-            borderRadius: '4px',
-            transition: 'all 0.3s ease',
-          }}>
-            <span style={{
-              display: 'inline-block',
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: isSyncing ? 'var(--accent-primary)' : (lastSyncTime ? '#3fb950' : '#8b949e'),
-              animation: isSyncing ? 'pulse-dot 1.2s ease-in-out infinite' : 'none',
-            }} />
-            {isSyncing ? t('syncing') : `${t('lastSync')}: ${formatSyncTime(lastSyncTime, t)}`}
-          </div>
+          <span className="topbar-sep" />
 
-          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', marginRight: '4px' }} />
+          {/* Yerleşim anahtarları */}
+          <HotkeyTip label={t('sidebar')} keys={shortcutKeys('sidebar')}>
+            <button
+              type="button"
+              className={`topbar-icon-btn${showSidebar ? ' active' : ''}`}
+              onClick={toggleSidebar}
+            >
+              <PanelLeftIcon />
+            </button>
+          </HotkeyTip>
+          <HotkeyTip label={t('terminal')} keys={shortcutKeys('terminal')}>
+            <button
+              type="button"
+              className={`topbar-icon-btn${showTerminal ? ' active' : ''}`}
+              onClick={toggleTerminal}
+            >
+              <PanelBottomIcon />
+            </button>
+          </HotkeyTip>
+          <HotkeyTip label={t('aiPanel')} keys={shortcutKeys('aiPanel')} align="right">
+            <button
+              type="button"
+              className={`topbar-icon-btn${showRightPanel ? ' active' : ''}`}
+              onClick={toggleRightPanel}
+            >
+              <PanelRightIcon />
+            </button>
+          </HotkeyTip>
 
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            style={{
-              padding: '4px 8px',
-              fontSize: '0.75rem',
-              fontFamily: 'var(--font-mono)',
-              background: showSidebar ? 'var(--accent-primary)' : 'var(--bg-panel)',
-              color: showSidebar ? '#000000' : 'var(--text-muted)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: showSidebar ? 'bold' : 'normal'
-            }}
-          >
-            {t('sidebar')}: {showSidebar ? 'ON' : 'OFF'}
-          </button>
-          <button
-            type="button"
-            onClick={toggleTerminal}
-            style={{
-              padding: '4px 8px',
-              fontSize: '0.75rem',
-              fontFamily: 'var(--font-mono)',
-              background: showTerminal ? 'var(--accent-primary)' : 'var(--bg-panel)',
-              color: showTerminal ? '#000000' : 'var(--text-muted)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: showTerminal ? 'bold' : 'normal'
-            }}
-          >
-            {t('terminal')}: {showTerminal ? 'ON' : 'OFF'}
-          </button>
-          <button
-            type="button"
-            onClick={toggleRightPanel}
-            style={{
-              padding: '4px 8px',
-              fontSize: '0.75rem',
-              fontFamily: 'var(--font-mono)',
-              background: showRightPanel ? 'var(--accent-primary)' : 'var(--bg-panel)',
-              color: showRightPanel ? '#000000' : 'var(--text-muted)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: showRightPanel ? 'bold' : 'normal'
-            }}
-          >
-            {t('aiPanel')}: {showRightPanel ? 'ON' : 'OFF'}
-          </button>
+          <span className="topbar-sep" />
+
+          {/* Rehber ve Ayarlar: kenar çubuğundan üst çubuğa taşındı */}
+          {guideEnabled && (
+            <HotkeyTip label={t('guide')} align="right">
+              <button
+                type="button"
+                className={`topbar-icon-btn${activeTabId === 'guide' ? ' active' : ''}`}
+                onClick={() => openModuleTab('guide')}
+              >
+                <BookOpenIcon />
+              </button>
+            </HotkeyTip>
+          )}
+          {settingsEnabled && (
+            <HotkeyTip label={t('settings')} keys={shortcutKeys('settings')} align="right">
+              <button
+                type="button"
+                className={`topbar-icon-btn${activeTabId === 'settings' ? ' active' : ''}`}
+                onClick={() => openModuleTab('settings')}
+              >
+                <GearIcon />
+              </button>
+            </HotkeyTip>
+          )}
+
+          <span className="topbar-sep" />
+
+          {/* Dil seçimi */}
+          <HotkeyTip label={t('language')} align="right">
+            <div className="lang-seg">
+              <button
+                type="button"
+                className={lang === 'tr' ? 'active' : ''}
+                onClick={() => setLanguage('tr')}
+              >
+                TR
+              </button>
+              <button
+                type="button"
+                className={lang === 'en' ? 'active' : ''}
+                onClick={() => setLanguage('en')}
+              >
+                EN
+              </button>
+            </div>
+          </HotkeyTip>
         </div>
       </header>
+      <MarketMarquee mode={marqueeMode} onOpenTicker={openFromMarquee} />
       <main className="workspace">
         <TabBar
           tabs={openTabs.map((tab) => ({ ...tab, title: getTabTitle(tab) }))}
@@ -690,7 +727,15 @@ export default function App() {
             border: '1px solid var(--border-color)', borderRadius: '8px',
           }}>
             <span style={{ fontSize: '1.2rem' }}>☀️</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Gövdeye tıklamak taze verili özet popup'ını açar */}
+            <div
+              role="button"
+              tabIndex={0}
+              title={t('paletteOpenBrief')}
+              onClick={() => setBriefOpen(true)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setBriefOpen(true); }}
+              style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+            >
               <strong style={{ fontSize: '0.85rem' }}>{morningBrief.headline}</strong>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                 {morningBrief.lines.join('  ·  ')}
@@ -701,12 +746,12 @@ export default function App() {
               onClick={() => openModuleTab('dashboard')}
               style={{ padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', background: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
-              Panele git
+              {t('goToDashboard')}
             </button>
             <button
               type="button"
               onClick={dismissBrief}
-              title="Kapat"
+              title={t('close')}
               style={{ padding: '4px 8px', fontSize: '0.72rem', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
             >
               ✕
@@ -742,6 +787,12 @@ export default function App() {
       )}
       <AlertsModal open={alertsOpen} onClose={() => setAlertsOpen(false)} initialTicker={alertsTicker} />
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      <MorningBriefModal
+        open={briefOpen}
+        onClose={() => setBriefOpen(false)}
+        onSelectTicker={upsertTickerTab}
+        onOpenDashboard={() => openModuleTab('dashboard')}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}

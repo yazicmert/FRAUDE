@@ -1,0 +1,495 @@
+
+
+Haziran-2026
+GLC-AKTİF PORTFÖY ÜÇÜNCÜ FON SEPETİ FONU
+
+I-FONU TANITICI BİLGİLER
+
+A-)Fonun Adı
+
+B-)Kurucunun Ünvanı
+
+C-)Yöneticinin Ünvanı
+
+D-)Toplam Değer/Net Varlık Değeri
+
+E-) Katılma Payı Sayısı
+
+F-)Fonun Kuruluş Tarihi
+
+G-)Fonun Süresi
+ :
+
+:
+
+:
+
+:
+
+:
+
+:
+
+:
+ AKTİF PORTFÖY YÖNETİMİ A.Ş.
+
+GLC-AKTİF PORTFÖY ÜÇÜNCÜ FON SEPETİ FONU
+
+27 Mayıs 2022
+
+Süresizdir.
+
+3.848.859,000
+
+15.906.579,04
+
+AKTİF PORTFÖY YÖNETİMİ A.Ş.
+
+A-)Ay Sonu Pay Fiyatı (TL)
+
+B-)Önceki Ay Pay Fiyatı (TL)
+
+C-)Aylık Pay Fiyatı Artış Oranı (TL)
+
+D-)Yılbaşına Göre Fiyat Artış Oranı
+
+E-)Yıllık Pay Fiyatı Artış Oranı
+
+F-)Aylık Ortalama Portföydeki Menkul Kıymetler Yüzdesi
+
+a-)Hisse Senedi
+
+b-)Hazine Bonosu
+ :
+
+:
+
+:
+
+:
+
+:
+
+:
+
+:
+
+a-)Hisse Senedi
+
+b-)Hazine Bonosu
+
+G-)Aylık Ortalama Portföy Devir Hızı
+
+H-)Portföyün Ortalama Vadesi
+ :
+
+:
+
+:
+ 4,183686
+
+4,132804
+
+0,00
+
+0,00
+
+22,20
+
+2,91
+
+-1,22
+
+0,00
+
+0,00
+
+c-)Devlet Tahvili : 0,00
+
+d-)Özel Sektör Tahvili : 0,00
+
+c-)Devlet Tahvili : 0,00
+
+0,00:m-)Diğer
+ 0,01:f-)Diğer
+
+r-)Repo-Trepo : 0,00
+
+g-)TPP-TPP Borçlanma 0,00:
+
+h-)Opsiyon 0,00:
+
+j-)Değerli Maden : 0,00
+
+0,00:d-)Opsiyon
+
+k-)Mevduat 0,00:
+ 0,00l-) Katilim Hesabı :
+
+i-) Varant 0,00:
+ 0,00:e-)Varant
+
+II-FONUN PERFORMANSINA İLİŞKİN BİLGİLER
+
+I-)Katılma Payı İhraçlarından Kaynaklanan Nakit Girişleri (TL)
+
+İ-)Katılma Payı İadelerinden Kaynaklanan Nakit Çıkışları (TL)
+ :
+
+:
+ 0,00
+
+0,00
+
+0,00n-)Teminat :
+
+o-)Yatırım Fonu
+
+p-)Borsa Yatırım Fonu
+ :
+
+:
+ 100,00
+
+0,00
+
+e-)Kira Sertifikaları : 0,00
+
+0,00
+
+0,00
+
+:
+
+:
+
+f-)Finansman Bonusu
+
+s-)Taahhütlü Alış-Satış İşlemleri
+ 0.00:t-) Vaad Sözleşmesi İşlemleri
+
+g2-)BPP-BPP Borçlanma 0,00:
+
+III-FON PORTFÖY DEĞERİ TABLOSU
+ TOPLAM
+(FPD
+GÖRE)
+
+GRUP
+(%)
+TOPLAM DEĞER
+GÜNLÜK BR
+DEĞER
+REPO TEMİNAT
+TUTARI
+
+İÇ
+İSKONTO
+ORANI (%)
+
+SATIN
+ALIŞ
+TARİHİ
+
+BİRİM ALIŞ
+FİYATI
+NOMİNAL DEĞER
+NOMİNAL
+FAİZ
+ORANI
+
+VADEYE
+KALAN
+GÜN
+
+VADE
+TARİHİ
+İHRAÇCI
+KURUM
+MENKUL KIYMET NET DÖNÜŞ
+TUTARI
+DÖVİZ
+CİNSİ
+ BORSA
+SÖZLEŞM
+E NO
+
+FAİZ
+ÖDEME
+SAYISI
+ TOPLAM
+(FTD
+GÖRE)
+ISIN KODU
+
+DİĞER
+
+Y.Fonu Türk
+
+ASJ AKTİF PORTFÖY
+HİSSE SENEDİ (TL)
+FONU (HİSSE SE
+ AKTİF
+PORTFÖY
+YÖNETİM
+A.Ş
+ 534.251,00 3,743554 27/02/26 3,814117 2.037.695,82 12,76 12,76TL 12,81TRYMKFT00273
+
+DBA - DENİZ
+PORTFÖY ALTIN
+FONU
+ DENİZ
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 2.739.900,00 0,729952 31/03/26 0,671645 1.840.240,14 11,52 11,52TL 11,57TRYDZBK00070
+
+FDG FONEVA
+PORTFÖY BİRİNCİ
+DEĞİŞKEN FON
+ FONMAP
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 272.894,00 1,785945 10/07/25 2,737372 747.012,39 4,68 4,68TL 4,70TRYFNVP00011
+
+IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ AKTİF
+PORTFÖY
+YÖNETİM
+A.Ş
+ 17.811,00 4,831539 26/06/26 5,713438 101.762,04 0,64 0,64TL 0,64TRYMKFT00190
+
+IJB İŞ PORTFÖY
+DİJİTAL OYUN
+SEKTÖRÜ KARMA
+FON
+ İŞ
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 146.880,00 5,232494 10/07/25 5,914531 868.726,31 5,44 5,44TL 5,46TRYISPO00688
+
+KUB KARE PORTFÖY
+DEĞİŞKEN (DÖVİZ)
+FON
+ Kare Portföy
+Yönetimi
+A.Ş.
+ 2.090.661,00 0,585256 23/02/26 0,718381 1.501.891,14 9,41 9,41TL 9,44TRYKARE00044
+
+MKG AKTİF
+PORTFÖY ALTIN
+KATILIM FONU
+ AKTİF
+PORTFÖY
+YÖNETİM
+A.Ş
+ 156.703,00 19,144472 25/02/26 15,837926 2.481.850,52 15,54 15,54TL 15,60TRYMKFT00166
+
+MMH AKTİF
+PORTFÖY BIST 30
+ENDEKSİ HİSSE
+SENEDİ (TL) FONU
+(HİSSE SENEDİ
+YOĞUN FON)
+ AKTİF
+PORTFÖY
+YÖNETİM
+A.Ş
+ 187.496,00 16,000297 25/02/26 16,343642 3.064.367,50 19,18 19,18TL 19,26TRYMKFT00174
+
+TLE AURA PORTFÖY
+YABANCI Aura Portföy
+Yönetimi A. 100.000,00 20,648826 25/02/26 27,684921 2.768.492,10 17,34 17,34TL 17,40TRYTALP00028
+ Haziran-2026
+GLC-AKTİF PORTFÖY ÜÇÜNCÜ FON SEPETİ FONU
+
+VI-A-GEÇEN AY İÇİNDE RÜÇHAN HAKKI KULLANIMI,BEDELSİZ HİSSE SENEDİ ALIMI, TEMMETTÜ VE ANAPARA TAHSİLATINA İLİŞKİN AÇIKLAMALAR
+
+Sirketin Unvani BDL-BDZ Tarihi Nominal Değeriİşlem Tipi TUTAR
+
+B-Geçen Ay İçinde Yatırım Fonlarına İlişkin Mevzuatta Meydana Gelen Değişme ve Hukuki İhtilaflarla İlgili Açıklamalar
+
+V-AY İÇİNDE YAPILAN GİDERLER
+
+AÇIKLAMA TUTAR ORAN%
+
+Portföye Alımlarda ve portföyden
+Satımlarda Ödenen Komisyonlar 0,00 0,0000 %
+
+Yönetim Ücreti 25.135,68 0,1580 %
+
+Mevzuat Gereği Yapılması Zorunlu Tescil
+ve İlan Giderleri 4.200,00 0,0264 %
+
+Kayda Alma Ücreti 248,90 0,0016 %
+
+Portföydeki Varlıkların Saklanması
+Hizmetleri İçin Ödenen Ücretler 842,82 0,0053 %
+
+Vergi Ödemeleri 791,00 0,0050 %
+
+Bağımsız Denetim Kuruluşlarına Ödenen
+Denetim Ücreti 14.520,00 0,0913 %
+
+Diğer Harcamalar 2.544,60 0,0160 %
+
+48.283,00 0,3036 %
+
+IV-FON TOPLAM DEĞERİ TABLOSU
+
+AÇIKLAMA TUTAR ORAN%
+
+A-)FON PORTFÖY DEĞERİ
+
+B-)HAZIR DEĞERLER
+
+C-)ALACAKLAR
+
+D-)DİĞER VARLIKLAR
+
+E-)BORÇLAR
+
+F-)İHTİYAT
+
+G-)VERGİ
+ 15.968.964,66
+
+1.267,04
+
+38.274,06
+
+0,00
+
+-101.926,72
+
+0,00
+
+0,00
+ 100,39 %
+
+0,01 %
+
+0,24 %
+
+0,00 %
+
+-0,64 %
+
+0,00 %
+
+0,00 %
+
+FON TOPLAM DEĞERİ 15.906.579,04 100,00 %
+ TOPLAM
+(FPD
+GÖRE)
+
+GRUP
+(%)
+TOPLAM DEĞER
+GÜNLÜK BR
+DEĞER
+REPO TEMİNAT
+TUTARI
+
+İÇ
+İSKONTO
+ORANI (%)
+
+SATIN
+ALIŞ
+TARİHİ
+
+BİRİM ALIŞ
+FİYATI
+NOMİNAL DEĞER
+NOMİNAL
+FAİZ
+ORANI
+
+VADEYE
+KALAN
+GÜN
+
+VADE
+TARİHİ
+İHRAÇCI
+KURUM
+MENKUL KIYMET NET DÖNÜŞ
+TUTARI
+DÖVİZ
+CİNSİ
+ BORSA
+SÖZLEŞM
+E NO
+
+FAİZ
+ÖDEME
+SAYISI
+ TOPLAM
+(FTD
+GÖRE)
+ISIN KODU
+
+BORÇLANMA
+ARAÇLARI FONU Ş.
+
+ZP6 ZİRAAT
+PORTFÖY SEDEF
+KATILIM SERBEST
+(DÖVİZ - AMERİKAN
+DOLARI) FON
+ ZİRAAT
+PORTFÖY
+YÖNETİMİ
+A.Ş.
+ 9.819,00 46,259739 10/07/25 56,719289 556.926,70 3,49 3,49TL 3,50TRYZIPO00766
+ 6.256.415,00 15.968.964,66 100,00100,00  GRUP TOPLAMI 100,38
+
+6.256.415,00 15.968.964,66 100,00100,00GRUP TOPLAMI 100,38
+
+15.968.964,66FON PORTFÖY DEĞERİ 100,00
+
+VII-PORTFÖYDEN SATIŞLAR
+
+KIYMET VADE IŞLEM TARIHI FIYAT İŞLEM DEĞERI NOMINAL
+DEĞERI
+
+C) YATIRIM FONU (SATIŞLAR)
+
+İHRAÇÇI KURUM BANKA
+
+Y.FONU TÜRK 03/06/26 03/06/26 4.400,00IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ 5,545 24.398,07AKTİF PORTFÖY
+YÖNETİM A.Ş
+ 11/06/26 11/06/26 1.100,00IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ 5,591 6.150,04AKTİF PORTFÖY
+YÖNETİM A.Ş
+ 16/06/26 16/06/26 3.600,00IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ 5,625 20.249,45AKTİF PORTFÖY
+YÖNETİM A.Ş
+ 17/06/26 17/06/26 7.500,00IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ 5,631 42.230,00AKTİF PORTFÖY
+YÖNETİM A.Ş
+ 26/06/26 26/06/26 2.640,00IDL  AKTİF PORTFÖY
+PARA PİYASASI (TL)
+FONU
+ 5,682 15.001,60AKTİF PORTFÖY
+YÖNETİM A.Ş
+ Haziran-2026
+GLC-AKTİF PORTFÖY ÜÇÜNCÜ FON SEPETİ FONU
+
+Toplamı: 19240,00108029,16Y.FONU TÜRK
+ 108029,16 19240,00

@@ -1,6 +1,5 @@
 use tauri::State;
 
-use crate::providers::DataProvider;
 use crate::domain::{
     AiKeyRecord, AiRequest, AiResponse, DashboardSnapshot, FqlResponse, KapAnnouncement, KapFilter,
     SaveAiKeyRequest, ScreenerRequest, ScreenerResult, SyncResult, TickerSnapshot, NewsItem, AiHistoryRecord,
@@ -24,6 +23,41 @@ pub async fn sync_data(
     mode: String,
 ) -> Result<SyncResult, String> {
     let force_bist = source == "BIST_INDICES";
+    let store_is_empty = state.store.lock().await.equities.is_empty();
+    // Endeks üyeliklerini zorla tazeleyen çağrı her zaman tam senkrondur.
+    let effective = if force_bist { "full" } else { services::effective_sync_mode(&mode, store_is_empty) };
+
+    if effective == "incremental" {
+        // Artımlı: tüm evren yerine iki ucuz toplu fiyat kaynağı (İş Yatırım
+        // screener + ~20 global Yahoo isteği) ve KAP/SPK akışları tazelenir.
+        let (closes, global_quotes, kap_res, spk_res) = tokio::join!(
+            crate::isyatirim::current_closes(&state.http),
+            crate::yahoo::fetch_global_quotes(&state.http),
+            crate::kap::fetch_kap_announcements(&state.http),
+            crate::spk::fetch_latest_bulletins(&state.http)
+        );
+        let kap = kap_res.unwrap_or_default();
+        let spk = spk_res.unwrap_or_default();
+
+        let mut store = state.store.lock().await;
+        let updated = crate::yahoo::apply_incremental_prices(&mut store.equities, &closes, &global_quotes);
+        if !kap.is_empty() {
+            store.kap = kap;
+        }
+        if !spk.is_empty() {
+            store.spk_bulletins = spk;
+        }
+        services::refresh_source_status(&mut store);
+
+        return Ok(SyncResult {
+            source,
+            mode: "incremental".into(),
+            status: "completed".into(),
+            message: format!("Incremental sync: {} prices refreshed.", updated),
+            updated_records: updated + store.kap.len(),
+        });
+    }
+
     let (equities_res, kap_res, spk_res) = tokio::join!(
         crate::yahoo::fetch_all_equities(&state.http, force_bist),
         crate::kap::fetch_kap_announcements(&state.http),
@@ -37,7 +71,10 @@ pub async fn sync_data(
     let mut store = state.store.lock().await;
     let eq_count = equities.len();
     if !equities.is_empty() {
-        store.equities = equities;
+        // Bindirme (merge): bu turda gelmeyen semboller eski değerini korur;
+        // hız sınırına takılan kısmi senkron evreni sessizce küçültemez.
+        services::merge_equities(&mut store.equities, equities);
+        services::record_full_sync();
     }
     if !kap.is_empty() {
         store.kap = kap;
@@ -46,20 +83,11 @@ pub async fn sync_data(
         store.spk_bulletins = spk;
     }
 
-    store.sources = vec![
-        crate::providers::BistProvider.status(store.equities.len()),
-        crate::providers::FundamentalsProvider.status(store.equities.iter().filter(|row| row.fundamentals_available).count()),
-        crate::providers::IpoIndexProvider.status(store.equities.iter().filter(|row| row.index_memberships.iter().any(|index| index == "BIST HALKA ARZ")).count()),
-        crate::providers::KapProvider.status(store.kap.len()),
-        crate::providers::EvdsProvider.status(0),
-        crate::providers::TuikProvider.status(0),
-        crate::providers::NewsProvider.status(0),
-        crate::providers::CsvProvider.status(0),
-    ];
+    services::refresh_source_status(&mut store);
 
     Ok(SyncResult {
         source,
-        mode,
+        mode: "full".into(),
         status: "completed".into(),
         message: format!("Synced {} equities from Yahoo Finance.", eq_count),
         updated_records: eq_count + store.kap.len(),
@@ -68,8 +96,12 @@ pub async fn sync_data(
 
 #[tauri::command]
 pub async fn get_dashboard_snapshot(state: State<'_, AppState>) -> Result<DashboardSnapshot, String> {
+    // Göstergeler ağdan gelir ve kilit dışında toplanır; store mutex'i yalnızca
+    // anlık görüntü kurulurken tutulur. Aksi halde şeridin periyodik yenilemesi
+    // store'a ihtiyaç duyan tüm komutları kendi ağ isteği boyunca bekletirdi.
+    let market_metrics = services::market_metrics(&state.http).await;
     let store = state.store.lock().await;
-    Ok(services::dashboard(&store, &state.http).await)
+    Ok(services::dashboard(&store, market_metrics))
 }
 
 #[tauri::command]
@@ -98,9 +130,15 @@ pub async fn get_ticker_snapshot(
         .await
         .map_err(|e| format!("{normalized} yerel evrende yok ve canlı veri alınamadı: {e}"))?;
 
+    // Önbelleğe store'daki adla yazılır: yeniden adlandırılan semboller (GC=F →
+    // "Altın Ons ($)") görünen ad altında saklanır; böylece merge'li senkron
+    // sonrası aynı enstrümanın bayat bir kopyası aramayı gölgeleyemez.
+    let store_key = crate::yahoo::display_ticker(&normalized).unwrap_or(normalized.as_str());
     let mut store = state.store.lock().await;
-    if !store.equities.iter().any(|row| row.ticker == normalized) {
-        store.equities.push(equity.clone());
+    if !store.equities.iter().any(|row| row.ticker == store_key) {
+        let mut cached = equity.clone();
+        cached.ticker = store_key.to_string();
+        store.equities.push(cached);
     }
     let kap = services::filter_kap(
         &store,
@@ -351,12 +389,111 @@ pub async fn get_market_holidays(
     Ok(crate::market_calendar::get_holidays(&state.http).await)
 }
 
+/// TEFAS'taki tüm fonlar (yatırım, emeklilik, BYF, gayrimenkul, girişim sermayesi).
+///
+/// Fon tipi başına tek istek harcanır; sonuç 30 dk önbelleklenir. TEFAS dakikada
+/// 6 istekle sınırlı olduğundan çağrı ilk seferde ~1 dakika sürebilir.
+#[tauri::command]
+pub async fn get_funds(state: State<'_, AppState>) -> Result<Vec<crate::tefas::FundRow>, String> {
+    Ok(crate::tefas::get_funds(&state.http).await)
+}
+
+/// Tüm fonların 1 ay / 3 ay / 1 yıl getirileri.
+///
+/// İlk çağrı TEFAS hız sınırı nedeniyle dakikalar sürer (15-20 istek);
+/// sonuç 12 saat önbelleklenir. Liste yüklemesinden ayrı çağrılmalıdır.
+#[tauri::command]
+pub async fn get_fund_returns(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::tefas::FundReturns>, String> {
+    Ok(crate::tefas::get_fund_returns(&state.http).await)
+}
+
+/// Fonun güncel varlık sınıfı dağılımı (yüzde).
+///
+/// TEFAS tek tek hisseleri yayınlamaz; yalnızca sınıf bazında oran verir.
+#[tauri::command]
+pub async fn get_fund_allocation(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<Vec<crate::tefas::FundAllocation>, String> {
+    crate::tefas::get_fund_allocation(&state.http, &code).await
+}
+
+/// Fonun fiyat geçmişi. TEFAS 1 aydan uzun aralığı reddettiğinden istek aylık
+/// parçalara bölünür; `months` büyüdükçe hız sınırı nedeniyle süre uzar.
+#[tauri::command]
+pub async fn get_fund_history(
+    state: State<'_, AppState>,
+    code: String,
+    months: u32,
+) -> Result<Vec<(String, f64)>, String> {
+    crate::tefas::get_fund_history(&state.http, &code, months).await
+}
+
+/// Fon kurucusunun KAP kaydı: şirket sayfası bağlantısı ve internet adresi.
+#[tauri::command]
+pub async fn get_fund_issuer(
+    state: State<'_, AppState>,
+    fund_name: String,
+) -> Result<Option<crate::tefas_issuer::FundIssuer>, String> {
+    Ok(crate::tefas_issuer::lookup(&state.http, &fund_name).await)
+}
+
+/// Fonun son KAP bildirimleri (son ~4 hafta).
+///
+/// KAP fon bazlı sorguyu desteklemediğinden tüm fonların bildirimleri topluca
+/// çekilip önbelleklenir; süzme burada yapılır.
+#[tauri::command]
+pub async fn get_fund_disclosures(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<Vec<crate::kap::FundDisclosure>, String> {
+    crate::kap::fund_disclosures(&state.http, &code).await
+}
+
+/// Fonun içindeki tek tek varlıklar — son KAP Portföy Dağılım Raporu'ndan.
+///
+/// Rapor aylıktır (~1 ay gecikmeli); PDR vermeyen fonlarda hata döner, PDF
+/// düzeni okunamayan fonlarda rapor bağlantısıyla boş liste döner.
+#[tauri::command]
+pub async fn get_fund_holdings(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<crate::kap_pdr::FundHoldingsReport, String> {
+    crate::kap_pdr::get_fund_holdings(&state.http, &code)
+        .await
+        .map(|report| (*report).clone())
+}
+
+/// Verilen sembollerin ~15 dk gecikmeli canlı fiyatları.
+///
+/// Bilerek hafif tutulmuştur: pano anlık görüntüsünden bağımsız çağrılır, böylece
+/// fiyat sık tazelenirken haberler/KAP/temel veriler yeniden çekilmez. Yalnızca
+/// ekranda görünen semboller sorulmalıdır.
+#[tauri::command]
+pub async fn get_live_quotes(
+    state: State<'_, AppState>,
+    tickers: Vec<String>,
+) -> Result<Vec<crate::live_quotes::LiveQuote>, String> {
+    Ok(crate::live_quotes::get_live_quotes(&state.http, &tickers).await)
+}
+
+/// Türkiye ekonomik takvimi (TradingEconomics). TCMB faiz kararı, TÜFE,
+/// işsizlik gibi makroekonomik olayları keysiz olarak çeker.
+#[tauri::command]
+pub async fn get_economic_calendar(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::economic_calendar::EconomicEvent>, String> {
+    Ok(crate::economic_calendar::get_economic_calendar(&state.http).await)
+}
+
 #[tauri::command]
 pub async fn get_news_feed(
     state: State<'_, AppState>,
     ticker: Option<String>,
 ) -> Result<Vec<NewsItem>, String> {
-    let company = if let Some(symbol) = ticker.as_ref() {
+    let mut company = if let Some(symbol) = ticker.as_ref() {
         let store = state.store.lock().await;
         store
             .equities
@@ -366,6 +503,19 @@ pub async fn get_news_feed(
     } else {
         None
     };
+
+    if company.is_none() {
+        if let Some(sym) = ticker.as_deref() {
+            company = match sym {
+                "^GSPC" => Some("S&P 500".to_string()),
+                "^DJI" => Some("Dow Jones".to_string()),
+                "^IXIC" => Some("Nasdaq".to_string()),
+                "XU100.IS" => Some("BIST 100".to_string()),
+                "XU030.IS" => Some("BIST 30".to_string()),
+                _ => None,
+            };
+        }
+    }
 
     let mut items = services::get_news_feed(&state.http, ticker.as_deref(), company.as_deref()).await?;
     
@@ -747,6 +897,15 @@ pub async fn get_kap_for_ticker(
 ) -> Result<Vec<crate::domain::KapAnnouncement>, String> {
     let normalized = ticker.trim().to_uppercase();
 
+    // Önce gerçek KAP: son ~4 haftanın resmi bildirimleri
+    if let Ok(items) = crate::kap::ticker_disclosures(&state.http, &normalized).await {
+        if !items.is_empty() {
+            return Ok(items);
+        }
+    }
+
+    // KAP'ta yakın dönem bildirimi yoksa (ya da uç yanıt vermediyse) Google
+    // News'in KAP aramasıyla daha geriye bakılır.
     // Şirket adı sorguyu güçlendirir: önce evrende, sonra IPO arşivinde ara
     let company = {
         let store = state.store.lock().await;

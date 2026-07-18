@@ -21,6 +21,8 @@ struct CurrentRatios {
     free_float_ratio: Option<f64>,
     foreign_ratio: Option<f64>,
     market_cap: Option<f64>,
+    /// Güncel (gecikmeli) fiyat; screener kriter kodu 7 "kapanış".
+    close: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -35,18 +37,7 @@ static CACHE: OnceLock<Mutex<Option<(Instant, RatioMap)>>> = OnceLock::new();
 /// statement fallback. This keeps the values shown by FRAUDE aligned with the
 /// Turkish market convention users compare against.
 pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) -> usize {
-    let ratios = match cached_ratios() {
-        Some(rows) => rows,
-        None => match fetch_ratios(client).await {
-            Ok(rows) => {
-                *CACHE.get_or_init(|| Mutex::new(None))
-                    .lock().unwrap_or_else(|error| error.into_inner()) =
-                    Some((Instant::now(), rows.clone()));
-                rows
-            }
-            Err(_) => return 0,
-        },
-    };
+    let Some(ratios) = load_ratios(client).await else { return 0 };
 
     let mut updated = 0;
     for equity in equities {
@@ -68,12 +59,43 @@ pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) ->
             equity.net_margin, equity.net_debt_ebitda, equity.dividend_yield,
             equity.free_float_ratio,
         ].into_iter().any(|value| value.is_some());
+        // Not: marj/borçluluk/büyüme evren düzeyinde HİÇBİR kaynaktan dolmuyor
+        // (İş Yatırım screener yalnız tahmin marjı verir); etiket yalnızca
+        // gerçekten dolan alanların kaynağını söylemeli.
         equity.fundamentals_source = Some(
-            "İş Yatırım Cari Oranlar (F/K, PD/DD, ROE, ROA, Temettü) · Yahoo ham finansallar (marj ve borçluluk)".into()
+            "İş Yatırım Cari Oranlar (F/K, PD/DD, ROE, ROA, Temettü, Yabancı Oranı)".into()
         );
         updated += 1;
     }
     updated
+}
+
+/// Tüm BIST evreninin güncel (gecikmeli) fiyatları — tek toplu screener isteği.
+///
+/// Artımlı senkronun fiyat kaynağıdır: sembol başına istek yerine bir çerez
+/// GET'i + dört screener POST'u tüm evreni kapsar. Screener'ın kapanış alanını
+/// boş bıraktığı hisseler haritada yer almaz; çağıran eldeki fiyatı korur.
+/// `CACHE_TTL` (15 dk) içindeki çağrılar ağa gitmez — BIST verisi zaten ~15 dk
+/// gecikmeli olduğundan daha sık sormanın karşılığı yoktur.
+pub async fn current_closes(client: &reqwest::Client) -> HashMap<String, f64> {
+    let Some(ratios) = load_ratios(client).await else { return HashMap::new() };
+    ratios
+        .into_iter()
+        .filter_map(|(ticker, row)| Some((ticker, row.close?)))
+        .filter(|(_, close)| *close > 0.0)
+        .collect()
+}
+
+/// Oran haritasını önbellekten verir; süresi geçmişse ağdan tazeleyip saklar.
+async fn load_ratios(client: &reqwest::Client) -> Option<RatioMap> {
+    if let Some(rows) = cached_ratios() {
+        return Some(rows);
+    }
+    let rows = fetch_ratios(client).await.ok()?;
+    *CACHE.get_or_init(|| Mutex::new(None))
+        .lock().unwrap_or_else(|error| error.into_inner()) =
+        Some((Instant::now(), rows.clone()));
+    Some(rows)
 }
 
 fn cached_ratios() -> Option<RatioMap> {
@@ -150,6 +172,7 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
                 entry.free_float_ratio = ext.free_float_ratio.or(entry.free_float_ratio);
                 entry.foreign_ratio = ext.foreign_ratio.or(entry.foreign_ratio);
                 entry.market_cap = ext.market_cap.or(entry.market_cap);
+                entry.close = ext.close.or(entry.close);
             }
         }
     }
@@ -205,8 +228,9 @@ fn parse_rows(value: &str) -> Result<RatioMap, String> {
             dividend_yield: number(&row, "36"),
             free_float_ratio: number(&row, "11"),
             foreign_ratio: number(&row, "40"),
-            // Ekran 8 no'lu kriteri milyon TL olarak döndürür; ısı haritası TL bekler.
+            // Ekran 8 no'lu kriteriyi milyon TL olarak döndürür; ısı haritası TL bekler.
             market_cap: number(&row, "8").map(|value| value * 1_000_000.0),
+            close: number(&row, "7"),
         });
     }
     Ok(parsed)
@@ -223,9 +247,10 @@ mod tests {
 
     #[test]
     fn parses_current_ratios_by_ticker() {
-        let input = r#"[{"Hisse":"ASELS - Aselsan ","28":"47.5","30":"6","422":"16.23","423":"9.41"}]"#;
+        let input = r#"[{"Hisse":"ASELS - Aselsan ","7":"312,25","28":"47.5","30":"6","422":"16.23","423":"9.41"}]"#;
         let rows = parse_rows(input).unwrap();
         let asels = rows.get("ASELS").unwrap();
+        assert_eq!(asels.close, Some(312.25));
         assert_eq!(asels.pe, Some(47.5));
         assert_eq!(asels.pb, Some(6.0));
         assert_eq!(asels.roe, Some(16.23));
@@ -257,6 +282,10 @@ mod tests {
         // yalnız kriter 28'in ayrıştırıldığı (pozitif, makul aralıkta) doğrulanır.
         assert!(rows.get("ASELS").and_then(|row| row.pe).is_some_and(|value| (1.0..500.0).contains(&value)));
         assert!(rows.get("THYAO").and_then(|row| row.pe).is_some_and(|value| (1.0..500.0).contains(&value)));
+
+        // Artımlı senkron fiyat kaynağı: kapanış (kriter 7) geniş kapsanmalı.
+        let with_close = rows.values().filter(|row| row.close.is_some()).count();
+        assert!(with_close > 300, "kapanış kapsamı düşük: {with_close}");
 
         // Yabancı takas oranı (kriter 40) ayrı katmandan gelmeli ve 0-100 aralığında olmalı.
         let with_foreign = rows.values().filter(|row| row.foreign_ratio.is_some()).count();

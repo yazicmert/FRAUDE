@@ -32,6 +32,158 @@ export function getMarketHolidays() {
   return invoke<MarketHoliday[]>('get_market_holidays');
 }
 
+/* ── TEFAS fonları ──────────────────────────────────────────────────────────── */
+
+/** TEFAS fon tipi kodu. */
+export type FundKind = 'YAT' | 'EMK' | 'BYF' | 'GYF' | 'GSYF';
+
+export const FUND_KIND_LABELS: Record<FundKind, string> = {
+  YAT: 'Yatırım Fonu',
+  EMK: 'Emeklilik Fonu',
+  BYF: 'Borsa Yatırım Fonu',
+  GYF: 'Gayrimenkul Yatırım Fonu',
+  GSYF: 'Girişim Sermayesi Yatırım Fonu',
+};
+
+export interface FundRow {
+  code: string;
+  name: string;
+  kind: FundKind;
+  /** Fiyatın ait olduğu tarih (YYYY-MM-DD). */
+  date: string;
+  price: number;
+  previous_price: number;
+  change_pct: number;
+  share_count: number;
+  investor_count: number;
+  /** Portföy büyüklüğü (TL). */
+  portfolio_size: number;
+}
+
+/** Fonun varlık sınıfı dağılımı. TEFAS tek tek hisseleri yayınlamaz. */
+export interface FundAllocation {
+  label: string;
+  pct: number;
+}
+
+/** Fon kurucusunun KAP künyesi. */
+export interface FundIssuer {
+  name: string;
+  kap_url: string;
+  website: string | null;
+}
+
+/** TEFAS'taki tüm fonlar. İlk çağrı hız sınırı nedeniyle ~1 dk sürebilir. */
+export function getFunds() {
+  return invoke<FundRow[]>('get_funds');
+}
+
+export function getFundAllocation(code: string) {
+  return invoke<FundAllocation[]>('get_fund_allocation', { code });
+}
+
+/** Fon fiyat geçmişi; `months` büyüdükçe hız sınırı nedeniyle süre uzar. */
+export function getFundHistory(code: string, months: number) {
+  return invoke<[string, number][]>('get_fund_history', { code, months });
+}
+
+export function getFundIssuer(fundName: string) {
+  return invoke<FundIssuer | null>('get_fund_issuer', { fundName });
+}
+
+/** Fonun KAP bildirimi. */
+export interface FundDisclosure {
+  date: string;
+  subject: string;
+  summary: string;
+  url: string;
+}
+
+/** Fonun son ~4 haftadaki KAP bildirimleri. */
+export function getFundDisclosures(code: string) {
+  return invoke<FundDisclosure[]>('get_fund_disclosures', { code });
+}
+
+/** Fonun dönem getirileri (yüzde); fiyatı o dönemde yoksa alan null kalır. */
+export interface FundReturns {
+  code: string;
+  r1m: number | null;
+  r3m: number | null;
+  r1y: number | null;
+}
+
+/**
+ * Tüm fonların 1 ay / 3 ay / 1 yıl getirileri. İlk çağrı TEFAS hız sınırı
+ * nedeniyle dakikalar sürer; 12 saat önbelleklenir. Liste yüklemesinden ayrı,
+ * arka planda çağrılmalıdır.
+ */
+export function getFundReturns() {
+  return invoke<FundReturns[]>('get_fund_returns');
+}
+
+/** Fon portföyündeki tek varlık (KAP Portföy Dağılım Raporu'ndan). */
+export interface FundHolding {
+  code: string;
+  name: string;
+  /** Fon toplam değerine göre yüzde. */
+  pct: number;
+  /** Rapordaki varlık grubu; okunamadıysa boş. */
+  group: string;
+}
+
+export interface FundHoldingsReport {
+  /** Rapor dönemi, "2026-06" biçiminde — veri ~1 ay gecikmelidir. */
+  period: string;
+  /** KAP bildirim sayfası. */
+  url: string;
+  holdings: FundHolding[];
+}
+
+/**
+ * Fonun içindeki varlıklar. PDR vermeyen fonlarda reddedilir; PDF düzeni
+ * okunamayan fonlarda `holdings` boş, `url` raporu gösterir.
+ */
+export function getFundHoldings(code: string) {
+  return invoke<FundHoldingsReport>('get_fund_holdings', { code });
+}
+
+/** ~15 dk gecikmeli canlı fiyat (İş Yatırım). */
+export interface LiveQuote {
+  ticker: string;
+  price: number;
+  previous_close: number;
+  change_pct: number;
+  /** Son barın unix zaman damgası (saniye). */
+  as_of_ts: number;
+}
+
+/**
+ * Verilen sembollerin gecikmeli fiyatlarını çeker. Pano anlık görüntüsünden
+ * bağımsızdır: sık çağrılabilir, haber/KAP/temel veriyi yeniden çekmez.
+ * Yalnızca ekranda görünen semboller sorulmalıdır.
+ */
+export function getLiveQuotes(tickers: string[]) {
+  return invoke<LiveQuote[]>('get_live_quotes', { tickers });
+}
+
+export type EconomicImpact = 'high' | 'medium' | 'low' | 'holiday';
+
+export interface EconomicEvent {
+  date: string;      // YYYY-MM-DD
+  time: string;      // "11:00 AM" or ""
+  event: string;     // Türkçe etkinlik adı
+  category: string;
+  actual: string;
+  previous: string;
+  consensus: string;
+  forecast: string;
+  impact: EconomicImpact;
+}
+
+export function getEconomicCalendar() {
+  return invoke<EconomicEvent[]>('get_economic_calendar');
+}
+
 export function executeFql(command: string, activeContext?: string) {
   return invoke<FqlResponse>('execute_fql', {
     command,

@@ -23,7 +23,8 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
       const data = await listKapAnnouncements();
       setRows(data);
     } catch {
-      setRows([]);
+      // Arka plan yenilemesi başarısızsa eldeki liste korunur; boşaltmak
+      // akışı gereksiz yere sıfırlayıp görünümü titretir.
     } finally {
       setLoading(false);
     }

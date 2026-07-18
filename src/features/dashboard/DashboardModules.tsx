@@ -5,6 +5,7 @@ import { syncData, updateBistIndices, getBistIndices } from '../../api/tauriClie
 import { useEffect } from 'react';
 import type { DashboardSnapshot, IndexConstituent } from '../../types';
 import { useWatchlist } from '../../hooks/useWatchlist';
+import { isBistEquity } from '../../lib/equityGroups';
 import MarketHeatmap from './MarketHeatmap';
 import FlashValue from '../../components/FlashValue';
 
@@ -93,7 +94,9 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
     if (filter === 'COMMODITIES') {
       return (snapshot.equities || []).filter(row => row.index_memberships && row.index_memberships.includes('Emtialar'));
     }
-    return snapshot.equities || [];
+    // 'ALL' etiketi "Tüm BIST"tir: ABD hisseleri (Global) ve emtialar bülten
+    // genişliğine/liderlerine karışmaz; emtialar kendi sekmesinde görünür.
+    return (snapshot.equities || []).filter(isBistEquity);
   }, [snapshot.equities, filter, dynamicIndices]);
 
   const gainers = useMemo(() => [...filteredEquities].sort((a, b) => b.change_pct - a.change_pct), [filteredEquities]);
@@ -124,7 +127,7 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
             BIST50: 'BIST 50',
             BIST100: 'BIST 100',
             IPO: t('ipoIndex'),
-            COMMODITIES: t('filter_commodities') || 'Emtialar'
+            COMMODITIES: t('filter_commodities')
           };
           return (
             <button
@@ -152,20 +155,20 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
           onClick={async (e) => {
             const btn = e.currentTarget;
             btn.disabled = true;
-            btn.innerText = "Güncelleniyor...";
+            btn.innerText = t('refreshing');
             try {
               await updateBistIndices();
               await syncData('BIST_INDICES');
-              
+
               const [indices] = await getBistIndices();
               setDynamicIndices(indices);
               window.dispatchEvent(new Event('fraude-sync-completed'));
-              
-              btn.innerText = "Güncellendi!";
-              setTimeout(() => { btn.innerText = t('refreshIndices') || "Endeksleri Güncelle"; btn.disabled = false; }, 2000);
+
+              btn.innerText = t('refreshDone');
+              setTimeout(() => { btn.innerText = t('refreshIndices'); btn.disabled = false; }, 2000);
             } catch (err) {
-              btn.innerText = "Hata!";
-              setTimeout(() => { btn.innerText = t('refreshIndices') || "Endeksleri Güncelle"; btn.disabled = false; }, 2000);
+              btn.innerText = t('refreshFailed');
+              setTimeout(() => { btn.innerText = t('refreshIndices'); btn.disabled = false; }, 2000);
             }
           }}
           style={{
@@ -179,7 +182,7 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
             marginLeft: 'auto'
           }}
         >
-          {t('refreshIndices') || "Endeksleri Güncelle"}
+          {t('refreshIndices')}
         </button>
       </div>
       <div className="bulletin-grid">
@@ -215,7 +218,7 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
         </div>
       </div>
       <div style={{ marginTop: '16px' }}>
-        <h3 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-muted)' }}>{t('marketHeatmap') || 'Piyasa Isı Haritası'}</h3>
+        <h3 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-muted)' }}>{t('marketHeatmap')}</h3>
         <MarketHeatmap data={filteredEquities} onSelect={onSelectTicker} height={260} />
       </div>
     </ModuleFrame>
@@ -226,37 +229,39 @@ export function AbnormalMovements({ snapshot, onSelectTicker, isEditing, onClose
   const { t } = useTranslation();
   
   const rows = useMemo(() => {
+    // Bedelsiz/temettü/halka arz açıklamaları yalnız BIST hisselerine uyar;
+    // emtia ve global satırlar bu modülün dışında kalır.
     return (snapshot.equities || [])
-      .filter(row => Math.abs(row.change_pct) >= 11.0)
+      .filter(row => isBistEquity(row) && Math.abs(row.change_pct) >= 11.0)
       .sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
   }, [snapshot.equities]);
 
   return (
-    <ModuleFrame 
-      title="Olağandışı Fiyat Hareketleri" 
-      subtitle="BIST günlük limitlerinin (±%10) üzerindeki potansiyel bedelsiz, temettü, yeni halka arz veya veri kayması durumları" 
-      isEditing={isEditing} 
+    <ModuleFrame
+      title={t('abnormalMoves')}
+      subtitle={t('abnormalMovesSubtitle')}
+      isEditing={isEditing}
       onClose={onClose}
     >
       <div className="table-scroll">
         {rows.length === 0 ? (
           <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-            Şu an için olağandışı bir fiyat hareketi (±%11 üzeri) tespit edilmedi.
+            {t('abnormalMovesEmpty')}
           </div>
         ) : (
           <table>
-            <thead><tr><th>{t('ticker')}</th><th>Fiyat</th><th>Değişim</th><th>RSI</th><th>Durum İhtimali</th></tr></thead>
+            <thead><tr><th>{t('ticker')}</th><th>{t('price')}</th><th>{t('change')}</th><th>RSI</th><th>{t('situationLikelihood')}</th></tr></thead>
             <tbody>{rows.map(row => {
               let situation = '';
               let isHalkaArz = row.index_memberships && row.index_memberships.includes('BIST HALKA ARZ');
             if (isHalkaArz) {
-                situation = 'Yeni Halka Arz / Tavan Serisi';
+                situation = t('sitIpo');
               } else if (row.price < 50 && row.change_pct < -20) {
-                situation = 'Bedelli / Bedelsiz Bölünme (veya Temettü)';
+                situation = t('sitSplit');
               } else if (row.change_pct > 20) {
-                situation = 'Bölünme (Veri Gecikmesi) / Özel Emir';
+                situation = t('sitDataLag');
               } else {
-                situation = 'Serbest Marj / Otorite Kararı / Hatalı Veri';
+                situation = t('sitOther');
               }
               return (
                 <tr key={row.ticker} className="clickable-row" onClick={() => onSelectTicker(row.ticker)}>
@@ -264,8 +269,8 @@ export function AbnormalMovements({ snapshot, onSelectTicker, isEditing, onClose
                     <strong>{row.ticker}</strong> 
                     {row.index_memberships && row.index_memberships.includes('BIST HALKA ARZ') && <span className="tag">IPO</span>}
                     {row.index_changes && (row.index_changes.added.length > 0 || row.index_changes.removed.length > 0) && (
-                      <span 
-                        title={`Değişiklik Tarihi: ${new Date(row.index_changes.timestamp * 1000).toLocaleDateString()}\nEklendiği Endeksler: ${row.index_changes.added.join(', ')}\nÇıkarıldığı Endeksler: ${row.index_changes.removed.join(', ')}`}
+                      <span
+                        title={t('indexChangeTitle', { date: new Date(row.index_changes.timestamp * 1000).toLocaleDateString(), added: row.index_changes.added.join(', '), removed: row.index_changes.removed.join(', ') })}
                         style={{ marginLeft: '4px', color: 'var(--accent-primary)', fontWeight: 'bold', cursor: 'help' }}
                       >
                         !
@@ -334,11 +339,11 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
   };
 
   return (
-    <ModuleFrame title={t('modelPortfolio') || "Takip Listem"} subtitle={t('modelPortfolioSubtitle') || "Kişisel portföyünüzdeki hisseler"} isEditing={isEditing} onClose={onClose}>
+    <ModuleFrame title={t('modelPortfolio')} subtitle={t('modelPortfolioSubtitle')} isEditing={isEditing} onClose={onClose}>
       <div className="table-scroll">
         {rows.length === 0 ? (
           <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-            Listenizde hisse bulunmuyor. Bir hisse sayfasına gidip "⭐ Portföye Ekle" tuşuna basabilirsiniz.
+            {t('watchlistEmpty')}
           </div>
         ) : (
           <>
@@ -346,10 +351,10 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
               {totals.hasPositions ? (
                 <>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Portföy Değeri: <strong style={{ color: 'var(--text-primary)' }}>₺{formatLira(totals.marketValue)}</strong>
+                    {t('portfolioValue')}: <strong style={{ color: 'var(--text-primary)' }}>₺{formatLira(totals.marketValue)}</strong>
                   </span>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    K/Z:{' '}
+                    {t('profitLoss')}:{' '}
                     <strong className={totals.profit >= 0 ? 'positive' : 'negative'}>
                       {totals.profit >= 0 ? '+' : '−'}₺{formatLira(Math.abs(totals.profit))}
                       {totals.weightedReturn !== null && ` (${totals.weightedReturn >= 0 ? '+' : ''}${totals.weightedReturn.toFixed(2)}%)`}
@@ -358,7 +363,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                 </>
               ) : (
                 <>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Toplam Portföy Getirisi (Eşit Ağırlıklı):</span>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('totalReturnEq')}</span>
                   <strong className={totals.equalWeightReturn >= 0 ? 'positive' : 'negative'} style={{ fontSize: '1rem' }}>
                     {totals.equalWeightReturn >= 0 ? '+' : ''}{totals.equalWeightReturn.toFixed(2)}%
                   </strong>
@@ -366,7 +371,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
               )}
             </div>
             <table>
-              <thead><tr><th>{t('ticker')}</th><th>Adet</th><th>Maliyet</th><th>Fiyat</th><th>Fark</th><th>Getiri</th><th>Değer</th><th>Ağırlık</th><th>İşlem</th></tr></thead>
+              <thead><tr><th>{t('ticker')}</th><th>{t('qty')}</th><th>{t('cost')}</th><th>{t('price')}</th><th>{t('diff')}</th><th>{t('returnLabel')}</th><th>{t('valueLabel')}</th><th>{t('weight')}</th><th>{t('actionLabel')}</th></tr></thead>
               <tbody>{rows.map(row => {
                 const weight = totals.marketValue > 0 && row.marketValue !== null
                   ? (row.marketValue / totals.marketValue) * 100
@@ -377,7 +382,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                     <strong>{row.ticker}</strong>
                     {row.index_changes && (row.index_changes.added.length > 0 || row.index_changes.removed.length > 0) && (
                       <span
-                        title={`Değişiklik Tarihi: ${new Date(row.index_changes.timestamp * 1000).toLocaleDateString()}\nEklendiği Endeksler: ${row.index_changes.added.join(', ')}\nÇıkarıldığı Endeksler: ${row.index_changes.removed.join(', ')}`}
+                        title={t('indexChangeTitle', { date: new Date(row.index_changes.timestamp * 1000).toLocaleDateString(), added: row.index_changes.added.join(', '), removed: row.index_changes.removed.join(', ') })}
                         style={{ marginLeft: '4px', color: 'var(--accent-primary)', fontWeight: 'bold', cursor: 'help' }}
                       >
                         !
@@ -391,7 +396,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                       style={numberInputStyle}
                       value={row.quantity ?? ''}
                       placeholder="—"
-                      title="Adet (pozisyon büyüklüğü)"
+                      title={t('qtyHint')}
                       onChange={(e) => {
                         const parsed = Number(e.target.value);
                         updateWatchlistItem(row.ticker, { quantity: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined });
@@ -406,7 +411,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                       style={numberInputStyle}
                       value={row.addedPrice > 0 ? row.addedPrice : ''}
                       placeholder="—"
-                      title="Hisse başına maliyet"
+                      title={t('costHint')}
                       onChange={(e) => {
                         const parsed = Number(e.target.value);
                         updateWatchlistItem(row.ticker, { addedPrice: Number.isFinite(parsed) && parsed > 0 ? parsed : 0 });
@@ -432,7 +437,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
                       onClick={(e) => { e.stopPropagation(); toggleWatchlist(row.ticker); }}
                       style={{ padding: '2px 6px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
                     >
-                      Çıkar
+                      {t('removeBtn')}
                     </button>
                   </td>
                 </tr>
@@ -442,7 +447,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
           </>
         )}
       </div>
-      <p className="module-disclaimer">Adet ve maliyet girdiğiniz hisselerde portföy değeri, K/Z ve ağırlık gerçek pozisyona göre; girmediklerinizde getiri eklenme fiyatına göre eşit ağırlıklı hesaplanır.</p>
+      <p className="module-disclaimer">{t('portfolioDisclaimer')}</p>
     </ModuleFrame>
   );
 }
@@ -562,6 +567,7 @@ export function CustomAnalysis({ snapshot, onSelectTicker, isEditing, onClose }:
 }
 
 export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onClose }: ModuleProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<'news' | 'spk'>('news');
 
   const categoryColor = (cat: string) => {
@@ -571,10 +577,10 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
   };
 
   return (
-    <ModuleFrame 
-      title="Piyasa Haberleri & SPK Bültenleri" 
-      subtitle="BloombergHT ve Dünya Gazetesi'nden son finans haberleri" 
-      isEditing={isEditing} 
+    <ModuleFrame
+      title={t('marketNewsSpk')}
+      subtitle={t('marketNewsSubtitle')}
+      isEditing={isEditing}
       onClose={onClose}
     >
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
@@ -584,7 +590,7 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
           onClick={() => setTab('news')}
           style={{ fontSize: '0.8rem', padding: '6px 14px' }}
         >
-          📰 Finans Haberleri
+          {t('financeNews')}
         </button>
         <button 
           type="button"
@@ -592,7 +598,7 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
           onClick={() => setTab('spk')}
           style={{ fontSize: '0.8rem', padding: '6px 14px' }}
         >
-          📋 SPK Bültenleri
+          {t('spkBulletins')}
         </button>
       </div>
 
@@ -674,14 +680,14 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
                       fontWeight: 500,
                     }}
                   >
-                    Haberi Oku →
+                    {t('readNews')}
                   </a>
                 </div>
               ))}
             </div>
           ) : (
             <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-              Finans haberleri yükleniyor... Senkronizasyon yapınız.
+              {t('newsSyncPrompt')}
             </div>
           )
         ) : (
@@ -709,7 +715,7 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
                       borderRadius: '3px',
                       fontWeight: 600,
                     }}>
-                      SPK Resmi Bülten
+                      {t('spkOfficial')}
                     </span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{spk.date}</span>
                   </div>
@@ -727,14 +733,14 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
                       fontWeight: 500,
                     }}
                   >
-                    📄 PDF İndir →
+                    {t('downloadPdf')}
                   </a>
                 </div>
               ))}
             </div>
           ) : (
             <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-              SPK bültenleri yükleniyor... Senkronizasyon yapınız.
+              {t('spkSyncPrompt')}
             </div>
           )
         )}

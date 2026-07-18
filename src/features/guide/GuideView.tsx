@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from '../../api/i18n';
+import { shortcutKeys, type ShortcutId } from '../../lib/shortcuts';
 import './GuideView.css';
 
 // ── İçerik tipleri ─────────────────────────────────────────────
@@ -42,6 +43,10 @@ interface GuideContent {
   quickHeading: string;
   quickTitle: string;
   quickSteps: string[];
+  shortcutsHeading: string;
+  shortcutsLead: string;
+  /** Tuşlar burada değil, shortcuts.ts'te tanımlıdır; burada yalnızca açıklama durur. */
+  shortcuts: { id: ShortcutId; desc: string }[];
 }
 
 // ── TR / EN içerik ─────────────────────────────────────────────
@@ -157,6 +162,19 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       'AI için Ayarlar › AI Providers\'a git ve yukarıdaki adımlarla anahtarını ekle.',
       'İzleme Radarı\'na birkaç hisse ekle ve etkin yap; arka plan taraması başlasın.',
     ],
+    shortcutsHeading: 'Klavye Kısayolları',
+    shortcutsLead: 'FRAUDE, klavye ile hızlı kullanım için optimize edilmiştir.',
+    shortcuts: [
+      { id: 'palette', desc: 'Arama ve Komut Paletini aç' },
+      { id: 'sidebar', desc: 'Kenar çubuğunu aç/kapat' },
+      { id: 'terminal', desc: 'Terminal panelini aç/kapat' },
+      { id: 'aiPanel', desc: 'YZ panelini aç/kapat' },
+      { id: 'alerts', desc: 'Fiyat & teknik alarmları aç/kapat' },
+      { id: 'monitor', desc: 'İzleme Radarı sekmesini aç' },
+      { id: 'sync', desc: 'Verileri şimdi eşitle' },
+      { id: 'settings', desc: 'Ayarlar modülünü aç' },
+      { id: 'close', desc: 'Açık pencereleri veya paleti kapat' },
+    ],
   },
   en: {
     eyebrow: 'Guide',
@@ -268,6 +286,19 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       'Type a ticker in the top search (e.g. THYAO) or run open THYAO in the Terminal.',
       'For AI, go to Settings › AI Providers and add your key with the steps above.',
       'Add a few tickers to the Watch Radar and enable it; background scanning starts.',
+    ],
+    shortcutsHeading: 'Keyboard Shortcuts',
+    shortcutsLead: 'FRAUDE is optimized for fast keyboard navigation.',
+    shortcuts: [
+      { id: 'palette', desc: 'Open Search and Command Palette' },
+      { id: 'sidebar', desc: 'Toggle Sidebar' },
+      { id: 'terminal', desc: 'Toggle Terminal panel' },
+      { id: 'aiPanel', desc: 'Toggle AI panel' },
+      { id: 'alerts', desc: 'Toggle price & technical alerts' },
+      { id: 'monitor', desc: 'Open Watch Radar tab' },
+      { id: 'sync', desc: 'Sync data now' },
+      { id: 'settings', desc: 'Open Settings module' },
+      { id: 'close', desc: 'Close modals or palette' },
     ],
   },
 };
@@ -381,6 +412,26 @@ export default function GuideView() {
             </p>
             <p>{c.inAppText}</p>
             <p className="guide-note ok"><b>✓</b> {c.securityNote}</p>
+          </div>
+        </section>
+
+        {/* ── Kısayollar ── */}
+        <section className="guide-section">
+          <h2 className="guide-h2">{c.shortcutsHeading}</h2>
+          <p className="guide-lead">{c.shortcutsLead}</p>
+          <div className="guide-shortcuts">
+            {c.shortcuts.map((sc) => (
+              <div key={sc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color)' }}>
+                <span style={{ color: 'var(--text-color)', fontSize: '0.9rem' }}>{sc.desc}</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {shortcutKeys(sc.id).map((k, j) => (
+                    <kbd key={j} style={{ background: 'var(--bg-dark)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
+                      {k}
+                    </kbd>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

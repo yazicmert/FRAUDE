@@ -1,36 +1,25 @@
 import { useEffect, useState, useMemo } from 'react';
 import { getDashboardSnapshot, syncData } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
+import { isBistEquity } from '../../lib/equityGroups';
 import type { DashboardSnapshot, EquityRow } from '../../types';
 import { BalanceAnalysis, CustomAnalysis, MarketBulletin, ModelPortfolio, AbnormalMovements, NewsAndAnnouncements } from './DashboardModules';
 import ComparativeChart from './ComparativeChart';
 
 interface DashboardViewProps {
   onSelectTicker: (ticker: string) => void;
-  onSelectIndex: (symbol: string) => void;
 }
 
-const ALL_INDICES = [
-  'BIST 100',
-  'BIST 30',
-  'BIST 50',
-  'BIST BANKA',
-  'BIST SINAI',
-  'BIST TEKNOLOJI',
-  'BIST HIZMETLER',
-  'BIST HALKA ARZ',
-  'USD/TRY',
-  'EUR/TRY'
-];
-
+// Endeks kartları panodan kaldırıldı: aynı göstergeler üst şeritte (MarketMarquee)
+// sürekli akıyor ve oradan da endeks sekmesi açılabiliyor.
 const DASHBOARD_MODULES = [
-  'metrics', 'comparative_chart', 'bulletin', 'gainers', 'losers', 'risk_watch',
+  'comparative_chart', 'bulletin', 'gainers', 'losers', 'risk_watch',
   'model_portfolio', 'balance_analysis', 'custom_analysis', 'abnormal_movements', 'news_panel'
 ];
 
 const NEW_DEFAULT_MODULES = ['comparative_chart', 'bulletin', 'model_portfolio', 'abnormal_movements', 'balance_analysis', 'custom_analysis', 'news_panel'];
 
-export default function DashboardView({ onSelectTicker, onSelectIndex }: DashboardViewProps) {
+export default function DashboardView({ onSelectTicker }: DashboardViewProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,14 +31,6 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
 
   const [universeFilter, setUniverseFilter] = useState<string>('all');
 
-  // Active indices toggled visible
-  const [visibleIndices, setVisibleIndices] = useState<string[]>(() => {
-    const saved = localStorage.getItem('fraude-visible-indices');
-    if (!saved) return ALL_INDICES;
-    const parsed = JSON.parse(saved) as string[];
-    return parsed.includes('BIST HALKA ARZ') ? parsed : [...parsed, 'BIST HALKA ARZ'];
-  });
-
   // Closeable panels/modules toggled visible
   const [visibleModules, setVisibleModules] = useState<string[]>(() => {
     const saved = localStorage.getItem('fraude-visible-modules');
@@ -58,11 +39,16 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
     return [...parsed, ...NEW_DEFAULT_MODULES.filter(module => !parsed.includes(module))];
   });
 
+  // Arka plan yenilemeleri eldeki panoyu asla söküp yeniden kurmaz: `loading`
+  // yalnızca ilk yüklemede true'dur ve bir daha true yapılmaz (buradaki eski
+  // `if (!snapshot)` koruması [] bağımlılıklı efektte bayat kapanışa takılıyor
+  // ve her senkronda tüm panoyu "yükleniyor" ekranına düşürüyordu). Yeni veri
+  // geldiğinde değerler yerinde güncellenir.
   const load = async () => {
-    if (!snapshot) setLoading(true);
-    setError(null);
     try {
-      setSnapshot(await getDashboardSnapshot());
+      const next = await getDashboardSnapshot();
+      setSnapshot(next);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -78,14 +64,6 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
     return () => window.removeEventListener('fraude-sync-completed', handleSync);
   }, []);
 
-  const toggleIndex = (indexName: string) => {
-    const next = visibleIndices.includes(indexName)
-      ? visibleIndices.filter(x => x !== indexName)
-      : [...visibleIndices, indexName];
-    setVisibleIndices(next);
-    localStorage.setItem('fraude-visible-indices', JSON.stringify(next));
-  };
-
   const closeModule = (moduleName: string) => {
     const next = visibleModules.filter(m => m !== moduleName);
     setVisibleModules(next);
@@ -100,12 +78,17 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
     localStorage.setItem('fraude-visible-modules', JSON.stringify(next));
   };
 
-  const allEquities = universeFilter === 'all' 
-    ? (snapshot?.equities || []) 
+  const allEquities = universeFilter === 'all'
+    ? (snapshot?.equities || [])
     : (snapshot?.equities || []).filter(eq => eq.index_memberships && eq.index_memberships.includes(universeFilter));
 
   // Filter snapshot itself for the child modules
   const filteredSnapshot = snapshot ? { ...snapshot, equities: allEquities } : null;
+
+  // Yükselen/düşen/risk listeleri BIST'e özeldir: 'Tüm BIST' seçiliyken ABD
+  // hisseleri (Global) ve emtia/döviz satırları elenir. Kullanıcı açıkça bir
+  // grup seçtiyse (Global dahil) o grubun satırları olduğu gibi gösterilir.
+  const moverEquities = universeFilter === 'all' ? allEquities.filter(isBistEquity) : allEquities;
 
   const availableIndices = useMemo(() => {
     if (!snapshot || !snapshot.equities) return [];
@@ -118,14 +101,11 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
     return Array.from(set).sort();
   }, [snapshot]);
 
-  if (loading) return <div className="empty-state">{t('loadingDashboard')}</div>;
-  if (error) return <div className="empty-state error">{error}</div>;
+  // Tam ekran yükleme/hata yalnızca elde gösterilecek veri yokken; veri varken
+  // arka plan yenilemesinin hatası panoyu silmez (üst çubuk durumu zaten gösterir).
+  if (loading && !snapshot) return <div className="empty-state">{t('loadingDashboard')}</div>;
+  if (error && !snapshot) return <div className="empty-state error">{error}</div>;
   if (!snapshot || !filteredSnapshot) return <div className="empty-state">{t('noDashboardData')}</div>;
-
-  // Grid metrics filter
-  const renderedMetrics = isEditing 
-    ? (snapshot.market_metrics || []).filter(m => ALL_INDICES.includes(m.symbol))
-    : (snapshot.market_metrics || []).filter(m => visibleIndices.includes(m.symbol));
 
   return (
     <div className="view">
@@ -207,7 +187,6 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
             {DASHBOARD_MODULES.map(m => {
               const active = visibleModules.includes(m);
               const labelMap: Record<string, string> = {
-                metrics: 'Endeksler',
                 comparative_chart: t('comparativeChart'),
                 gainers: t('topGainers'),
                 losers: t('topLosers'),
@@ -247,116 +226,13 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
         <ComparativeChart isEditing={isEditing} onClose={() => closeModule('comparative_chart')} equities={snapshot?.equities} />
       )}
 
-      {/* 1. Market Metrics Panel */}
-      {visibleModules.includes('metrics') && (
-        <div style={{ position: 'relative', marginTop: '20px', marginBottom: '16px' }}>
-          {isEditing && (
-            <button
-              type="button"
-              onClick={() => closeModule('metrics')}
-              style={{
-                position: 'absolute',
-                top: '-10px',
-                right: '-10px',
-                width: '20px',
-                height: '20px',
-                borderRadius: '50%',
-                background: '#ff3e3e',
-                color: '#ffffff',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                zIndex: 10
-              }}
-            >
-              ×
-            </button>
-          )}
-          <div className="metric-grid">
-            {renderedMetrics.map((metric) => {
-              const isVisible = visibleIndices.includes(metric.symbol);
-              const changeNum = parseFloat(metric.change.replace(/[^\d.+-]/g, ''));
-              const isZeroChange = metric.change === '+0.00%' || metric.change === '0.00%' || changeNum === 0;
-              return (
-                <div
-                  className="metric-card index-card"
-                  key={metric.symbol}
-                  onClick={() => {
-                    if (isEditing) {
-                      toggleIndex(metric.symbol);
-                    } else {
-                      onSelectIndex(metric.symbol);
-                    }
-                  }}
-                  style={{
-                    cursor: 'pointer',
-                    position: 'relative',
-                    opacity: !isVisible && isEditing ? 0.4 : 1.0,
-                    transition: 'all 0.2s ease',
-                    borderColor: !isVisible && isEditing ? '#21262d' : undefined,
-                  }}
-                >
-                  {isEditing && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.9rem',
-                      fontWeight: 'bold',
-                      color: '#000000',
-                      background: isVisible ? '#ff3e3e' : 'var(--accent-primary)',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-                      zIndex: 10
-                    }}>
-                      {isVisible ? '−' : '+'}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="index-card-label">{metric.symbol}</span>
-                    {!isEditing && <span className="index-card-arrow">→</span>}
-                  </div>
-                  <strong className="index-card-value">{metric.value}</strong>
-                  <em className={`index-card-change ${isZeroChange ? 'neutral' : metric.positive ? 'positive' : 'negative'}`}>
-                    {isZeroChange ? '—' : metric.change}
-                  </em>
-                </div>
-              );
-            })}
-          </div>
-          {(() => {
-            const bistTs = Math.max(0, ...renderedMetrics.filter(m => m.symbol.startsWith('BIST')).map(m => m.as_of_ts ?? 0));
-            if (!bistTs) return null;
-            const asOf = new Date(bistTs * 1000);
-            const lagMin = Math.round((Date.now() - asOf.getTime()) / 60000);
-            const timeStr = asOf.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-            const lagStr = lagMin <= 90
-              ? `Gecikme: ~${Math.max(lagMin, 15)} dk`
-              : `Piyasa kapalı — son kapanış verisi`;
-            return (
-              <div style={{ marginTop: '8px', fontSize: '0.7rem', color: '#8b949e', fontFamily: 'var(--font-mono)' }}>
-                Kaynak: Yahoo Finance · Son veri: {timeStr} · {lagStr} · BIST endeks verileri ~15 dk gecikmeli yayınlanır
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
       {/* 2. Split Grid for Gainers, Losers, and Risk Watch */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginBottom: '16px' }}>
         {visibleModules.includes('gainers') && (
           <EquityTable 
             title={t('topGainers')} 
             type="gainers"
-            equities={filteredSnapshot.equities} 
+            equities={moverEquities} 
             onSelectTicker={onSelectTicker} 
             isEditing={isEditing}
             onClose={() => closeModule('gainers')}
@@ -367,7 +243,7 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
           <EquityTable 
             title={t('topLosers')} 
             type="losers"
-            equities={filteredSnapshot.equities} 
+            equities={moverEquities} 
             onSelectTicker={onSelectTicker} 
             isEditing={isEditing}
             onClose={() => closeModule('losers')}
@@ -378,7 +254,7 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
           <EquityTable 
             title={t('riskWatch')} 
             type="risk_watch"
-            equities={filteredSnapshot.equities} 
+            equities={moverEquities} 
             onSelectTicker={onSelectTicker} 
             isEditing={isEditing}
             onClose={() => closeModule('risk_watch')}
@@ -487,7 +363,7 @@ export default function DashboardView({ onSelectTicker, onSelectIndex }: Dashboa
               </thead>
               <tbody>
                 {(() => {
-                  let list = [...filteredSnapshot.equities];
+                  let list = [...moverEquities];
                   const timeframe = showAllType.timeframe || '1d';
                   const getChange = (row: EquityRow) => {
                     switch (timeframe) {
@@ -677,7 +553,7 @@ function EquityTable({ title, type, equities, onSelectTicker, isEditing, onClose
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
                   }}
-                  title={val === '1d' ? 'Günlük' : val === '1w' ? 'Haftalık' : val === '1m' ? 'Aylık' : val === '6m' ? '6 Aylık' : 'Yıllık'}
+                  title={val === '1d' ? t('periodDaily') : val === '1w' ? t('periodWeekly') : val === '1m' ? t('periodMonthly') : val === '6m' ? t('period6m') : t('periodYearly')}
                 >
                   {label}
                 </button>

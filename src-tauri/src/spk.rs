@@ -31,7 +31,7 @@ pub async fn fetch_latest_bulletins(client: &Client) -> Result<Vec<SpkBulletin>,
     //   <div class="liste-baslik">Bülten No : 2026/44</div>
     //   <div class="liste-icerik  overflow-hidden-2">Yayımlanma : 08 Temmuz 2026 Çarşamba</div>
     
-    let re_item = regex::Regex::new(r#"(?is)<a href="([^"]+\.pdf)"[^>]*>.*?<div class="liste-baslik[^"]*">\s*(.*?)\s*</div>.*?<div class="liste-icerik[^>]*>\s*(?:<[^>]*>\s*)*Yayımlanma :\s*(.*?)\s*</div>"#).unwrap();
+    let re_item = regex::Regex::new(r#"(?is)<a href="([^"]+\.pdf)"[^>]*>\s*<div class="liste-item">.*?<div class="liste-baslik[^"]*">\s*(.*?)\s*</div>.*?<div class="liste-icerik[^>]*>\s*(?:<[^>]*>\s*)*Yayımlanma :\s*(.*?)\s*</div>"#).unwrap();
 
     for cap in re_item.captures_iter(&html) {
         let url = cap[1].trim().to_string();
