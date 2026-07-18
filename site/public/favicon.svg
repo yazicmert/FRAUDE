@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#181f29"/>
+      <stop offset="1" stop-color="#0a0d12"/>
+    </linearGradient>
+    <linearGradient id="green" gradientUnits="userSpaceOnUse" x1="0" y1="212" x2="0" y2="812">
+      <stop offset="0" stop-color="#00e896"/>
+      <stop offset="1" stop-color="#00b877"/>
+    </linearGradient>
+    <linearGradient id="red" gradientUnits="userSpaceOnUse" x1="0" y1="462" x2="0" y2="574">
+      <stop offset="0" stop-color="#ff6a5e"/>
+      <stop offset="1" stop-color="#e0443b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Zemin: koyu terminal kartı -->
+  <rect x="32" y="32" width="960" height="960" rx="212" fill="url(#bg)"/>
+  <rect x="34" y="34" width="956" height="956" rx="210" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="4"/>
+
+  <!-- F harfi: gövde = dikey mum (üst/alt fitil), kollar = yatay barlar (uçta yatay fitil) -->
+
+  <!-- Gövde fitili (en altta kalır, yalnız üstte/altta görünür) -->
+  <rect x="326" y="164" width="16" height="696" rx="8" fill="#00d488" opacity="0.9"/>
+
+  <!-- Orta kol: kırmızı yatay bar, gövdenin altına sokulu -->
+  <rect x="350" y="462" width="268" height="112" rx="26" fill="url(#red)"/>
+  <rect x="618" y="510" width="44" height="16" rx="8" fill="#f0554a" opacity="0.9"/>
+
+  <!-- Üst kol: yeşil yatay bar, gövdeyle aynı gradyan (dikişsiz birleşir) -->
+  <rect x="278" y="212" width="424" height="112" rx="26" fill="url(#green)"/>
+  <rect x="702" y="260" width="44" height="16" rx="8" fill="#00d488" opacity="0.9"/>
+
+  <!-- Gövde: tek uzun yeşil mum -->
+  <rect x="278" y="212" width="112" height="600" rx="26" fill="url(#green)"/>
+</svg>
