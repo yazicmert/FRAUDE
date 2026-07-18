@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
-import { BIST_TICKERS } from '../lib/bistTickers';
+import { loadBistUniverse, type TickerPair } from '../lib/bistUniverse';
 
 interface Prefs {
   enabled: boolean;
@@ -43,6 +43,11 @@ export default function NotifyPrefs({ user }: { user: User }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [ready, setReady] = useState(false);
+  const [universe, setUniverse] = useState<readonly TickerPair[]>([]);
+
+  useEffect(() => {
+    void loadBistUniverse().then(setUniverse);
+  }, []);
 
   useEffect(() => {
     void supabase
@@ -62,10 +67,10 @@ export default function NotifyPrefs({ user }: { user: User }) {
   const suggestions = useMemo(() => {
     const q = norm(newTicker);
     if (q.length < 1) return [];
-    return BIST_TICKERS.filter(
-      ([code, name]) => norm(code).includes(q) || norm(name).includes(q),
-    ).slice(0, 8);
-  }, [newTicker]);
+    return universe
+      .filter(([code, name]) => norm(code).includes(q) || norm(name).includes(q))
+      .slice(0, 8);
+  }, [newTicker, universe]);
 
   const toggleTicker = (code: string) => {
     const up = code.toUpperCase();

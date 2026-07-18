@@ -386,3 +386,25 @@ grant select, insert, update on public.notify_seen to service_role;
 --     );
 --   $CRON$
 -- );
+
+-- ── BIST hisse evreni (public, otomatik-tamamlama için) ─────────────────────
+-- refresh-bist-universe Edge Function KAP'tan günlük tazeler; web bildirim
+-- paneli anon anahtarla okur (yeni halka arzlar otomatik girer).
+create table if not exists public.bist_tickers (
+  code       text primary key,
+  name       text not null default '',
+  updated_at timestamptz not null default now()
+);
+alter table public.bist_tickers enable row level security;
+drop policy if exists "bist-read" on public.bist_tickers;
+create policy "bist-read" on public.bist_tickers
+  for select to anon, authenticated using (true);
+grant select on public.bist_tickers to anon, authenticated;
+grant select, insert, update, delete on public.bist_tickers to service_role;
+
+-- Zamanlama (bir kez, SQL Editor'da <PROJECT_REF>/<CRON_SECRET> doldurularak):
+-- select cron.schedule('refresh-bist-universe', '30 6 * * *', $CRON$
+--   select net.http_post(
+--     url := 'https://<PROJECT_REF>.supabase.co/functions/v1/refresh-bist-universe',
+--     headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','<CRON_SECRET>'),
+--     body := '{}'::jsonb) $CRON$);
