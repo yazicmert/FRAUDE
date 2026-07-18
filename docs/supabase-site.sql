@@ -325,3 +325,64 @@ begin
   end loop;
 end;
 $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Bildirim katmanı: KAP/SPK/haber gözcüsü (market-watch Edge Function)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Kullanıcı bildirim tercihleri
+create table if not exists public.notify_prefs (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  email        text not null,
+  enabled      boolean not null default true,
+  kap_enabled  boolean not null default true,
+  spk_enabled  boolean not null default true,
+  news_enabled boolean not null default true,
+  tickers      text[] not null default '{}',   -- takip edilen BIST kodları
+  keywords     text[] not null default '{}',   -- ek anahtar kelimeler
+  min_priority smallint not null default 3 check (min_priority between 1 and 5),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+alter table public.notify_prefs enable row level security;
+
+drop policy if exists "prefs-own-select" on public.notify_prefs;
+create policy "prefs-own-select" on public.notify_prefs
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists "prefs-own-insert" on public.notify_prefs;
+create policy "prefs-own-insert" on public.notify_prefs
+  for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists "prefs-own-update" on public.notify_prefs;
+create policy "prefs-own-update" on public.notify_prefs
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+grant select, insert, update on public.notify_prefs to authenticated;
+grant select, insert, update, delete on public.notify_prefs to service_role;
+
+-- Kaynak imleçleri (global tekilleştirme; yalnız fonksiyon yazar)
+create table if not exists public.notify_seen (
+  source     text primary key,   -- 'kap' | 'news' | 'spk'
+  last_key   text,
+  updated_at timestamptz not null default now()
+);
+alter table public.notify_seen enable row level security;  -- politika yok = yalnız service_role
+grant select, insert, update on public.notify_seen to service_role;
+
+-- ── Zamanlama (pg_cron + pg_net) ───────────────────────────────────────────
+-- ÖNKOŞUL: market-watch fonksiyonu deploy edilmiş ve CRON_SECRET secret'ı set
+-- edilmiş olmalı. Aşağıdaki bloğu SQL Editor'da <PROJECT_REF> ve <CRON_SECRET>
+-- değerlerini doldurarak çalıştırın (bir kez).
+--
+-- create extension if not exists pg_cron;
+-- create extension if not exists pg_net;
+-- select cron.schedule(
+--   'market-watch',
+--   '*/10 10-18 * * 1-5',   -- borsa saatleri (TR), her 10 dk, hafta içi
+--   $CRON$
+--     select net.http_post(
+--       url := 'https://<PROJECT_REF>.supabase.co/functions/v1/market-watch',
+--       headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','<CRON_SECRET>'),
+--       body := '{}'::jsonb
+--     );
+--   $CRON$
+-- );

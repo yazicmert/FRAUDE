@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { displayName } from '../lib/useSession';
 import { navigate } from '../lib/router';
 import { useI18n, type StringKey } from '../lib/i18n';
+import NotifyPrefs from '../components/NotifyPrefs';
 
 interface LicenseRequest {
   id: string;
@@ -173,6 +174,8 @@ export default function Account({ user }: { user: User }) {
           </div>
         )}
       </div>
+
+      <NotifyPrefs user={user} />
 
       <div className="card">
         <h2>{t('sessionTitle')}</h2>
