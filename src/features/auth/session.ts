@@ -1,9 +1,12 @@
-// Yerel kimlik oturumu (Faz 1).
+// Supabase Auth oturumu (Faz 2).
 //
-// Hesaplar şimdilik yalnızca bu cihazda (localStorage) tutulur; parola düz
-// metin yerine tuzlanmış SHA-256 özetiyle saklanır. Faz 2'de bu modülün
-// signIn/signUp/signOut yüzeyi aynen korunarak Supabase Auth'a (JWT)
-// bağlanacak — sunucudaki karşılığı için bkz. server/src/auth.rs.
+// Hesaplar artık FRAUDE bulutunda (Supabase) tutulur; bu modül Faz 1'deki
+// yerel sürümle aynı yüzeyi (signIn/signUp/signOut/getSession + AUTH_EVENT)
+// korur, AuthGate ve SettingsView değişmeden çalışır. Sunucu tarafındaki JWT
+// doğrulama karşılığı için bkz. server/src/auth.rs.
+
+import { supabase } from './supabaseClient';
+import type { User } from '@supabase/supabase-js';
 
 export interface AuthUser {
   id: string;
@@ -12,94 +15,90 @@ export interface AuthUser {
   createdAt: string;
 }
 
-interface StoredAccount extends AuthUser {
-  salt: string;
-  hash: string;
-}
-
-const USERS_KEY = 'fraude-auth-users';
-const SESSION_KEY = 'fraude-auth-session';
-
 /** Oturum değişince (giriş/çıkış) window üzerinde yayınlanır. */
 export const AUTH_EVENT = 'fraude:auth-changed';
 
-export type AuthError = 'email-taken' | 'unknown-user' | 'wrong-password';
+export type AuthError =
+  | 'email-taken'
+  | 'invalid-credentials'
+  | 'confirm-email'
+  | 'weak-password'
+  | 'network'
+  | 'unknown';
 
-async function digest(password: string, salt: string): Promise<string> {
-  const data = new TextEncoder().encode(`${salt}:${password}`);
-  if (globalThis.crypto?.subtle) {
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-  // Güvenli bağlam yoksa (çok eski WebView) son çare: zayıf ama deterministik özet.
-  let acc = 0;
-  for (const byte of data) acc = (acc * 31 + byte) >>> 0;
-  return `weak-${acc.toString(16)}`;
+function toUser(user: User | null | undefined): AuthUser | null {
+  if (!user || !user.email) return null;
+  const name =
+    (user.user_metadata?.name as string | undefined)?.trim() || user.email.split('@')[0];
+  return { id: user.id, name, email: user.email, createdAt: user.created_at };
 }
 
-function loadAccounts(): StoredAccount[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(USERS_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
-}
+// Senkron getSession() çağrıları için modül içi önbellek; Supabase oturumu
+// asenkron geri yüklediğinden AuthGate önce initSession() bekler.
+let currentUser: AuthUser | null = null;
 
-function toUser(account: StoredAccount): AuthUser {
-  const { id, name, email, createdAt } = account;
-  return { id, name, email, createdAt };
-}
+supabase.auth.onAuthStateChange((_event, session) => {
+  const next = toUser(session?.user);
+  const changed = next?.id !== currentUser?.id;
+  currentUser = next;
+  if (changed) window.dispatchEvent(new CustomEvent(AUTH_EVENT));
+});
 
-function setSession(user: AuthUser | null) {
-  if (user) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-  } else {
-    localStorage.removeItem(SESSION_KEY);
-  }
-  window.dispatchEvent(new CustomEvent(AUTH_EVENT));
+/** Kalıcı oturumu geri yükler; uygulama açılışında bir kez beklenir. */
+export async function initSession(): Promise<AuthUser | null> {
+  const { data } = await supabase.auth.getSession();
+  currentUser = toUser(data.session?.user);
+  return currentUser;
 }
 
 export function getSession(): AuthUser | null {
+  return currentUser;
+}
+
+function mapError(message: string): AuthError {
+  const text = message.toLowerCase();
+  if (text.includes('already registered') || text.includes('already exists')) return 'email-taken';
+  if (text.includes('invalid login credentials')) return 'invalid-credentials';
+  if (text.includes('email not confirmed')) return 'confirm-email';
+  if (text.includes('password') && (text.includes('weak') || text.includes('at least'))) return 'weak-password';
+  if (text.includes('fetch') || text.includes('network')) return 'network';
+  return 'unknown';
+}
+
+export async function signUp(
+  name: string,
+  email: string,
+  password: string,
+): Promise<AuthUser | AuthError> {
   try {
-    const raw = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null');
-    return raw && typeof raw.email === 'string' ? (raw as AuthUser) : null;
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: { data: { name: name.trim() } },
+    });
+    if (error) return mapError(error.message);
+    // E-posta onayı açıksa oturum dönmez; kullanıcıya kutusunu kontrol
+    // etmesi söylenir.
+    if (!data.session) return 'confirm-email';
+    return toUser(data.user)!;
   } catch {
-    return null;
+    return 'network';
   }
 }
 
-export async function signUp(name: string, email: string, password: string): Promise<AuthUser | AuthError> {
-  const normalized = email.trim().toLowerCase();
-  const accounts = loadAccounts();
-  if (accounts.some((account) => account.email === normalized)) return 'email-taken';
-  const salt = crypto.randomUUID();
-  const account: StoredAccount = {
-    id: crypto.randomUUID(),
-    name: name.trim(),
-    email: normalized,
-    createdAt: new Date().toISOString(),
-    salt,
-    hash: await digest(password, salt),
-  };
-  localStorage.setItem(USERS_KEY, JSON.stringify([...accounts, account]));
-  const user = toUser(account);
-  setSession(user);
-  return user;
-}
-
 export async function signIn(email: string, password: string): Promise<AuthUser | AuthError> {
-  const normalized = email.trim().toLowerCase();
-  const account = loadAccounts().find((candidate) => candidate.email === normalized);
-  if (!account) return 'unknown-user';
-  if ((await digest(password, account.salt)) !== account.hash) return 'wrong-password';
-  const user = toUser(account);
-  setSession(user);
-  return user;
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) return mapError(error.message);
+    return toUser(data.user)!;
+  } catch {
+    return 'network';
+  }
 }
 
 export function signOut() {
-  setSession(null);
+  void supabase.auth.signOut();
 }

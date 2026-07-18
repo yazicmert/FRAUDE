@@ -13,6 +13,7 @@ import {
   isModuleEnabled,
   moduleHasNav,
   moduleIsDefaultTab,
+  moduleIsTransient,
   workspaceModules,
 } from './modules/workspaceRegistry';
 import type { ModuleHost, WorkspaceModule, WorkspaceTab } from './modules/workspaceRegistry';
@@ -146,6 +147,17 @@ export default function App() {
   }, [installedModules]);
 
   // Never leave the active tab pointing at a closed tab.
+  // Geçici sekmeler (Ayarlar/Rehber) başka sekmeye geçilince çubuktan kalkar;
+  // araç görünümleri çalışma alanında kalıcı yer tutmaz.
+  useEffect(() => {
+    setOpenTabs((current) => {
+      const kept = current.filter(
+        (tab) => tab.id === activeTabId || !moduleIsTransient(getWorkspaceModule(tab.kind)),
+      );
+      return kept.length === current.length ? current : kept;
+    });
+  }, [activeTabId]);
+
   useEffect(() => {
     if (openTabs.length === 0) return;
     if (!openTabs.some((tab) => tab.id === activeTabId)) {

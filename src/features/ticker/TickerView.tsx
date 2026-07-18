@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '../../lib/openExternal';
 import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, type PriceSource } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot } from '../../types';

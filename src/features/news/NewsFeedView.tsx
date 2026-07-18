@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '../../lib/openExternal';
 import { Readability } from '@mozilla/readability';
 import DOMPurify from 'dompurify';
 import { getNewsFeed, getNewsPreview, getNewsHtml } from '../../api/tauriClient';

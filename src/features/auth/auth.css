@@ -362,6 +362,84 @@
   color: #ff6a5e;
 }
 
+.auth-info { color: var(--accent-secondary, #00c3ff); }
+
+/* Canlı alan doğrulama */
+.auth-input-error input {
+  border-color: rgba(255, 106, 94, 0.6);
+}
+
+.auth-input-error > svg { color: #ff6a5e; }
+
+.auth-field-hint {
+  font-size: 11px;
+  color: #ff6a5e;
+}
+
+/* Şifre gücü göstergesi */
+.auth-strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+}
+
+.auth-strength-bars {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.auth-strength-bars i {
+  width: 26px;
+  height: 4px;
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+/* Lisans anahtarı girişi: sabit önek + tek tip aralıklı kod alanı */
+.auth-license-input { gap: 0; }
+
+.auth-license-prefix {
+  position: absolute;
+  left: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #00e896;
+  pointer-events: none;
+}
+
+.auth-license-input input {
+  padding-left: 82px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Oturum/lisans denetimi bekleme ekranı */
+.auth-loading {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-muted, #8b949e);
+  font-size: 13px;
+}
+
+.auth-loading svg {
+  border-radius: 14px;
+  filter: drop-shadow(0 8px 28px rgba(0, 232, 150, 0.28));
+  animation: loading-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.94); opacity: 0.75; }
+}
+
 .auth-submit {
   position: relative;
   overflow: hidden;

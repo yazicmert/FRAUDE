@@ -49,6 +49,16 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_subsidiaries",
     "research_entity_news",
     "get_corporate_events",
+    "get_market_holidays",
+    "get_economic_calendar",
+    "get_live_quotes",
+    "get_funds",
+    "get_fund_allocation",
+    "get_fund_history",
+    "get_fund_issuer",
+    "get_fund_disclosures",
+    "get_fund_holdings",
+    "get_fund_returns",
 ];
 
 /// Kişi-başı veri — auth ZORUNLU, Postgres'te `user_id` ile izole edilir.
@@ -77,8 +87,16 @@ pub const USER_COMMANDS: &[&str] = &[
     "clear_monitor_alerts",
 ];
 
-/// Yalnızca arka plan / admin — halka açık uçtan tetiklenmez.
-pub const ADMIN_COMMANDS: &[&str] = &["sync_data", "update_bist_indices"];
+/// Yalnızca arka plan / admin — halka açık uçtan tetiklenmez. Yayıncı ve
+/// modül güncelleme komutları masaüstüne özgüdür (yerel dosya sistemi).
+pub const ADMIN_COMMANDS: &[&str] = &[
+    "sync_data",
+    "update_bist_indices",
+    "publish_config_status",
+    "publish_module_release",
+    "activate_module_release",
+    "rollback_module_release",
+];
 
 fn is_shared(cmd: &str) -> bool {
     SHARED_COMMANDS.contains(&cmd)

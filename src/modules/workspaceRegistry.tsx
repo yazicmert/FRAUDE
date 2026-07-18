@@ -82,6 +82,11 @@ export interface WorkspaceModule {
   nav?: boolean;
   /** Open as a tab on startup. Default: true for catalog modules. */
   defaultTab?: boolean;
+  /**
+   * Geçici sekme: başka bir sekmeye geçilince sekme çubuğundan kendiliğinden
+   * kalkar (Ayarlar/Rehber gibi araç görünümleri kalıcı yer kaplamaz).
+   */
+  transient?: boolean;
   /** Render the tab body. `tab` carries per-tab params, `host` shared services. */
   render: (tab: WorkspaceTab, host: ModuleHost) => ReactNode;
 }
@@ -256,6 +261,7 @@ export const workspaceModules: WorkspaceModule[] = [
     // yalnızca ikondan/paletten istenince gelir.
     nav: false,
     defaultTab: false,
+    transient: true,
     manifest: manifest(
       'fraude.guide',
       { tr: 'Rehber', en: 'Guide' },
@@ -283,6 +289,7 @@ export const workspaceModules: WorkspaceModule[] = [
     // yalnızca ikondan/paletten (⌘,) istenince gelir.
     nav: false,
     defaultTab: false,
+    transient: true,
     manifest: manifest(
       'fraude.settings',
       { tr: 'Ayarlar', en: 'Settings' },
@@ -352,6 +359,10 @@ export function moduleHasNav(module: WorkspaceModule): boolean {
 export function moduleIsDefaultTab(module: WorkspaceModule): boolean {
   if (module.defaultTab !== undefined) return module.defaultTab;
   return Boolean(module.manifest);
+}
+
+export function moduleIsTransient(module: WorkspaceModule | undefined): boolean {
+  return Boolean(module?.transient);
 }
 
 /** FMUP catalog, derived from every registry entry that ships a manifest. */

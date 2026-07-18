@@ -12,6 +12,7 @@ import {
 import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest } from '../../types';
 import { useTranslation } from '../../api/i18n';
 import { getSession, signOut } from '../auth/session';
+import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
 
 const emptyForm: SaveAiKeyRequest = {
   provider: 'openai',
@@ -70,7 +71,35 @@ const emptyAgentForm: SaveAiAgentRequest = {
 export default function SettingsView() {
   const { t } = useTranslation();
   const account = getSession();
-  const [activeTab, setActiveTab] = useState<'keys' | 'agents'>('keys');
+  const [activeTab, setActiveTab] = useState<'account' | 'keys' | 'agents'>('account');
+  const [license, setLicense] = useState<LicenseOverview | null | 'loading'>('loading');
+
+  // Hesap sekmesi: lisans özeti (cihaz listesi RPC'si yoksa temel bilgiye düş).
+  useEffect(() => {
+    if (!account) {
+      setLicense(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const overview = await licenseOverview();
+      if (overview) {
+        if (!cancelled) setLicense(overview);
+        return;
+      }
+      const basic = await checkLicense(account.id);
+      if (cancelled) return;
+      setLicense(
+        basic.ok
+          ? { plan: basic.plan, expiresAt: basic.expiresAt, maxDevices: 0, activatedAt: null, devices: [] }
+          : null,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id]);
   const [keys, setKeys] = useState<AiKeyRecord[]>([]);
   const [form, setForm] = useState<SaveAiKeyRequest>(emptyForm);
   const [message, setMessage] = useState('');
@@ -178,9 +207,86 @@ export default function SettingsView() {
       </div>
 
       <div className="tabs" style={{ display: 'flex', gap: '12px', padding: '0 24px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+        <button type="button" onClick={() => setActiveTab('account')} style={{ padding: '8px 16px', borderBottom: activeTab === 'account' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'account' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{t('authAccount')}</button>
         <button type="button" onClick={() => setActiveTab('keys')} style={{ padding: '8px 16px', borderBottom: activeTab === 'keys' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'keys' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Providers</button>
         <button type="button" onClick={() => setActiveTab('agents')} style={{ padding: '8px 16px', borderBottom: activeTab === 'agents' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'agents' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Agents</button>
       </div>
+
+      {activeTab === 'account' && (
+        <>
+          <section className="panel">
+            <h2>{t('authProfile')}</h2>
+            {account ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 24px', fontSize: '13px', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-muted)' }}>{t('authName')}</span>
+                <span>{account.name}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{t('authEmail')}</span>
+                <span>{account.email}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{t('authMemberSince')}</span>
+                <span>{new Date(account.createdAt).toLocaleDateString()}</span>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>—</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>{t('authLicense')}</h2>
+            {license === 'loading' ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{t('authLicenseChecking')}</p>
+            ) : license ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 24px', fontSize: '13px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseStatus')}</span>
+                  <span>
+                    <span style={{ background: 'rgba(0,232,150,0.12)', color: '#00e896', padding: '2px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600 }}>
+                      {t('authLicenseActive')}
+                    </span>
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicensePlan')}</span>
+                  <span style={{ textTransform: 'capitalize' }}>{license.plan}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseExpires')}</span>
+                  <span>{license.expiresAt ? new Date(license.expiresAt).toLocaleDateString() : t('authLicenseNoExpiry')}</span>
+                  {license.maxDevices > 0 && (
+                    <>
+                      <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseDevices')}</span>
+                      <span>{license.devices.length} / {license.maxDevices}</span>
+                    </>
+                  )}
+                </div>
+                {license.devices.length > 0 && (
+                  <ul style={{ listStyle: 'none', margin: '14px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {license.devices.map((device, index) => (
+                      <li key={index} style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '13px', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '8px', padding: '8px 12px' }}>
+                        <span>{device.device_name ?? 'unknown'}</span>
+                        {device.current && (
+                          <span style={{ color: '#00e896', fontSize: '11px' }}>● {t('authThisDevice')}</span>
+                        )}
+                        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '11px' }}>
+                          {new Date(device.last_seen_at).toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{t('authLicenseMissing')}</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>{t('authSignedInAs')}</h2>
+            <button
+              type="button"
+              onClick={signOut}
+              style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid rgba(255,106,94,0.4)', background: 'transparent', color: '#ff6a5e', cursor: 'pointer', fontSize: '13px' }}
+            >
+              {t('authSignOut')}
+            </button>
+          </section>
+        </>
+      )}
 
       {activeTab === 'keys' && (
         <>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokePlatform as invoke } from '../../api/platformClient';
 import { isDesktopRuntime } from '../../api/platformClient';
 import { releaseSigningPayload, sha256Hex } from '../../modules/crypto';
 import type { ModuleRelease } from '../../modules/types';

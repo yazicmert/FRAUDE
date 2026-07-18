@@ -3,7 +3,7 @@ import { getTickerSnapshot, askAi, listAiHistory, listAiAgents, deleteAiHistory,
 import { useTranslation } from '../../api/i18n';
 import type { AiHistoryRecord, AiAgent, AiChatMessage } from '../../types';
 import ReactMarkdown from 'react-markdown';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '../../lib/openExternal';
 
 interface AiPanelProps {
   mode: 'side' | 'workspace';

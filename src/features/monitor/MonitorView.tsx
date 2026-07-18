@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { invokePlatform as invoke } from '../../api/platformClient';
+import { openUrl } from '../../lib/openExternal';
 import {
   setMonitorConfig,
   runMonitorNow,

@@ -19,6 +19,9 @@ dist-ssr
 .env.*.local
 !.env.example
 
+# Üretilen lisans anahtarı listeleri asla repoya girmez
+scripts/licenses-*.csv
+
 # Rust build output (workspace + crates)
 target/
 /server/target/

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { isDesktopRuntime } from '../api/platformClient';
 import { getMonitorState, syncMonitorTickers } from '../api/tauriClient';
 import type { MonitorState } from '../types';
 import type { WatchlistItem } from './useWatchlist';
@@ -67,8 +68,10 @@ export function useMonitor() {
     return () => window.removeEventListener('fraude-watchlist-updated', handleWatchlistUpdate);
   }, []);
 
-  // Backend'in canlı uyarı olayını dinle.
+  // Backend'in canlı uyarı olayını dinle. Tauri dışı ortamda (tarayıcıda
+  // açılan dev sunucusu) event köprüsü yoktur; dinleyici kurulmaz.
   useEffect(() => {
+    if (!isDesktopRuntime()) return;
     const unlistenPromise = listen<MonitorAlertEvent>('fraude-monitor-alert', () => {
       void refresh();
     });

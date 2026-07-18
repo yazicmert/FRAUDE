@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokePlatform as invoke } from '../../api/platformClient';
 import { runAgentAnalysis } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { AgentAnalysisResult, AiAgent, Artifact, SaveArtifactRequest, SaveAiAgentRequest } from '../../types';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '../../lib/openExternal';
 import {
   getFundAllocation,
   getFundDisclosures,

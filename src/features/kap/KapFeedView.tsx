@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '../../lib/openExternal';
 import { listKapAnnouncements } from '../../api/tauriClient';
 import type { KapAnnouncement } from '../../types';
 import { useTranslation } from '../../api/i18n';
