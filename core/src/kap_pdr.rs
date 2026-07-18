@@ -28,7 +28,7 @@ const INDEX_CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const HOLDINGS_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// Fon portföyündeki tek varlık.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FundHolding {
     /// BIST/fon kodu (rapordaki ilk belirteç; ör. "ASELS").
     pub code: String,
@@ -41,7 +41,7 @@ pub struct FundHolding {
 }
 
 /// Fonun PDR'den çıkarılmış portföyü.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FundHoldingsReport {
     /// Rapor dönemi, "2026-06" biçiminde.
     pub period: String,
@@ -562,6 +562,132 @@ fn layout_text(pdf: &[u8]) -> Result<String, String> {
 static HOLDINGS_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Arc<FundHoldingsReport>)>>> =
     OnceLock::new();
 
+// ─── Kalıcı rapor dizini (hisse → fonlar ters araması için) ────────────────────
+//
+// Ayrıştırılan her PDR raporu ~/.fraude_fund_holdings.json'a yazılır. Böylece
+// "bu hisseyi hangi fonlar tutuyor" sorusu ağa çıkmadan, birikmiş dizin
+// üzerinde yanıtlanır; kapsam arka plan taramasıyla ve kullanıcı fon
+// detaylarına baktıkça büyür. Rapor aylık olduğundan dönemi güncel olan
+// kayıt tekrar indirilmez.
+
+#[derive(Clone, Serialize, Deserialize)]
+struct StoredReport {
+    fetched_at_unix: u64,
+    report: FundHoldingsReport,
+}
+
+static HOLDINGS_STORE: OnceLock<Mutex<HashMap<String, StoredReport>>> = OnceLock::new();
+
+fn holdings_store_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".fraude_fund_holdings.json"))
+}
+
+fn holdings_store() -> &'static Mutex<HashMap<String, StoredReport>> {
+    HOLDINGS_STORE.get_or_init(|| {
+        let map = holdings_store_path()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        Mutex::new(map)
+    })
+}
+
+fn store_report(code: &str, report: &FundHoldingsReport) {
+    let mut guard = holdings_store().lock().unwrap_or_else(|e| e.into_inner());
+    guard.insert(
+        code.to_string(),
+        StoredReport {
+            fetched_at_unix: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or_default(),
+            report: report.clone(),
+        },
+    );
+    if let (Some(path), Ok(json)) = (holdings_store_path(), serde_json::to_string(&*guard)) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// Dizindeki rapor sayısı ve verilen dönemle eşleşen fon kodları.
+fn stored_period_codes(period: &str) -> std::collections::HashSet<String> {
+    holdings_store()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .filter(|(_, stored)| stored.report.period == period)
+        .map(|(code, _)| code.clone())
+        .collect()
+}
+
+/// Bir hisseyi portföyünde taşıyan fon kaydı (ters arama sonucu).
+#[derive(Clone, Debug, Serialize)]
+pub struct TickerFundEntry {
+    pub fund_code: String,
+    /// Fon toplam değerine göre yüzde.
+    pub weight_pct: f64,
+    /// Rapor dönemi ("2026-06").
+    pub period: String,
+    /// KAP bildirim sayfası.
+    pub url: String,
+}
+
+/// Birikmiş rapor dizininde verilen hisseyi tutan fonlar (ağ erişimi yapmaz).
+/// İkinci değer dizindeki toplam rapor sayısıdır (kapsam göstergesi için).
+pub fn funds_holding_ticker(ticker: &str) -> (Vec<TickerFundEntry>, usize) {
+    let needle = ticker.trim().to_uppercase();
+    let guard = holdings_store().lock().unwrap_or_else(|e| e.into_inner());
+    let scanned = guard.len();
+    let mut entries: Vec<TickerFundEntry> = guard
+        .iter()
+        .filter_map(|(fund_code, stored)| {
+            let hit = stored
+                .report
+                .holdings
+                .iter()
+                .filter(|h| h.code == needle && h.pct > 0.0)
+                .map(|h| h.pct)
+                .fold(0.0_f64, f64::max);
+            (hit > 0.0).then(|| TickerFundEntry {
+                fund_code: fund_code.clone(),
+                weight_pct: hit,
+                period: stored.report.period.clone(),
+                url: stored.report.url.clone(),
+            })
+        })
+        .collect();
+    entries.sort_by(|a, b| b.weight_pct.total_cmp(&a.weight_pct));
+    (entries, scanned)
+}
+
+/// Verilen fon kodlarının PDR'lerini dizine ekler (arka plan taraması).
+///
+/// Dönemi güncel olan kayıtlar atlanır; istekler arasında beklenir ki KAP'a
+/// nazik kalınsın. `cap` bir oturumda indirilecek yeni rapor sayısını sınırlar.
+/// Dizine eklenen yeni rapor sayısını döndürür.
+pub async fn crawl_fund_holdings(client: &reqwest::Client, codes: &[String], cap: usize) -> usize {
+    let Ok(index) = pdr_index(client).await else { return 0 };
+    let (period, available) = index.as_ref();
+    let done = stored_period_codes(period);
+
+    let mut added = 0;
+    for code in codes {
+        if added >= cap {
+            break;
+        }
+        let code = code.trim().to_uppercase();
+        // Dizinde güncel dönem kaydı olan ya da bu dönem PDR vermemiş fon atlanır
+        if done.contains(&code) || !available.contains_key(&code) {
+            continue;
+        }
+        if get_fund_holdings(client, &code).await.is_ok() {
+            added += 1;
+        }
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+    }
+    added
+}
+
 /// Fonun son PDR'inden varlık kırılımı. PDR vermeyen fonlarda hata döner.
 pub async fn get_fund_holdings(
     client: &reqwest::Client,
@@ -603,7 +729,9 @@ pub async fn get_fund_holdings(
     cache
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .insert(code, (Instant::now(), report.clone()));
+        .insert(code.clone(), (Instant::now(), report.clone()));
+    // Ters arama dizini (hisse → fonlar) her başarılı ayrıştırmayla büyür
+    store_report(&code, &report);
     Ok(report)
 }
 

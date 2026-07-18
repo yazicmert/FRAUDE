@@ -836,6 +836,16 @@ export const translations = {
     updPrStepPr: 'PR açılıyor…',
     updPrDone: '✓ PR açıldı — tarayıcıda görüntüleniyor',
     updPrFailed: 'PR açılamadı: ',
+    tfTitle: 'Bu Hisseyi Tutan Fonlar',
+    tfSubtitle: 'KAP portföy dağılım raporlarından (aylık)',
+    tfNone: 'Taranan {n} fon raporunda bu hisse görünmüyor.',
+    tfNoneYet: 'Fon raporu dizini henüz oluşuyor; uygulama açık kaldıkça arka planda dolar.',
+    tfCoverage: '{n} fon raporu tarandı',
+    tfWeightCol: 'Ağırlık',
+    tfFundCol: 'Fon',
+    tfPeriodCol: 'Dönem',
+    tfKapLink: 'KAP ↗',
+    fundReturnsPending: 'getiriler hazırlanıyor…',
   },
   en: {
     dashboard: 'Dashboard',
@@ -1673,6 +1683,16 @@ export const translations = {
     updPrStepPr: 'Opening PR…',
     updPrDone: '✓ PR opened — showing in browser',
     updPrFailed: 'Could not open PR: ',
+    tfTitle: 'Funds Holding This Stock',
+    tfSubtitle: 'From KAP portfolio allocation reports (monthly)',
+    tfNone: 'This stock does not appear in the {n} scanned fund reports.',
+    tfNoneYet: 'The fund report index is still building; it fills in the background while the app runs.',
+    tfCoverage: '{n} fund reports scanned',
+    tfWeightCol: 'Weight',
+    tfFundCol: 'Fund',
+    tfPeriodCol: 'Period',
+    tfKapLink: 'KAP ↗',
+    fundReturnsPending: 'preparing returns…',
   }
 };
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '../../lib/openExternal';
-import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, type PriceSource } from '../../api/tauriClient';
+import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, type PriceSource, type TickerFundsPayload } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot } from '../../types';
 import PriceChart from './PriceChart';
@@ -95,6 +95,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [subsidiaries, setSubsidiaries] = useState<SubsidiarySnapshot | null>(null);
   const [subsidiariesLoading, setSubsidiariesLoading] = useState(true);
   const [subsidiariesError, setSubsidiariesError] = useState<string | null>(null);
+  const [tickerFunds, setTickerFunds] = useState<TickerFundsPayload | null>(null);
   const [research, setResearch] = useState<{ name: string; kind: 'company' | 'person' } | null>(null);
   const [researchNews, setResearchNews] = useState<NewsItem[]>([]);
   const [researchLoading, setResearchLoading] = useState(false);
@@ -173,6 +174,16 @@ export default function TickerView({ ticker }: { ticker: string }) {
         if (cap.status === 'fulfilled') setCapitalIncreases(cap.value);
       })
       .finally(() => setHistoryLoading(false));
+  }, [ticker, corporate]);
+
+  // Hisseyi tutan fonlar: yerelde biriken PDR dizininden okunur, ağa çıkmaz.
+  // Dizin arka plan taramasıyla dolar; kurumsal olmayan enstrümanlarda anlamsız.
+  useEffect(() => {
+    setTickerFunds(null);
+    if (!corporate) return;
+    getTickerFunds(ticker)
+      .then(setTickerFunds)
+      .catch((err: unknown) => console.error('Failed to load ticker funds:', err));
   }, [ticker, corporate]);
 
   // Ortaklık yapısı ilk açılışta bir kez çekilip diske yazılır; sonraki
@@ -756,6 +767,65 @@ export default function TickerView({ ticker }: { ticker: string }) {
               </article>
             ))}
           </div>
+        )}
+      </section>
+      )}
+
+      {corporate && tickerFunds && (
+      <section className="panel" style={{ marginTop: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px' }}>
+          <h2>{t('tfTitle')}{tickerFunds.entries.length > 0 ? ` (${tickerFunds.entries.length})` : ''}</h2>
+          <span style={{ fontSize: '0.72rem', color: '#8b949e' }}>
+            {t('tfSubtitle')} · {t('tfCoverage', { n: tickerFunds.scanned_funds })}
+          </span>
+        </div>
+        {tickerFunds.entries.length === 0 ? (
+          <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>
+            {tickerFunds.scanned_funds === 0
+              ? t('tfNoneYet')
+              : t('tfNone', { n: tickerFunds.scanned_funds })}
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('tfFundCol')}</th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('tfWeightCol')}</th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }}>{t('tfPeriodCol')}</th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', color: '#8b949e', fontSize: '0.72rem', borderBottom: '1px solid #30363d' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {tickerFunds.entries.slice(0, 20).map((fund) => (
+                <tr key={fund.fund_code}>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #21262d', maxWidth: '420px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <strong style={{ fontFamily: 'var(--font-mono)' }}>{fund.fund_code}</strong>
+                    {fund.fund_kind && (
+                      <span style={{ marginLeft: '8px', padding: '1px 7px', borderRadius: '9px', fontSize: '0.64rem', background: '#30363d', color: '#8b949e', fontFamily: 'var(--font-mono)' }}>
+                        {fund.fund_kind}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: '8px', color: '#8b949e' }} title={fund.fund_name}>{fund.fund_name}</span>
+                  </td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #21262d', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    %{fund.weight_pct.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                  </td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #21262d', textAlign: 'right', color: '#8b949e', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                    {fund.period}
+                  </td>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid #21262d', textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => void openUrl(fund.url)}
+                      style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', padding: 0, fontSize: '0.74rem' }}
+                    >
+                      {t('tfKapLink')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
       )}

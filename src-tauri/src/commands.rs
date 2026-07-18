@@ -98,6 +98,14 @@ pub async fn get_fund_returns(
 }
 
 #[tauri::command]
+pub async fn get_ticker_funds(
+    state: State<'_, AppState>,
+    ticker: String,
+) -> Result<api::TickerFundsPayload, String> {
+    api::get_ticker_funds(&state, ticker).await
+}
+
+#[tauri::command]
 pub async fn get_fund_allocation(
     state: State<'_, AppState>,
     code: String,

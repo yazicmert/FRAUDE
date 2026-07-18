@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-fon-hizi-ve-hisse-fon-dizini",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Fonlar anında açılıyor; hisse sayfasında 'bu hisseyi tutan fonlar'",
+        "en": "Funds open instantly; ticker pages show 'funds holding this stock'"
+      },
+      "summary": {
+        "tr": "TEFAS listesi ve getiriler artık bayat-sun-arkada-tazele düzeniyle diskten anında geliyor; 1A/3A/1Y sıralamaları açılışta çalışıyor, bekleyen getiri çipleri belirtiliyor. KAP portföy dağılım raporları kalıcı bir yerel dizinde birikiyor (arka plan taramasıyla) ve hisse sayfası hisseyi taşıyan fonları ağırlık yüzdesiyle listeliyor.",
+        "en": "The TEFAS list and returns are now served instantly from disk with stale-while-revalidate; 1M/3M/1Y sorts work at startup and pending return chips are indicated. KAP portfolio allocation reports accumulate in a persistent local index (via background crawling) and ticker pages list the funds carrying the stock with weight percentages."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE/commit/2189ccc",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "core/src/tefas.rs",
+        "core/src/kap_pdr.rs",
+        "core/src/api.rs",
+        "src-tauri/src/lib.rs",
+        "src/features/ticker/TickerView.tsx",
+        "src/features/funds/FundsView.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. TEFAS modülünde (core/src/tefas.rs) fon listesi ve getiriler için bayat-sun-arkada-tazele düzeni kur: TTL'i geçmiş ama ~3 günden taze disk önbelleği anında dönsün, aynı anda AtomicBool korumalı tek bir tokio::spawn arka planda ağdan tazeleyip bellek+disk önbelleğini güncellesin. Ağdan çekme mantığını her iki yoldan da çağrılabilen ayrı yardımcı fonksiyonlara çıkar.\n2. KAP PDR modülünde (core/src/kap_pdr.rs) ayrıştırılan her fon raporunu ~/.fraude_fund_holdings.json içinde kalıcı bir dizine yaz (fon kodu → {fetched_at, rapor}); FundHolding/FundHoldingsReport'a Deserialize ekle. 'funds_holding_ticker(ticker)' fonksiyonu dizini tarayıp hisseyi taşıyan fonları ağırlık yüzdesiyle (azalan) ve dizindeki toplam rapor sayısıyla döndürsün — ağ erişimi yapmasın.\n3. Yine kap_pdr'de 'crawl_fund_holdings(client, codes, cap)': dönemi güncel olan veya bu dönem PDR vermemiş fonları atlayarak verilen kodların raporlarını indirip dizine eklesin; istekler arasında ~2.5 sn beklesin. Masaüstü açılışında (src-tauri/src/lib.rs setup) 45 sn gecikmeyle bir görev başlat: fon listesinden YAT/EMK/BYF türündeki en büyük ~150 fonu seçip oturum başına ~60 raporla sınırlı tara.\n4. 'get_ticker_funds(ticker)' API'si ekle (core api + tauri komutu + server rpc allowlist): ters arama sonucunu önbellekli fon listesiyle birleştirip fon adı/türü de içeren bir payload döndürsün.\n5. Hisse sayfasına (TickerView) kurumsal enstrümanlarda 'Bu Hisseyi Tutan Fonlar' paneli ekle: fon kodu+tür rozeti+ad, ağırlık %, dönem ve KAP bildirim bağlantısı; dizin boşken 'dizin arka planda doluyor' notu, kapsam göstergesi olarak taranan rapor sayısı.\n6. Fon listesinde (FundsView) getiriler henüz gelmemişken 1A/3A/1Y sıralama çiplerini soluklaştırıp '…' ve açıklayıcı tooltip göster.\n\nKabul: core'da 'cargo test', src-tauri ve server'da 'cargo check', kökte 'npx tsc --noEmit' ve 'npx vite build' hatasız geçmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-07-18-uygulama-ici-guncellemeler",
       "date": "2026-07-18",
       "author": "yazicmert",

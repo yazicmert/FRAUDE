@@ -95,6 +95,27 @@ pub fn run() {
                 }
             });
 
+            // PDR ters dizin taraması: en büyük fonların aylık portföy dağılım
+            // raporlarını arka planda toplar; "bu hisseyi hangi fonlar tutuyor"
+            // sorusu bu birikmiş dizinden anında yanıtlanır. Rapor aylık olduğu
+            // için dönemi güncel kayıtlar atlanır; oturum başına indirme sınırlı
+            // ve istekler aralıklıdır (KAP'a nazik).
+            let pdr_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Açılış trafiği (liste, pano, izleme) yatışsın
+                tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+                let state = pdr_handle.state::<AppState>();
+                let funds = tefas::get_funds(&state.http).await;
+                // Hisse taşıma olasılığı yüksek türler; büyükten küçüğe
+                let codes: Vec<String> = funds
+                    .iter()
+                    .filter(|f| matches!(f.kind.as_str(), "YAT" | "EMK" | "BYF"))
+                    .map(|f| f.code.clone())
+                    .take(150)
+                    .collect();
+                kap_pdr::crawl_fund_holdings(&state.http, &codes, 60).await;
+            });
+
             // KAP izleme döngüsü: takip listesindeki hisselerin yeni
             // bildirimlerini periyodik tarar, uyarı üretir ve bildirir.
             let monitor_handle = app.handle().clone();
@@ -146,6 +167,7 @@ pub fn run() {
             commands::get_fund_disclosures,
             commands::get_fund_holdings,
             commands::get_fund_returns,
+            commands::get_ticker_funds,
             commands::get_live_quotes,
             commands::get_news_feed,
             commands::get_news_preview,

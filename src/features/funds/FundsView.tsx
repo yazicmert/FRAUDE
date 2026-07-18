@@ -199,17 +199,23 @@ export default function FundsView() {
           <div className="fund-list-head">
             <h2 style={{ margin: 0 }}>{formatCount(visible.length)} {t('fundUnit')}</h2>
             <div className="fund-chips">
-              {(Object.keys(SORT_LABEL_KEYS) as SortKey[]).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`eco-cal-chip ${sort === value ? 'active' : ''}`}
-                  title={RETURN_KEYS.includes(value as ReturnKey) ? t('fundSortTip') : undefined}
-                  onClick={() => setSort(value)}
-                >
-                  {t(SORT_LABEL_KEYS[value])}
-                </button>
-              ))}
+              {(Object.keys(SORT_LABEL_KEYS) as SortKey[]).map((value) => {
+                // Getiri kolonları henüz gelmediyse 1A/3A/1Y çipleri bunu belli
+                // eder: tıklanabilir kalır ama bekleyen veriye işaret eder.
+                const pending = !returnsReady && RETURN_KEYS.includes(value as ReturnKey);
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`eco-cal-chip ${sort === value ? 'active' : ''}`}
+                    style={pending ? { opacity: 0.55 } : undefined}
+                    title={pending ? t('fundReturnsPending') : RETURN_KEYS.includes(value as ReturnKey) ? t('fundSortTip') : undefined}
+                    onClick={() => setSort(value)}
+                  >
+                    {t(SORT_LABEL_KEYS[value])}{pending ? '…' : ''}
+                  </button>
+                );
+              })}
             </div>
           </div>
           {!returnsReady && (

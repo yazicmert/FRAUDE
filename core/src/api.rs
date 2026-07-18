@@ -234,6 +234,56 @@ pub async fn get_fund_history(
     crate::tefas::get_fund_history(&state.http, &code, months).await
 }
 
+/// "Bu hisseyi hangi fonlar tutuyor" yanıtındaki tek satır.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TickerFundRow {
+    pub fund_code: String,
+    pub fund_name: String,
+    pub fund_kind: String,
+    /// Fon toplam değerine göre yüzde.
+    pub weight_pct: f64,
+    /// PDR dönemi ("2026-06").
+    pub period: String,
+    /// KAP bildirim sayfası.
+    pub url: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TickerFundsPayload {
+    pub entries: Vec<TickerFundRow>,
+    /// Dizinde taranmış toplam PDR raporu sayısı (kapsam göstergesi).
+    pub scanned_funds: usize,
+}
+
+/// Verilen hisseyi portföyünde taşıyan fonlar, birikmiş PDR dizininden.
+/// Ağ yalnız fon adlarını çözmek için (önbellekli liste) kullanılır.
+pub async fn get_ticker_funds(
+    state: &AppState,
+    ticker: String,
+) -> Result<TickerFundsPayload, String> {
+    let (entries, scanned_funds) = crate::kap_pdr::funds_holding_ticker(&ticker);
+    let funds = crate::tefas::get_funds(&state.http).await;
+    let by_code: std::collections::HashMap<&str, &crate::tefas::FundRow> =
+        funds.iter().map(|f| (f.code.as_str(), f)).collect();
+
+    let entries = entries
+        .into_iter()
+        .map(|entry| {
+            let meta = by_code.get(entry.fund_code.as_str());
+            TickerFundRow {
+                fund_name: meta.map(|f| f.name.clone()).unwrap_or_default(),
+                fund_kind: meta.map(|f| f.kind.clone()).unwrap_or_default(),
+                fund_code: entry.fund_code,
+                weight_pct: entry.weight_pct,
+                period: entry.period,
+                url: entry.url,
+            }
+        })
+        .collect();
+
+    Ok(TickerFundsPayload { entries, scanned_funds })
+}
+
 /// Fon kurucusunun KAP kaydı: şirket sayfası bağlantısı ve internet adresi.
 pub async fn get_fund_issuer(
     state: &AppState,

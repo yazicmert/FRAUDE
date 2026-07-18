@@ -305,26 +305,16 @@ async fn fetch_kind(client: &reqwest::Client, kind: &str) -> Result<Vec<FundRow>
     Ok(funds)
 }
 
-/// Tüm fon tiplerinin güncel listesi. Tip başına tek istek (toplam 5).
-///
-/// Bir tip alınamazsa diğerleri yine döner; hepsi başarısızsa boş liste gelir ve
-/// çağıran eldeki önbelleği korur.
-pub async fn get_funds(client: &reqwest::Client) -> Vec<FundRow> {
-    if let Some(rows) = cached_list() {
-        return rows;
-    }
+/// Bayat veri bu yaşa kadar "önce göster, arkada tazele" ile sunulur; fon
+/// ekranı TTL dolduğunda dakikalarca throttle kuyruğu beklemek yerine anında
+/// açılır ve taze veri geldiğinde bir sonraki isteğe yansır.
+const STALE_SERVE_CAP: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 
-    // Uygulama yeni açıldıysa diskten dön; bellek önbelleği gerçek yaşıyla
-    // kurulur ki TTL sıfırlanıp bayat veri uzatılmasın.
-    if let Some((age, rows)) = load_disk_cache::<FundRow>(list_cache_path(), LIST_CACHE_TTL) {
-        let fetched_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
-        *LIST_CACHE
-            .get_or_init(|| Mutex::new(None))
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some((fetched_at, rows.clone()));
-        return rows;
-    }
+static LIST_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RETURNS_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Tüm tipleri ağdan çekip bellek + disk önbelleğini günceller.
+async fn refresh_fund_list(client: &reqwest::Client) -> Vec<FundRow> {
     let mut all = Vec::new();
     for (kind, _) in FUND_KINDS {
         match fetch_kind(client, kind).await {
@@ -342,6 +332,39 @@ pub async fn get_funds(client: &reqwest::Client) -> Vec<FundRow> {
         save_disk_cache(list_cache_path(), &all);
     }
     all
+}
+
+/// Tüm fon tiplerinin güncel listesi. Tip başına tek istek (toplam 5).
+///
+/// Bir tip alınamazsa diğerleri yine döner; hepsi başarısızsa boş liste gelir ve
+/// çağıran eldeki önbelleği korur. TTL'i geçmiş ama 3 günden taze disk verisi
+/// anında döner ve arka planda sessizce tazelenir.
+pub async fn get_funds(client: &reqwest::Client) -> Vec<FundRow> {
+    if let Some(rows) = cached_list() {
+        return rows;
+    }
+
+    // Uygulama yeni açıldıysa diskten dön; bellek önbelleği gerçek yaşıyla
+    // kurulur ki TTL sıfırlanıp bayat veri uzatılmasın.
+    if let Some((age, rows)) = load_disk_cache::<FundRow>(list_cache_path(), STALE_SERVE_CAP) {
+        let fetched_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
+        *LIST_CACHE
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some((fetched_at, rows.clone()));
+        if age >= LIST_CACHE_TTL
+            && !LIST_REFRESHING.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            let client = client.clone();
+            tokio::spawn(async move {
+                refresh_fund_list(&client).await;
+                LIST_REFRESHING.store(false, std::sync::atomic::Ordering::SeqCst);
+            });
+        }
+        return rows;
+    }
+
+    refresh_fund_list(client).await
 }
 
 // ─── Getiriler ─────────────────────────────────────────────────────────────────
@@ -407,6 +430,8 @@ async fn snapshot_prices(
 ///
 /// İlk çağrı hız sınırı nedeniyle dakikalar sürer; sonuç 12 saat önbellekten
 /// döner. Çağıran bunu liste yüklemesinden ayrı, arka planda istemelidir.
+/// TTL'i geçmiş ama 3 günden taze disk verisi anında döner ve arka planda
+/// sessizce tazelenir: 1A/3A/1Y sıralamaları açılışta hemen çalışır.
 pub async fn get_fund_returns(client: &reqwest::Client) -> Vec<FundReturns> {
     if let Some((fetched_at, rows)) = RETURNS_CACHE
         .get_or_init(|| Mutex::new(None))
@@ -419,17 +444,31 @@ pub async fn get_fund_returns(client: &reqwest::Client) -> Vec<FundReturns> {
         }
     }
 
-    // 15 isteklik hesap ancak diskte taze sonuç yoksa yapılır; yeniden açılışta
+    // 15 isteklik hesap ancak diskte sonuç yoksa yapılır; yeniden açılışta
     // fon ekranının getiri kolonları da anında dolar.
-    if let Some((age, rows)) = load_disk_cache::<FundReturns>(returns_cache_path(), RETURNS_CACHE_TTL) {
+    if let Some((age, rows)) = load_disk_cache::<FundReturns>(returns_cache_path(), STALE_SERVE_CAP) {
         let fetched_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
         *RETURNS_CACHE
             .get_or_init(|| Mutex::new(None))
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = Some((fetched_at, rows.clone()));
+        if age >= RETURNS_CACHE_TTL
+            && !RETURNS_REFRESHING.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            let client = client.clone();
+            tokio::spawn(async move {
+                compute_fund_returns(&client).await;
+                RETURNS_REFRESHING.store(false, std::sync::atomic::Ordering::SeqCst);
+            });
+        }
         return rows;
     }
 
+    compute_fund_returns(client).await
+}
+
+/// Getirileri ağdan hesaplar ve bellek + disk önbelleğini günceller.
+async fn compute_fund_returns(client: &reqwest::Client) -> Vec<FundReturns> {
     let current = get_funds(client).await;
     if current.is_empty() {
         return Vec::new();

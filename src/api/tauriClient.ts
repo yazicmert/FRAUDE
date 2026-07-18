@@ -147,6 +147,25 @@ export function getFundHoldings(code: string) {
   return invoke<FundHoldingsReport>('get_fund_holdings', { code });
 }
 
+/** Bir hisseyi portföyünde taşıyan fon (birikmiş PDR dizininden). */
+export interface TickerFundRow {
+  fund_code: string;
+  fund_name: string;
+  fund_kind: string;
+  weight_pct: number;
+  period: string;
+  url: string;
+}
+
+export interface TickerFundsPayload {
+  entries: TickerFundRow[];
+  scanned_funds: number;
+}
+
+export function getTickerFunds(ticker: string) {
+  return invoke<TickerFundsPayload>('get_ticker_funds', { ticker });
+}
+
 /** ~15 dk gecikmeli canlı fiyat (İş Yatırım). */
 export interface LiveQuote {
   ticker: string;
