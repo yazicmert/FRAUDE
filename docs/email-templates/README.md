@@ -40,11 +40,14 @@ hatası onayı bozmaz. (Auth e-postaları Brevo SMTP'den, bu fonksiyon aynı
 hesabın HTTP API'sinden çıkar — gönderici aynı olabilir.)
 
 E-postanın altındaki **"Bu talebi ben yapmadım — anahtarı iptal et"** düğmesi
-tek kullanımlık jetonla `report-license-abuse` fonksiyonuna gider: onay
-sayfasında onaylanınca anahtar revoke edilir, talep `abuse_reported_at` ile
-damgalanır (panelde kırmızı "İptal bildirimi" rozeti) ve `ADMIN_EMAIL`
-secret'ındaki adrese (yoksa `MAIL_FROM` adresine) bildirim maili gider. Bu
-fonksiyon alıcı oturumsuz olduğundan `--no-verify-jwt` ile deploy edilir.
+tek kullanımlık jetonla sitedeki `/lisans-iptal` onay sayfasına gider (Supabase
+`*.supabase.co`'dan HTML sunumunu text/plain'e çevirdiğinden sayfa fonksiyonda
+DEĞİL sitededir). Sayfa `report-license-abuse` fonksiyonunu (JSON API) çağırır:
+onaylanınca anahtar revoke edilir, talep `abuse_reported_at` ile damgalanır
+(panelde kırmızı "İptal bildirimi" rozeti) ve `ADMIN_EMAIL` secret'ındaki
+adrese (yoksa `MAIL_FROM` adresine) bildirim maili gider. Fonksiyon alıcı
+oturumsuz olduğundan `--no-verify-jwt` ile deploy edilir; eski maillerdeki
+doğrudan fonksiyon bağlantıları 302 ile siteye yönlenir.
 
 Kanonik şablon fonksiyonun içindedir
 (`supabase/functions/send-license-email/index.ts` → `renderEmail`);

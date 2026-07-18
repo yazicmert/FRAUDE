@@ -8,6 +8,7 @@ import Account from './pages/Account';
 import Admin from './pages/Admin';
 import ResetPassword from './pages/ResetPassword';
 import Updates from './pages/Updates';
+import LicenseAbuse from './pages/LicenseAbuse';
 import './styles.css';
 
 export default function App() {
@@ -18,6 +19,8 @@ export default function App() {
   let content: JSX.Element;
   if (path === '/sifre-yenile') {
     content = <ResetPassword />;
+  } else if (path === '/lisans-iptal') {
+    content = <LicenseAbuse />;
   } else if (path === '/guncellemeler') {
     content = <Updates />;
   } else if (path === '/giris') {

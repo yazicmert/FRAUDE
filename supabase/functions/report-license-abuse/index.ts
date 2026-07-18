@@ -1,17 +1,35 @@
-// FRAUDE — "Bu talebi ben yapmadım" bildirimi.
+// FRAUDE — "Bu talebi ben yapmadım" bildirimi (JSON API).
 //
-// Lisans e-postasının altındaki düğme buraya tek kullanımlık jetonla gelir.
-// GET: onay sayfası gösterir (e-posta tarayıcıları bağlantıları otomatik
-// açabildiğinden tek tıkla iptal YAPILMAZ). Onay formu POST edilince:
-//   1) delivered_key'in SHA-256 özetiyle licenses satırı bulunup revoke edilir,
-//   2) license_requests.abuse_reported_at damgalanır (jeton tek kullanımlık),
-//   3) yöneticiye (ADMIN_EMAIL, yoksa MAIL_FROM adresi) Brevo ile bildirim gider.
+// Supabase, *.supabase.co üzerinden HTML sunumunu engeller (text/plain +
+// sandbox CSP'ye çevirir); bu yüzden onay SAYFASI sitededir (/lisans-iptal),
+// bu fonksiyon yalnız API'dir:
+//   GET  ?token=…            → 302 ile sitedeki onay sayfasına yönlendirir
+//                              (eski e-postalardaki doğrudan bağlantılar için)
+//   POST {token, confirm}    → confirm=false: talep bilgisi (e-posta + maskeli
+//                              anahtar); confirm=true: anahtar revoke edilir,
+//                              abuse_reported_at damgalanır, yöneticiye Brevo
+//                              ile bildirim gider. Jeton tek kullanımlıktır.
 //
 // Kurulum: alıcı oturumsuz olduğundan JWT doğrulaması KAPALI deploy edilir:
 //   supabase functions deploy report-license-abuse --no-verify-jwt --use-api
-// Secrets: BREVO_API_KEY, MAIL_FROM (send-license-email ile ortak), ADMIN_EMAIL (ops.)
+// Secrets: BREVO_API_KEY, MAIL_FROM (ortak), ADMIN_EMAIL (ops.), SITE_URL (ops.)
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://fraude.intelligentverseconnection.com';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
+
+function json(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -26,77 +44,57 @@ async function sha256Hex(text: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Marka dilinde küçük bir sonuç/onay sayfası. */
-function page(title: string, body: string, status = 200): Response {
-  const html = `<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FRAUDE — ${escapeHtml(title)}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#0a0d12;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;">
-  <div style="max-width:460px;margin:40px 16px;text-align:center;">
-    <div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;font-size:21px;font-weight:800;letter-spacing:5px;color:#e8f0f7;margin-bottom:24px;"><span style="color:#00e896;">F</span>RAUDE</div>
-    <div style="background:#10151d;border:1px solid #232a33;border-radius:14px;padding:34px 30px;">
-      <div style="font-size:19px;font-weight:700;color:#e8f0f7;margin-bottom:12px;">${escapeHtml(title)}</div>
-      <div style="font-size:14px;line-height:1.7;color:#b7c2cc;">${body}</div>
-    </div>
-  </div>
-</body>
-</html>`;
-  return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-}
-
 function maskKey(key: string): string {
   return key.replace(/^(FRAUDE-[^-]{4})-.*-([^-]{4})$/, '$1-••••-••••-$2');
 }
 
 Deno.serve(async (req) => {
-  const url = new URL(req.url);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  // Eski e-postalardaki doğrudan bağlantılar sitedeki onay sayfasına gider
+  if (req.method === 'GET') {
+    const token = new URL(req.url).searchParams.get('token') ?? '';
+    return new Response(null, {
+      status: 302,
+      headers: { ...corsHeaders, Location: `${SITE_URL}/lisans-iptal?token=${encodeURIComponent(token)}` },
+    });
+  }
+  if (req.method !== 'POST') return json({ ok: false, error: 'method-not-allowed' }, 405);
+
+  let token: unknown;
+  let confirm: unknown;
+  try {
+    ({ token, confirm } = await req.json());
+  } catch {
+    return json({ ok: false, error: 'bad-request' }, 400);
+  }
+  if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) {
+    return json({ ok: false, error: 'invalid-token' }, 404);
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
-
-  let token: string | null = null;
-  if (req.method === 'GET') token = url.searchParams.get('token');
-  else if (req.method === 'POST') token = String((await req.formData()).get('token') ?? '') || null;
-  else return page('Geçersiz istek', 'Bu adres yalnız e-postadaki bağlantıyla kullanılır.', 405);
-
-  if (!token || !/^[0-9a-f]{64}$/.test(token)) {
-    return page('Bağlantı geçersiz', 'Bu bağlantı hatalı ya da eksik. E-postadaki düğmeyi kullan.', 400);
-  }
 
   const { data: request } = await supabase
     .from('license_requests')
     .select('id, email, name, delivered_key, abuse_reported_at, created_at')
     .eq('revoke_token', token)
     .maybeSingle();
-  if (!request || !request.delivered_key) {
-    return page('Bağlantı geçersiz', 'Bu bağlantının süresi dolmuş ya da daha yeni bir e-posta gönderilmiş. Sorun sürerse lisans e-postasını yanıtlayarak bize ulaş.', 404);
-  }
-  if (request.abuse_reported_at) {
-    return page('Bildirim zaten alınmış', 'Bu talep daha önce bildirilmiş ve anahtar iptal edilmişti. Ek bir şey yapmana gerek yok.');
+  if (!request || !request.delivered_key) return json({ ok: false, error: 'invalid-token' }, 404);
+  if (request.abuse_reported_at) return json({ ok: true, status: 'already' });
+
+  if (!confirm) {
+    return json({
+      ok: true,
+      status: 'pending',
+      email: request.email,
+      masked_key: maskKey(request.delivered_key),
+    });
   }
 
-  if (req.method === 'GET') {
-    return page(
-      'Bu talebi sen mi yapmadın?',
-      `<span style="color:#e8f0f7;font-weight:600;">${escapeHtml(request.email)}</span> adresine
-       <span style="font-family:monospace;color:#00e896;">${escapeHtml(maskKey(request.delivered_key))}</span>
-       anahtarı gönderildi. Aşağıdaki düğmeye basarsan anahtar <span style="color:#ff6a5e;">kalıcı olarak iptal edilir</span>
-       ve yönetici bilgilendirilir.<br><br>
-       <form method="post" action="${url.pathname}">
-         <input type="hidden" name="token" value="${token}">
-         <button type="submit" style="background:none;border:1px solid rgba(255,106,94,0.6);border-radius:8px;padding:11px 24px;color:#ff6a5e;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">
-           Evet, bu talebi ben yapmadım — anahtarı iptal et
-         </button>
-       </form>`,
-    );
-  }
-
-  // POST: iptal + damga + yönetici bildirimi
+  // Onaylandı: iptal + damga + yönetici bildirimi
   const keyHash = await sha256Hex(request.delivered_key);
   const { error: revokeError } = await supabase
     .from('licenses')
@@ -104,7 +102,7 @@ Deno.serve(async (req) => {
     .eq('key_hash', keyHash);
   if (revokeError) {
     console.error('revoke-failed', revokeError.message);
-    return page('Bir sorun oluştu', 'Anahtar iptal edilemedi. Lütfen lisans e-postasını yanıtlayarak bize ulaş.', 500);
+    return json({ ok: false, error: 'revoke-failed' }, 500);
   }
   await supabase
     .from('license_requests')
@@ -135,8 +133,5 @@ Bildirim: ${new Date().toISOString()}`;
     if (!notify.ok) console.error('admin-notify-failed', notify.status, await notify.text().catch(() => ''));
   }
 
-  return page(
-    'Anahtar iptal edildi',
-    'Bildirimin alındı: anahtar kalıcı olarak iptal edildi ve yönetici bilgilendirildi. Hesabının güvenliğinden şüpheleniyorsan şifreni de yenilemeni öneririz.',
-  );
+  return json({ ok: true, status: 'revoked' });
 });

@@ -205,9 +205,8 @@ Deno.serve(async (req) => {
     .from('license_requests')
     .update({ revoke_token: revokeToken })
     .eq('id', requestId);
-  const revokeUrl = tokenError
-    ? null
-    : `${Deno.env.get('SUPABASE_URL')}/functions/v1/report-license-abuse?token=${revokeToken}`;
+  const siteUrl = Deno.env.get('SITE_URL') ?? 'https://fraude.intelligentverseconnection.com';
+  const revokeUrl = tokenError ? null : `${siteUrl}/lisans-iptal?token=${revokeToken}`;
 
   const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
