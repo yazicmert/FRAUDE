@@ -1,0 +1,106 @@
+<!doctype html>
+<!--
+  FRAUDE — Lisans anahtarı teslim e-postası (ELLE GÖNDERİM YEDEĞİ).
+  Normalde send-license-email Edge Function'ı (Brevo) otomatik gönderir ve
+  kanonik şablon oradaki renderEmail'dedir — tasarım değişirse ikisi birden
+  güncellenmeli. Bu dosya elle gönderim içindir.
+  Önerilen konu: FRAUDE Terminal — lisans anahtarın hazır
+  Göndermeden önce doldurulacak yer tutucular: {{LICENSE_KEY}}
+  İndirme bağlantıları site/src/lib/download.ts ile aynı sabit release adlarıdır.
+-->
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="supported-color-schemes" content="dark">
+  <title>FRAUDE Terminal — lisans anahtarın hazır</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0d12;" bgcolor="#0a0d12">
+  <!-- Gelen kutusu önizleme metni -->
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
+    Lisans talebin onaylandı — anahtarın ve kurulum adımları içeride.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0a0d12" style="background-color:#0a0d12;">
+    <tr>
+      <td align="center" style="padding:44px 16px;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+
+          <!-- Wordmark -->
+          <tr>
+            <td align="center" style="padding-bottom:26px;font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Courier New',monospace;font-size:21px;font-weight:800;letter-spacing:5px;color:#e8f0f7;">
+              <span style="color:#00e896;">F</span>RAUDE
+            </td>
+          </tr>
+
+          <!-- Panel -->
+          <tr>
+            <td bgcolor="#10151d" style="background-color:#10151d;border:1px solid #232a33;border-radius:14px;padding:38px 34px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:21px;font-weight:700;color:#e8f0f7;padding-bottom:14px;">
+                    Lisans anahtarın hazır
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:14.5px;line-height:1.7;color:#b7c2cc;padding-bottom:24px;">
+                    Merhaba,<br><br>
+                    FRAUDE Terminal lisans talebin onaylandı. Anahtarın aşağıda —
+                    uygulamadaki lisans ekranına yapıştırman yeterli.
+                  </td>
+                </tr>
+
+                <!-- Anahtar kutusu -->
+                <tr>
+                  <td align="center" style="padding-bottom:28px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" bgcolor="#0a0d12" style="background-color:#0a0d12;border:1px solid #232a33;border-radius:10px;padding:20px 12px;font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,'Courier New',monospace;font-size:17px;font-weight:700;letter-spacing:2px;color:#00e896;">
+                          {{LICENSE_KEY}}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Adımlar -->
+                <tr>
+                  <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:14px;line-height:1.9;color:#b7c2cc;padding-bottom:26px;">
+                    <span style="color:#00e896;font-weight:700;">1.</span>
+                    Uygulamayı indir:
+                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_macos_arm64.dmg" style="color:#00c3ff;text-decoration:none;">macOS (Apple&nbsp;Silicon)</a>
+                    &nbsp;·&nbsp;
+                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_windows_x64-setup.exe" style="color:#00c3ff;text-decoration:none;">Windows&nbsp;(x64)</a><br>
+                    <span style="color:#00e896;font-weight:700;">2.</span>
+                    Talebi açtığın e-posta adresiyle giriş yap.<br>
+                    <span style="color:#00e896;font-weight:700;">3.</span>
+                    Lisans ekranında anahtarı yapıştır ve etkinleştir.
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12.5px;line-height:1.7;color:#8b949e;border-top:1px solid #232a33;padding-top:22px;">
+                    Anahtar hesabına bağlanır ve sınırlı sayıda cihazda etkinleştirilebilir.
+                    Anahtarını kimseyle paylaşma; sorun yaşarsan bu e-postayı yanıtlaman
+                    yeterli.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Alt bilgi -->
+          <tr>
+            <td align="center" style="padding-top:26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
+              FRAUDE Terminal — finansal dostunuz<br>
+              Bu talebi sen yapmadıysan bize bu adresten haber ver.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

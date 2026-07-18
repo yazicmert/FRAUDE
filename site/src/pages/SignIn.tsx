@@ -6,6 +6,20 @@ import { useI18n } from '../lib/i18n';
 
 const EMAIL_RE = /.+@.+\..+/;
 
+/** 0 = boş, 1 = zayıf, 2 = orta, 3 = güçlü. Uzunluk + karakter çeşitliliği. */
+function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
+  if (!pw) return 0;
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^a-zA-Z0-9]/.test(pw)) score++;
+  if (score <= 2) return 1;
+  if (score <= 3) return 2;
+  return 3;
+}
+
 /** Giriş/kayıt — uygulamadaki akışla aynı Supabase projesi ve kurallar. */
 export default function SignIn() {
   const { t } = useI18n();
@@ -16,6 +30,7 @@ export default function SignIn() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const strength = passwordStrength(password);
 
   const switchMode = (next: 'signin' | 'signup' | 'forgot') => {
     setMode(next);
@@ -60,11 +75,19 @@ export default function SignIn() {
           options: { data: { name: name.trim() } },
         });
         if (signUpError) {
+          const raw = signUpError.message?.trim() ?? '';
           setError(
-            signUpError.message.toLowerCase().includes('already')
+            /already|registered|exists/i.test(raw)
               ? t('errEmailTaken')
-              : t('errSignUp') + signUpError.message,
+              : t('errSignUp') + (raw && raw !== '{}' ? raw : t('unknownError')),
           );
+          return;
+        }
+        // Doğrulama açıkken Supabase kayıtlı adrese hata döndürmez (adres
+        // taraması olmasın diye); ipucu boş identities dizisidir.
+        if (data.user && (data.user.identities?.length ?? 0) === 0) {
+          setMode('signin');
+          setError(t('errEmailTaken'));
           return;
         }
         if (!data.session) {
@@ -127,6 +150,14 @@ export default function SignIn() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               />
+              {mode === 'signup' && strength > 0 && (
+                <span className={`pw-meter s${strength}`}>
+                  <span className="pw-meter-bar"><span /><span /><span /></span>
+                  <span className="pw-meter-label">
+                    {strength === 1 ? t('pwWeak') : strength === 2 ? t('pwMedium') : t('pwStrong')}
+                  </span>
+                </span>
+              )}
             </label>
           )}
           {info ? <p className="form-info">{info}</p> : <p className="form-error">{error ?? ''}</p>}

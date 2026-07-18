@@ -44,6 +44,8 @@ create table if not exists public.license_requests (
   created_at    timestamptz not null default now()
 );
 alter table public.license_requests enable row level security;
+-- Lisans e-postası gönderim damgası (send-license-email Edge Function yazar)
+alter table public.license_requests add column if not exists emailed_at timestamptz;
 
 drop policy if exists "own-insert" on public.license_requests;
 create policy "own-insert" on public.license_requests
@@ -180,6 +182,7 @@ begin
       'status', r.status,
       'delivered_key', r.delivered_key,
       'decided_at', r.decided_at,
+      'emailed_at', r.emailed_at,
       'created_at', r.created_at
     ) order by (r.status = 'pending') desc, r.created_at desc)
     from license_requests r

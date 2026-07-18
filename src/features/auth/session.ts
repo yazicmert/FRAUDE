@@ -85,6 +85,9 @@ export async function signUp(
       },
     });
     if (error) return mapError(error.message);
+    // Doğrulama açıkken Supabase kayıtlı adrese hata döndürmez (adres
+    // taraması olmasın diye); ipucu boş identities dizisidir.
+    if (data.user && (data.user.identities?.length ?? 0) === 0) return 'email-taken';
     // E-posta onayı açıksa oturum dönmez; kullanıcıya kutusunu kontrol
     // etmesi söylenir.
     if (!data.session) return 'confirm-email';

@@ -35,6 +35,7 @@ interface AdminRequest {
   status: 'pending' | 'approved' | 'rejected';
   delivered_key: string | null;
   decided_at: string | null;
+  emailed_at: string | null;
   created_at: string;
 }
 
@@ -87,6 +88,17 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Onaylı talebin anahtarını send-license-email Edge Function'ı ile yollar;
+  // e-posta hatası onayı geri almaz, yalnız uyarı gösterilir (yeniden gönderilebilir).
+  const sendLicenseEmail = async (id: string): Promise<void> => {
+    const { data, error: invokeError } = await supabase.functions.invoke('send-license-email', {
+      body: { requestId: id },
+    });
+    if (invokeError || !data?.ok) {
+      setError(t('mailFailed') + (data?.error ?? invokeError?.message ?? t('unknownError')));
+    }
+  };
+
   const decideRequest = async (id: string, approve: boolean) => {
     setBusy(true);
     try {
@@ -94,6 +106,17 @@ export default function Admin() {
         ? await supabase.rpc('admin_approve_request', { p_request_id: id })
         : await supabase.rpc('admin_reject_request', { p_request_id: id });
       if (!data?.ok) setError(t('opFailed') + (data?.error ?? t('unknownError')));
+      else if (approve) await sendLicenseEmail(id);
+      await loadAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resendEmail = async (id: string) => {
+    setBusy(true);
+    try {
+      await sendLicenseEmail(id);
       await loadAll();
     } finally {
       setBusy(false);
@@ -233,8 +256,22 @@ export default function Admin() {
                           </span>
                         )}
                         {request.status === 'approved' && request.delivered_key && (
-                          <span className="muted small" style={{ fontFamily: 'monospace' }}>
-                            {request.delivered_key}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <span className="muted small" style={{ fontFamily: 'monospace' }}>
+                              {request.delivered_key}
+                            </span>
+                            {request.emailed_at && (
+                              <span className="badge badge-green" title={fmtDate(request.emailed_at)}>
+                                {t('mailSentBadge')}
+                              </span>
+                            )}
+                            <button
+                              className="btn btn-sm"
+                              disabled={busy}
+                              onClick={() => void resendEmail(request.id)}
+                            >
+                              {request.emailed_at ? t('mailResend') : t('mailSend')}
+                            </button>
                           </span>
                         )}
                       </td>

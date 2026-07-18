@@ -342,6 +342,24 @@ button { font-family: inherit; }
 .form-error { color: var(--red); font-size: 13px; min-height: 16px; margin: 0; }
 .form-info { color: var(--cyan); font-size: 13px; min-height: 16px; margin: 0; }
 
+/* Şifre gücü göstergesi (kayıt formu) */
+.pw-meter { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.pw-meter-bar { display: flex; gap: 4px; flex: 1; }
+.pw-meter-bar span {
+  height: 4px;
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 0.2s ease;
+}
+.pw-meter.s1 .pw-meter-bar span:nth-child(1) { background: var(--red); }
+.pw-meter.s2 .pw-meter-bar span:nth-child(-n+2) { background: #f5c542; }
+.pw-meter.s3 .pw-meter-bar span { background: var(--green); }
+.pw-meter-label { font-size: 12px; white-space: nowrap; }
+.pw-meter.s1 .pw-meter-label { color: var(--red); }
+.pw-meter.s2 .pw-meter-label { color: #f5c542; }
+.pw-meter.s3 .pw-meter-label { color: var(--green); }
+
 .auth-switch-line { margin-top: 14px; text-align: center; font-size: 13px; color: var(--muted); }
 .auth-switch-line button { background: none; border: none; color: var(--cyan); cursor: pointer; font-size: 13px; }
 
