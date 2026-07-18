@@ -9,6 +9,9 @@
 //                              anahtar); confirm=true: anahtar revoke edilir,
 //                              abuse_reported_at damgalanır, yöneticiye Brevo
 //                              ile bildirim gider. Jeton tek kullanımlıktır.
+//   POST {token, rating, comment?} → iptal sonrası memnuniyet anketi; yalnız
+//                              bildirimi yapılmış (abuse_reported_at dolu)
+//                              taleplere, bir kez yazılır.
 //
 // Kurulum: alıcı oturumsuz olduğundan JWT doğrulaması KAPALI deploy edilir:
 //   supabase functions deploy report-license-abuse --no-verify-jwt --use-api
@@ -63,8 +66,10 @@ Deno.serve(async (req) => {
 
   let token: unknown;
   let confirm: unknown;
+  let rating: unknown;
+  let comment: unknown;
   try {
-    ({ token, confirm } = await req.json());
+    ({ token, confirm, rating, comment } = await req.json());
   } catch {
     return json({ ok: false, error: 'bad-request' }, 400);
   }
@@ -79,10 +84,32 @@ Deno.serve(async (req) => {
 
   const { data: request } = await supabase
     .from('license_requests')
-    .select('id, email, name, delivered_key, abuse_reported_at, created_at')
+    .select('id, email, name, delivered_key, abuse_reported_at, feedback_rating, created_at')
     .eq('revoke_token', token)
     .maybeSingle();
   if (!request || !request.delivered_key) return json({ ok: false, error: 'invalid-token' }, 404);
+
+  // Memnuniyet anketi: yalnız bildirimi yapılmış taleplere, bir kez
+  if (rating !== undefined) {
+    if (!request.abuse_reported_at) return json({ ok: false, error: 'not-reported' }, 409);
+    if (request.feedback_rating) return json({ ok: true, status: 'feedback-exists' });
+    const ratingNum = Number(rating);
+    if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      return json({ ok: false, error: 'bad-rating' }, 400);
+    }
+    const commentText =
+      typeof comment === 'string' && comment.trim() ? comment.trim().slice(0, 1000) : null;
+    const { error: feedbackError } = await supabase
+      .from('license_requests')
+      .update({ feedback_rating: ratingNum, feedback_comment: commentText })
+      .eq('id', request.id);
+    if (feedbackError) {
+      console.error('feedback-failed', feedbackError.message);
+      return json({ ok: false, error: 'feedback-failed' }, 500);
+    }
+    return json({ ok: true, status: 'feedback-saved' });
+  }
+
   if (request.abuse_reported_at) return json({ ok: true, status: 'already' });
 
   if (!confirm) {

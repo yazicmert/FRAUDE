@@ -52,6 +52,10 @@ alter table public.license_requests add column if not exists emailed_at timestam
 -- (report-license-abuse Edge Function kullanır)
 alter table public.license_requests add column if not exists revoke_token text;
 alter table public.license_requests add column if not exists abuse_reported_at timestamptz;
+-- İptal sonrası memnuniyet anketi (/lisans-iptal sayfası doldurur)
+alter table public.license_requests add column if not exists feedback_rating smallint
+  check (feedback_rating between 1 and 5);
+alter table public.license_requests add column if not exists feedback_comment text;
 
 drop policy if exists "own-insert" on public.license_requests;
 create policy "own-insert" on public.license_requests
@@ -195,6 +199,8 @@ begin
       'decided_at', r.decided_at,
       'emailed_at', r.emailed_at,
       'abuse_reported_at', r.abuse_reported_at,
+      'feedback_rating', r.feedback_rating,
+      'feedback_comment', r.feedback_comment,
       'created_at', r.created_at
     ) order by (r.status = 'pending') desc, r.created_at desc)
     from license_requests r

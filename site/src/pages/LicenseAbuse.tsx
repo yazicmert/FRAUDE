@@ -21,10 +21,13 @@ export default function LicenseAbuse() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<AbuseInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [surveyDone, setSurveyDone] = useState(false);
 
-  const call = async (confirm: boolean): Promise<AbuseInfo | null> => {
+  const call = async (body: Record<string, unknown>): Promise<AbuseInfo | null> => {
     const { data, error } = await supabase.functions.invoke('report-license-abuse', {
-      body: { token, confirm },
+      body: { token, ...body },
     });
     if (error || !data?.ok) return null;
     return data as AbuseInfo;
@@ -35,7 +38,7 @@ export default function LicenseAbuse() {
       setPhase('invalid');
       return;
     }
-    void call(false).then((result) => {
+    void call({ confirm: false }).then((result) => {
       if (!result) return setPhase('invalid');
       if (result.status === 'already') return setPhase('already');
       setInfo(result);
@@ -47,13 +50,62 @@ export default function LicenseAbuse() {
   const confirm = async () => {
     setBusy(true);
     try {
-      const result = await call(true);
+      const result = await call({ confirm: true });
       if (!result) return setPhase('error');
       setPhase(result.status === 'already' ? 'already' : 'revoked');
     } finally {
       setBusy(false);
     }
   };
+
+  const sendSurvey = async () => {
+    if (!rating) return;
+    setBusy(true);
+    try {
+      const result = await call({ rating, comment });
+      if (result) setSurveyDone(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const survey = surveyDone ? (
+    <p className="form-info" style={{ marginTop: 20 }}>{t('surveyThanks')}</p>
+  ) : (
+    <div style={{ marginTop: 26, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+      <p style={{ fontWeight: 600, marginBottom: 4 }}>{t('surveyTitle')}</p>
+      <p className="muted small" style={{ marginBottom: 12 }}>{t('surveyHint')}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 14 }}>
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            key={value}
+            className={value === rating ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+            onClick={() => setRating(value)}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <div className="form" style={{ textAlign: 'left' }}>
+        <label>
+          {t('surveyComment')}
+          <textarea
+            value={comment}
+            maxLength={1000}
+            onChange={(event) => setComment(event.target.value)}
+          />
+        </label>
+      </div>
+      <button
+        className="btn btn-sm"
+        style={{ marginTop: 12 }}
+        disabled={busy || !rating}
+        onClick={() => void sendSurvey()}
+      >
+        {busy ? t('working') : t('surveySend')}
+      </button>
+    </div>
+  );
 
   return (
     <div className="page page-narrow">
@@ -86,6 +138,7 @@ export default function LicenseAbuse() {
           <>
             <h1>{t('abuseAlreadyTitle')}</h1>
             <p className="page-sub">{t('abuseAlready')}</p>
+            {survey}
           </>
         )}
 
@@ -93,6 +146,7 @@ export default function LicenseAbuse() {
           <>
             <h1>{t('abuseRevokedTitle')}</h1>
             <p className="page-sub">{t('abuseRevoked')}</p>
+            {survey}
           </>
         )}
 

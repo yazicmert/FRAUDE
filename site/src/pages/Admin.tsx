@@ -37,6 +37,8 @@ interface AdminRequest {
   decided_at: string | null;
   emailed_at: string | null;
   abuse_reported_at: string | null;
+  feedback_rating: number | null;
+  feedback_comment: string | null;
   created_at: string;
 }
 
@@ -269,6 +271,11 @@ export default function Admin() {
                             {request.abuse_reported_at && (
                               <span className="badge badge-red" title={fmtDate(request.abuse_reported_at)}>
                                 {t('abuseBadge')}
+                              </span>
+                            )}
+                            {request.feedback_rating != null && (
+                              <span className="muted small" title={request.feedback_comment ?? ''}>
+                                {t('surveyShort')} {request.feedback_rating}/5
                               </span>
                             )}
                             <button
