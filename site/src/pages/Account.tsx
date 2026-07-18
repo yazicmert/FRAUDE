@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { displayName } from '../lib/useSession';
 import { navigate } from '../lib/router';
+import { useI18n, type StringKey } from '../lib/i18n';
 
 interface LicenseRequest {
   id: string;
@@ -13,13 +14,14 @@ interface LicenseRequest {
   decided_at: string | null;
 }
 
-const STATUS_TR: Record<LicenseRequest['status'], { label: string; cls: string }> = {
-  pending: { label: 'Bekliyor', cls: 'badge-cyan' },
-  approved: { label: 'Onaylandı', cls: 'badge-green' },
-  rejected: { label: 'Reddedildi', cls: 'badge-red' },
+const STATUS_META: Record<LicenseRequest['status'], { label: StringKey; cls: string }> = {
+  pending: { label: 'stPending', cls: 'badge-cyan' },
+  approved: { label: 'stApproved', cls: 'badge-green' },
+  rejected: { label: 'stRejected', cls: 'badge-red' },
 };
 
 function CopyKey({ value }: { value: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
     <span className="key-chip">
@@ -33,7 +35,7 @@ function CopyKey({ value }: { value: string }) {
           });
         }}
       >
-        {copied ? '✓ kopyalandı' : 'kopyala'}
+        {copied ? t('copied') : t('copy')}
       </button>
     </span>
   );
@@ -41,10 +43,13 @@ function CopyKey({ value }: { value: string }) {
 
 /** Hesap sayfası: lisans talebi oluşturma ve taleplerin durumu. */
 export default function Account({ user }: { user: User }) {
+  const { t, lang } = useI18n();
   const [requests, setRequests] = useState<LicenseRequest[] | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const locale = lang === 'tr' ? 'tr-TR' : 'en-US';
 
   const load = async () => {
     const { data, error: selectError } = await supabase
@@ -70,7 +75,7 @@ export default function Account({ user }: { user: User }) {
         note: note.trim() || null,
       });
       if (insertError) {
-        setError('Talep gönderilemedi: ' + insertError.message);
+        setError(t('requestFailed') + insertError.message);
         return;
       }
       setNote('');
@@ -85,26 +90,25 @@ export default function Account({ user }: { user: User }) {
 
   return (
     <div className="page">
-      <h1>Hesabım</h1>
+      <h1>{t('myAccount')}</h1>
       <p className="page-sub">
         {displayName(user)} · {user.email}
       </p>
 
       {approved.length > 0 && (
         <div className="card">
-          <h2>Lisans anahtarınız</h2>
+          <h2>{t('yourKeyTitle')}</h2>
           {approved.map((request) => (
             <div key={request.id} style={{ marginBottom: 12 }}>
               {request.delivered_key ? (
                 <>
                   <CopyKey value={request.delivered_key} />
                   <p className="muted small" style={{ marginTop: 10 }}>
-                    Bu anahtarı FRAUDE uygulamasında oturum açtıktan sonra lisans ekranına girin.
-                    Anahtar hesabınıza bağlanır ve 2 cihazda kullanılabilir.
+                    {t('yourKeyHint')}
                   </p>
                 </>
               ) : (
-                <p className="muted small">Onaylandı — anahtar yöneticiden ayrıca iletilecek.</p>
+                <p className="muted small">{t('approvedNoKey')}</p>
               )}
             </div>
           ))}
@@ -112,53 +116,51 @@ export default function Account({ user }: { user: User }) {
       )}
 
       <div className="card">
-        <h2>Lisans Talebi</h2>
+        <h2>{t('requestTitle')}</h2>
         {hasPending ? (
-          <p className="muted">
-            Bekleyen bir talebiniz var. Onaylandığında anahtarınız bu sayfada görünecek.
-          </p>
+          <p className="muted">{t('pendingNote')}</p>
         ) : (
           <form className="form" onSubmit={submit}>
             <label>
-              Not (isteğe bağlı — kendinizi kısaca tanıtın)
+              {t('noteLabel')}
               <textarea
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder="Örn. bireysel yatırımcıyım, fon analizi için kullanacağım."
+                placeholder={t('notePlaceholder')}
                 maxLength={500}
               />
             </label>
             <p className="form-error">{error ?? ''}</p>
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              {busy ? 'Gönderiliyor…' : 'Lisans Talep Et'}
+              {busy ? t('sending') : t('requestBtn')}
             </button>
           </form>
         )}
       </div>
 
       <div className="card">
-        <h2>Taleplerim</h2>
+        <h2>{t('myRequests')}</h2>
         {requests === null ? (
-          <p className="muted">Yükleniyor…</p>
+          <p className="muted">{t('loading')}</p>
         ) : requests.length === 0 ? (
-          <p className="muted">Henüz talebiniz yok.</p>
+          <p className="muted">{t('noRequests')}</p>
         ) : (
           <div className="table-wrap">
             <table className="data">
               <thead>
                 <tr>
-                  <th>Tarih</th>
-                  <th>Durum</th>
-                  <th>Not</th>
+                  <th>{t('colDate')}</th>
+                  <th>{t('colStatus')}</th>
+                  <th>{t('colNote')}</th>
                 </tr>
               </thead>
               <tbody>
                 {requests.map((request) => (
                   <tr key={request.id}>
-                    <td>{new Date(request.created_at).toLocaleDateString('tr-TR')}</td>
+                    <td>{new Date(request.created_at).toLocaleDateString(locale)}</td>
                     <td>
-                      <span className={`badge ${STATUS_TR[request.status].cls}`}>
-                        {STATUS_TR[request.status].label}
+                      <span className={`badge ${STATUS_META[request.status].cls}`}>
+                        {t(STATUS_META[request.status].label)}
                       </span>
                     </td>
                     <td className="muted" style={{ whiteSpace: 'normal', maxWidth: 420 }}>
@@ -173,7 +175,7 @@ export default function Account({ user }: { user: User }) {
       </div>
 
       <div className="card">
-        <h2>Oturum</h2>
+        <h2>{t('sessionTitle')}</h2>
         <button
           className="btn btn-danger"
           onClick={() => {
@@ -181,7 +183,7 @@ export default function Account({ user }: { user: User }) {
             navigate('/');
           }}
         >
-          Çıkış Yap
+          {t('signOut')}
         </button>
       </div>
     </div>

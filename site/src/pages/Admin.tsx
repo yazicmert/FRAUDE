@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useI18n } from '../lib/i18n';
 
 interface Overview {
   licenses_total: number;
@@ -39,19 +40,9 @@ interface AdminRequest {
 
 type Tab = 'overview' | 'requests' | 'licenses' | 'generate';
 
-function fmtDate(value: string | null): string {
-  return value ? new Date(value).toLocaleDateString('tr-TR') : '—';
-}
-
-function licenseBadge(license: AdminLicense) {
-  if (license.status === 'revoked') return <span className="badge badge-red">İptal</span>;
-  if (license.expired) return <span className="badge badge-red">Süresi doldu</span>;
-  if (license.status === 'active') return <span className="badge badge-green">Aktif</span>;
-  return <span className="badge badge-gray">Kullanılmadı</span>;
-}
-
 /** Yönetim paneli: özet, talepler, lisanslar ve toplu anahtar üretimi. */
 export default function Admin() {
+  const { t, lang } = useI18n();
   const [tab, setTab] = useState<Tab>('overview');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [licenses, setLicenses] = useState<AdminLicense[] | null>(null);
@@ -67,6 +58,17 @@ export default function Admin() {
   const [genKeys, setGenKeys] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const locale = lang === 'tr' ? 'tr-TR' : 'en-US';
+  const fmtDate = (value: string | null) =>
+    value ? new Date(value).toLocaleDateString(locale) : '—';
+
+  const licenseBadge = (license: AdminLicense) => {
+    if (license.status === 'revoked') return <span className="badge badge-red">{t('bdRevoked')}</span>;
+    if (license.expired) return <span className="badge badge-red">{t('bdExpired')}</span>;
+    if (license.status === 'active') return <span className="badge badge-green">{t('bdActive')}</span>;
+    return <span className="badge badge-gray">{t('bdUnused')}</span>;
+  };
+
   const loadAll = async () => {
     setError(null);
     const [ov, li, re] = await Promise.all([
@@ -75,13 +77,14 @@ export default function Admin() {
       supabase.rpc('admin_list_requests'),
     ]);
     if (ov.data?.ok) setOverview(ov.data as Overview & { ok: boolean });
-    else setError('Yönetici verileri alınamadı (yetkinizi kontrol edin).');
+    else setError(t('adminLoadFailed'));
     if (li.data?.ok) setLicenses(li.data.licenses as AdminLicense[]);
     if (re.data?.ok) setRequests(re.data.requests as AdminRequest[]);
   };
 
   useEffect(() => {
     void loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const decideRequest = async (id: string, approve: boolean) => {
@@ -90,7 +93,7 @@ export default function Admin() {
       const { data } = approve
         ? await supabase.rpc('admin_approve_request', { p_request_id: id })
         : await supabase.rpc('admin_reject_request', { p_request_id: id });
-      if (!data?.ok) setError('İşlem başarısız: ' + (data?.error ?? 'bilinmeyen hata'));
+      if (!data?.ok) setError(t('opFailed') + (data?.error ?? t('unknownError')));
       await loadAll();
     } finally {
       setBusy(false);
@@ -98,7 +101,7 @@ export default function Admin() {
   };
 
   const revokeLicense = async (id: string) => {
-    if (!window.confirm('Bu lisans iptal edilsin mi? Kullanıcının erişimi anında kesilir.')) return;
+    if (!window.confirm(t('confirmRevoke'))) return;
     setBusy(true);
     try {
       await supabase.rpc('admin_revoke_license', { p_license_id: id });
@@ -124,7 +127,7 @@ export default function Admin() {
         setGenKeys(data.keys as string[]);
         await loadAll();
       } else {
-        setError('Üretim başarısız: ' + (data?.error ?? 'bilinmeyen hata'));
+        setError(t('genFailed') + (data?.error ?? t('unknownError')));
       }
     } finally {
       setBusy(false);
@@ -133,24 +136,24 @@ export default function Admin() {
 
   return (
     <div className="page">
-      <h1>Yönetim Paneli</h1>
-      <p className="page-sub">Lisanslar, talepler ve anahtar üretimi</p>
+      <h1>{t('adminTitle')}</h1>
+      <p className="page-sub">{t('adminSub')}</p>
 
       <div className="tabs">
         <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
-          Özet
+          {t('tabOverview')}
         </button>
         <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}>
-          Talepler{' '}
+          {t('tabRequests')}{' '}
           {overview && overview.requests_pending > 0 && (
             <span className="badge badge-cyan">{overview.requests_pending}</span>
           )}
         </button>
         <button className={tab === 'licenses' ? 'active' : ''} onClick={() => setTab('licenses')}>
-          Lisanslar
+          {t('tabLicenses')}
         </button>
         <button className={tab === 'generate' ? 'active' : ''} onClick={() => setTab('generate')}>
-          Anahtar Üret
+          {t('tabGenerate')}
         </button>
       </div>
 
@@ -160,37 +163,37 @@ export default function Admin() {
         <div className="stat-grid">
           {overview ? (
             <>
-              <div className="stat"><div className="value">{overview.users_total}</div><div className="label">Kayıtlı kullanıcı</div></div>
-              <div className="stat"><div className="value">{overview.licenses_total}</div><div className="label">Toplam lisans</div></div>
-              <div className="stat"><div className="value" style={{ color: 'var(--green)' }}>{overview.licenses_active}</div><div className="label">Aktif lisans</div></div>
-              <div className="stat"><div className="value">{overview.licenses_unused}</div><div className="label">Kullanılmamış</div></div>
-              <div className="stat"><div className="value" style={{ color: 'var(--red)' }}>{overview.licenses_expired}</div><div className="label">Süresi geçmiş</div></div>
-              <div className="stat"><div className="value" style={{ color: 'var(--red)' }}>{overview.licenses_revoked}</div><div className="label">İptal edilmiş</div></div>
-              <div className="stat"><div className="value">{overview.activations_total}</div><div className="label">Cihaz aktivasyonu</div></div>
-              <div className="stat"><div className="value" style={{ color: 'var(--cyan)' }}>{overview.requests_pending}</div><div className="label">Bekleyen talep</div></div>
+              <div className="stat"><div className="value">{overview.users_total}</div><div className="label">{t('statUsers')}</div></div>
+              <div className="stat"><div className="value">{overview.licenses_total}</div><div className="label">{t('statTotal')}</div></div>
+              <div className="stat"><div className="value" style={{ color: 'var(--green)' }}>{overview.licenses_active}</div><div className="label">{t('statActive')}</div></div>
+              <div className="stat"><div className="value">{overview.licenses_unused}</div><div className="label">{t('statUnused')}</div></div>
+              <div className="stat"><div className="value" style={{ color: 'var(--red)' }}>{overview.licenses_expired}</div><div className="label">{t('statExpired')}</div></div>
+              <div className="stat"><div className="value" style={{ color: 'var(--red)' }}>{overview.licenses_revoked}</div><div className="label">{t('statRevoked')}</div></div>
+              <div className="stat"><div className="value">{overview.activations_total}</div><div className="label">{t('statActivations')}</div></div>
+              <div className="stat"><div className="value" style={{ color: 'var(--cyan)' }}>{overview.requests_pending}</div><div className="label">{t('statPending')}</div></div>
             </>
           ) : (
-            <p className="muted">Yükleniyor…</p>
+            <p className="muted">{t('loading')}</p>
           )}
         </div>
       )}
 
       {tab === 'requests' && (
         <div className="card">
-          <h2>Lisans Talepleri</h2>
+          <h2>{t('reqListTitle')}</h2>
           {requests === null ? (
-            <p className="muted">Yükleniyor…</p>
+            <p className="muted">{t('loading')}</p>
           ) : requests.length === 0 ? (
-            <p className="muted">Talep yok.</p>
+            <p className="muted">{t('noReqs')}</p>
           ) : (
             <div className="table-wrap">
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Tarih</th>
-                    <th>Kullanıcı</th>
-                    <th>Not</th>
-                    <th>Durum</th>
+                    <th>{t('colDate')}</th>
+                    <th>{t('colUser')}</th>
+                    <th>{t('colNote')}</th>
+                    <th>{t('colStatus')}</th>
                     <th />
                   </tr>
                 </thead>
@@ -206,9 +209,9 @@ export default function Admin() {
                         {request.note ?? '—'}
                       </td>
                       <td>
-                        {request.status === 'pending' && <span className="badge badge-cyan">Bekliyor</span>}
-                        {request.status === 'approved' && <span className="badge badge-green">Onaylandı</span>}
-                        {request.status === 'rejected' && <span className="badge badge-red">Reddedildi</span>}
+                        {request.status === 'pending' && <span className="badge badge-cyan">{t('stPending')}</span>}
+                        {request.status === 'approved' && <span className="badge badge-green">{t('stApproved')}</span>}
+                        {request.status === 'rejected' && <span className="badge badge-red">{t('stRejected')}</span>}
                       </td>
                       <td>
                         {request.status === 'pending' && (
@@ -218,14 +221,14 @@ export default function Admin() {
                               disabled={busy}
                               onClick={() => decideRequest(request.id, true)}
                             >
-                              Onayla
+                              {t('approve')}
                             </button>
                             <button
                               className="btn btn-danger btn-sm"
                               disabled={busy}
                               onClick={() => decideRequest(request.id, false)}
                             >
-                              Reddet
+                              {t('reject')}
                             </button>
                           </span>
                         )}
@@ -246,23 +249,23 @@ export default function Admin() {
 
       {tab === 'licenses' && (
         <div className="card">
-          <h2>Lisanslar</h2>
+          <h2>{t('licListTitle')}</h2>
           {licenses === null ? (
-            <p className="muted">Yükleniyor…</p>
+            <p className="muted">{t('loading')}</p>
           ) : licenses.length === 0 ? (
-            <p className="muted">Lisans yok.</p>
+            <p className="muted">{t('noLicenses')}</p>
           ) : (
             <div className="table-wrap">
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Durum</th>
-                    <th>Plan</th>
-                    <th>Kullanıcı</th>
-                    <th>Cihaz</th>
-                    <th>Bitiş</th>
-                    <th>Not</th>
-                    <th>Oluşturma</th>
+                    <th>{t('colStatus')}</th>
+                    <th>{t('colPlan')}</th>
+                    <th>{t('colUser')}</th>
+                    <th>{t('colDevices')}</th>
+                    <th>{t('colExpiry')}</th>
+                    <th>{t('colNote')}</th>
+                    <th>{t('colCreated')}</th>
                     <th />
                   </tr>
                 </thead>
@@ -275,7 +278,7 @@ export default function Admin() {
                       <td>
                         {license.devices} / {license.max_devices}
                       </td>
-                      <td>{license.expires_at ? fmtDate(license.expires_at) : 'Süresiz'}</td>
+                      <td>{license.expires_at ? fmtDate(license.expires_at) : t('perpetual')}</td>
                       <td className="muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {license.note ?? '—'}
                       </td>
@@ -287,7 +290,7 @@ export default function Admin() {
                             disabled={busy}
                             onClick={() => revokeLicense(license.id)}
                           >
-                            İptal Et
+                            {t('revoke')}
                           </button>
                         )}
                       </td>
@@ -303,11 +306,11 @@ export default function Admin() {
       {tab === 'generate' && (
         <>
           <div className="card">
-            <h2>Toplu Anahtar Üret</h2>
+            <h2>{t('genTitle')}</h2>
             <form className="form" onSubmit={generate}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
                 <label>
-                  Adet (1-200)
+                  {t('genCount')}
                   <input
                     type="number"
                     min={1}
@@ -317,14 +320,14 @@ export default function Admin() {
                   />
                 </label>
                 <label>
-                  Plan
+                  {t('genPlan')}
                   <select value={genPlan} onChange={(event) => setGenPlan(event.target.value)}>
                     <option value="standard">standard</option>
                     <option value="pro">pro</option>
                   </select>
                 </label>
                 <label>
-                  Cihaz limiti
+                  {t('genDevices')}
                   <input
                     type="number"
                     min={1}
@@ -334,7 +337,7 @@ export default function Admin() {
                   />
                 </label>
                 <label>
-                  Bitiş (boş = süresiz)
+                  {t('genExpiry')}
                   <input
                     type="date"
                     value={genExpires}
@@ -343,19 +346,19 @@ export default function Admin() {
                 </label>
               </div>
               <label>
-                Not (kime/niçin üretildi)
+                {t('genNote')}
                 <input value={genNote} onChange={(event) => setGenNote(event.target.value)} />
               </label>
               <button className="btn btn-primary" type="submit" disabled={busy}>
-                {busy ? 'Üretiliyor…' : 'Üret'}
+                {busy ? t('genBusy') : t('genBtn')}
               </button>
             </form>
           </div>
           {genKeys && (
             <div className="card">
-              <h2>Üretilen anahtarlar — yalnız şimdi görünür</h2>
+              <h2>{t('genDoneTitle')}</h2>
               <p className="muted small" style={{ marginBottom: 14 }}>
-                Veritabanı yalnız özetleri tutar; bu listeyi kapatmadan kopyalayın.
+                {t('genDoneHint')}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
                 {genKeys.map((key) => (
@@ -366,7 +369,7 @@ export default function Admin() {
                 className="btn"
                 onClick={() => navigator.clipboard.writeText(genKeys.join('\n'))}
               >
-                Tümünü kopyala
+                {t('copyAll')}
               </button>
             </div>
           )}
