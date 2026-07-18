@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "updates": [
+    {
+      "id": "2026-07-18-site-indirme-ve-sifre-yenileme",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "site",
+      "title": {
+        "tr": "Gerçek indirme bağlantıları, Windows paketi ve şifre yenileme",
+        "en": "Real download links, Windows package and password reset"
+      },
+      "summary": {
+        "tr": "Site indirme butonları sürümden bağımsız sabit release paketlerine bağlandı; v* etiketiyle macOS+Windows derleyen release iş akışı eklendi. Girişe 'şifremi unuttum' modu ve /sifre-yenile sayfası geldi; e-postalar Supabase SMTP üzerinden gönderiliyor.",
+        "en": "Site download buttons now point at version-independent release assets; a release workflow builds macOS+Windows on v* tags. Sign-in gained a 'forgot password' mode and a /sifre-yenile page; emails are sent through Supabase SMTP."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE/commit/895873c",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        ".github/workflows/release.yml",
+        "site/src/lib/download.ts",
+        "site/src/pages/SignIn.tsx",
+        "site/src/pages/ResetPassword.tsx",
+        "site/src/App.tsx",
+        "site/src/lib/i18n.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. site/src/lib/download.ts oluştur: GitHub releases/latest/download altındaki sabit adlı paketlere (FRAUDE-Terminal_macos_arm64.dmg ve FRAUDE-Terminal_windows_x64-setup.exe) işaret eden DOWNLOAD_MAC ve DOWNLOAD_WIN sabitlerini dışa aktar.\n2. Landing sayfasındaki indirme bandına macOS ve Windows butonlarını bu sabitlerle ekle; hero ve nav'daki indir butonlarını #indir bandına kaydır.\n3. Giriş sayfasına (SignIn) üçüncü bir 'forgot' modu ekle: yalnız e-posta alanı gösterilir, gönderimde supabase.auth.resetPasswordForEmail(email, { redirectTo: origin + '/sifre-yenile' }) çağrılır; başarı/hata mesajı mevcut info/error desenine uyar.\n4. /sifre-yenile rotasında yeni ResetPassword sayfası: onAuthStateChange ile kurtarma oturumunu dinle (olumsuz 'geçersiz bağlantı' kararını ~1.5 sn geciktir), oturum varsa yeni şifre + tekrar alanları göster, supabase.auth.updateUser({ password }) ile kaydet, başarıda /hesap'a yönlendir.\n5. .github/workflows/release.yml ekle: v* etiketi push'unda macos-latest ve windows-latest üzerinde 'npm run tauri build' çalıştırıp üretilen dmg/nsis paketlerini 1. adımdaki sabit adlarla release'e yükleyen matrix iş akışı (contents: write izni, gh release upload --clobber).\n6. TR/EN i18n dizgilerini projenin mevcut i18n desenine ekle.\n\nKabul: site dizininde 'npx tsc --noEmit' ve 'npx vite build' hatasız geçmeli; giriş sayfasında üç mod arasında geçiş çalışmalı.",
+      "notes": {
+        "tr": "Supabase panosunda Redirect URLs allowlist'ine site adresi + /sifre-yenile eklenmeli; SMTP, Authentication → Emails altında tanımlı olmalı.",
+        "en": "Add the site origin + /sifre-yenile to the Supabase Redirect URLs allowlist; SMTP must be configured under Authentication → Emails."
+      }
+    },
+    {
+      "id": "2026-07-18-halka-arz-kodsuz-kayitlar",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Halka arz çekimi: BIST kodu atanmamış kayıtlar kaybolmuyor",
+        "en": "IPO scraping: entries without a BIST code are no longer dropped"
+      },
+      "summary": {
+        "tr": "halkarz.com kod atanmamış şirketlerde il-bist-kod elemanını boş bırakıyor; ayrıştırıcı bunları atladığından ana sayfadaki ~226 kaydın yalnız 42'si çekiliyordu. Kodsuz kayıtlar artık isimle tekilleştirilip TASLAK olarak tutuluyor ve kod atanınca aynı arşiv kaydı güncelleniyor.",
+        "en": "halkarz.com leaves the il-bist-kod element empty for companies without an assigned code; the parser dropped them, so only 42 of ~226 homepage entries were fetched. Codeless entries are now kept (deduped by name) as drafts and merge into the same archive record once a code is assigned."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE/commit/965b5df",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "core/src/ipo_scraper.rs",
+        "core/src/ipo_store.rs",
+        "src/features/corporate/CorporateActionsView.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. core/src/ipo_scraper.rs içindeki parse_listing: ticker'ı (il-bist-kod) boş olan satırları artık atlama. Ana sayfa modunda bu kayıtları isimleriyle tekilleştirerek tut (durumları TASLAK'a düşer); yıl arşivi (assume_completed) modunda ise kodsuzları atlamaya devam et ki taslaklar TAMAMLANDI sayılmasın.\n2. Aynı dosyada resolve_details: ticker'ı boş kayıtlar için detay sayfası HTTP isteği yapma (200+ taslak için istek patlaması olmasın); liste bilgisi yeterli.\n3. core/src/ipo_store.rs içindeki merge_scraped: yalnız hem ticker hem isim boşsa kaydı atla. Eşleştirme: ticker doluysa önce ticker ile, bulunamazsa 'ticker'ı boş + aynı isim' ile eşle ve ticker'ı ata; ticker boşsa isimle eşle. Kodsuz bir scrape kaydı, kodu atanmış mevcut arşiv kaydının durum/alanlarını asla ezmesin (yalnız last_seen tazelensin).\n4. Kurumsal Aksiyonlar görünümündeki halka arz tablosunda boş ticker'ı '—' olarak göster ve boş ticker'a profil bağlantısı verme.\n5. Testleri güncelle/ekle: kodsuz kayıtların tutulduğu, arşiv modunda atlandığı, isimle eşleşip kod atanınca aynı kayda birleştiği ve kodsuz taslağın kodlu kaydı geriletmediği senaryolar.\n\nKabul: core dizininde 'cargo test' tamamı geçmeli; canlı halkarz.com ana sayfası ayrıştırıldığında kayıt sayısı sayfadaki makale sayısına eşit olmalı.",
+      "notes": null
+    }
+  ]
+}

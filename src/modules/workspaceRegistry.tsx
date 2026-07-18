@@ -26,6 +26,7 @@ const FundsView = lazy(() => import('../features/funds/FundsView'));
 const ModuleCenterView = lazy(() => import('../features/modules/ModuleCenterView'));
 const TeamView = lazy(() => import('../features/team/TeamView'));
 const CorporateActionsView = lazy(() => import('../features/corporate/CorporateActionsView'));
+const UpdatesView = lazy(() => import('../features/updates/UpdatesView'));
 const MonitorView = lazy(() => import('../features/monitor/MonitorView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
@@ -252,6 +253,25 @@ export const workspaceModules: WorkspaceModule[] = [
       'corporateActions',
     ),
     render: (_tab, host) => <CorporateActionsView onSelectTicker={host.openTicker} />,
+  },
+  {
+    kind: 'updates',
+    titleKey: 'updates',
+    // Açılışta sekme açmaz; kenar çubuğundan istenince gelir. Kayıtlar
+    // deponun main dalındaki updates/registry.json'dan okunur (merge = onay).
+    defaultTab: false,
+    manifest: manifest(
+      'fraude.updates',
+      { tr: 'Güncellemeler', en: 'Updates' },
+      {
+        tr: 'Topluluk katkıları ve AI ajanıyla uygulanabilir güncellemeler.',
+        en: 'Community contributions and AI-agent-applicable updates.',
+      },
+      ['network:github'],
+      'updates',
+      'updates',
+    ),
+    render: () => <UpdatesView />,
   },
   {
     kind: 'guide',

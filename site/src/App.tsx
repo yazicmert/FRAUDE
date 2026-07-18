@@ -7,6 +7,7 @@ import SignIn from './pages/SignIn';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
 import ResetPassword from './pages/ResetPassword';
+import Updates from './pages/Updates';
 import './styles.css';
 
 export default function App() {
@@ -17,6 +18,8 @@ export default function App() {
   let content: JSX.Element;
   if (path === '/sifre-yenile') {
     content = <ResetPassword />;
+  } else if (path === '/guncellemeler') {
+    content = <Updates />;
   } else if (path === '/giris') {
     content = user ? <Account user={user} /> : <SignIn />;
   } else if (path === '/hesap') {
@@ -52,6 +55,7 @@ export default function App() {
           <a href="/#ozellikler">{t('navFeatures')}</a>
           <a href="/#baslangic">{t('navStart')}</a>
           <a href="/#indir">{t('navDownload')}</a>
+          <a onClick={() => navigate('/guncellemeler')}>{t('navUpdates')}</a>
         </div>
         <div className="spacer" />
         <button
