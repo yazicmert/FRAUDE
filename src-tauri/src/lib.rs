@@ -65,7 +65,14 @@ pub async fn run_monitor_and_notify(handle: &tauri::AppHandle, state: &AppState)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows/Linux'ta derin bağlantı ikinci örnek açar; single-instance
+    // (deep-link özelliği) adresi çalışan örneğe iletir. İlk eklenti olmalı.
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::new())

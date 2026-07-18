@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-eposta-dogrulama-derin-baglanti",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Doğrulama e-postası artık masaüstü uygulamayı açıyor",
+        "en": "The confirmation email now opens the desktop app"
+      },
+      "summary": {
+        "tr": "Masaüstünde kayıt olurken doğrulama e-postasındaki bağlantı siteye değil fraude:// derin bağlantısıyla uygulamaya dönüyor; jetonlar ayrıştırılıp oturum otomatik başlıyor. Windows/Linux'ta single-instance ile bağlantı çalışan örneğe iletiliyor.",
+        "en": "When signing up on desktop, the confirmation email link now returns to the app via the fraude:// deep link instead of the website; tokens are parsed and the session starts automatically. On Windows/Linux, single-instance forwards the link to the running instance."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.toml",
+        "src-tauri/src/lib.rs",
+        "src-tauri/capabilities/default.json",
+        "src/features/auth/deepLink.ts",
+        "src/features/auth/session.ts"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. Tauri'ye derin bağlantı ekle: tauri-plugin-deep-link (Rust + @tauri-apps/plugin-deep-link npm) bağımlılıklarını ekle; tauri.conf.json'da plugins.deep-link.desktop.schemes değerini [\"fraude\"] yap; capabilities/default.json izinlerine \"deep-link:default\" ekle; lib.rs'te eklentiyi başlat. Windows/Linux için tauri-plugin-single-instance'ı (deep-link özelliğiyle) İLK eklenti olarak kaydet ki bağlantı ikinci örnek açmak yerine çalışana iletilsin.\n2. Auth katmanına deepLink.ts ekle: fraude://auth-callback adresini dinle (açılışta getCurrent, çalışırken onOpenUrl); hash'teki access_token+refresh_token'ı supabase.auth.setSession'a, varsa ?code parametresini exchangeCodeForSession'a ver. Dinleyiciyi yalnız masaüstü çalışma zamanında ve bir kez kur; oturum başlangıcında (initSession) çağır.\n3. signUp çağrısında masaüstü çalışma zamanındaysa options.emailRedirectTo = 'fraude://auth-callback' gönder; web'de dokunma.\n4. 'Doğrulama e-postası gönderildi' metnini bağlantının uygulamayı açıp oturumu otomatik başlatacağını söyleyecek şekilde güncelle (TR+EN).\n\nKabul: 'npx tsc --noEmit' ve src-tauri'de 'cargo check' geçmeli. Not: Supabase panosunda Redirect URLs allowlist'ine fraude://auth-callback eklenmeli; macOS'ta şema kaydı yalnız paketlenmiş uygulamada çalışır.",
+      "notes": {
+        "tr": "Supabase panosunda Authentication → URL Configuration → Redirect URLs listesine fraude://auth-callback eklenmeli. macOS'ta fraude:// şeması yalnız kurulu (.app) pakette tanınır; tauri dev'de tetiklenmez.",
+        "en": "Add fraude://auth-callback to Authentication → URL Configuration → Redirect URLs in the Supabase dashboard. On macOS the fraude:// scheme is only registered for the installed (.app) bundle; it does not fire under tauri dev."
+      }
+    },
+    {
       "id": "2026-07-18-rehber-eklenti-mimarisi",
       "date": "2026-07-18",
       "author": "yazicmert",

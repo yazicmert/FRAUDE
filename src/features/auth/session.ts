@@ -7,6 +7,8 @@
 
 import { supabase } from './supabaseClient';
 import type { User } from '@supabase/supabase-js';
+import { isDesktopRuntime } from '../../api/platformClient';
+import { DESKTOP_AUTH_REDIRECT, initAuthDeepLink } from './deepLink';
 
 export interface AuthUser {
   id: string;
@@ -46,6 +48,8 @@ supabase.auth.onAuthStateChange((_event, session) => {
 
 /** Kalıcı oturumu geri yükler; uygulama açılışında bir kez beklenir. */
 export async function initSession(): Promise<AuthUser | null> {
+  // Masaüstünde e-posta bağlantıları fraude:// ile uygulamaya döner
+  initAuthDeepLink();
   const { data } = await supabase.auth.getSession();
   currentUser = toUser(data.session?.user);
   return currentUser;
@@ -74,7 +78,11 @@ export async function signUp(
     const { data, error } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password,
-      options: { data: { name: name.trim() } },
+      options: {
+        data: { name: name.trim() },
+        // Masaüstünde doğrulama e-postası siteye değil uygulamaya dönsün
+        ...(isDesktopRuntime() ? { emailRedirectTo: DESKTOP_AUTH_REDIRECT } : {}),
+      },
     });
     if (error) return mapError(error.message);
     // E-posta onayı açıksa oturum dönmez; kullanıcıya kutusunu kontrol
