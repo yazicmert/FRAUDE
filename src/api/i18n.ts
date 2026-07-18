@@ -846,6 +846,12 @@ export const translations = {
     tfPeriodCol: 'Dönem',
     tfKapLink: 'KAP ↗',
     fundReturnsPending: 'getiriler hazırlanıyor…',
+    fundAiOcr: 'AI ile görüntüden çöz',
+    fundAiOcrBusy: 'Görüntü analiz ediliyor…',
+    fundAiOcrHint:
+      'Bu rapor taranmış görüntü; metin ayrıştırılamıyor. Sayfa görüntüleri, Ayarlar › AI Providers\'taki varsayılan anahtarınızla görüntü destekli modele gönderilir (ucuz bir model yeterli: gpt-4o-mini, gemini-flash). Maliyet kendi hesabınıza işler.',
+    fundAiOcrDone: '✓ AI görüntü analiziyle çözüldü',
+    fundAiOcrFailed: 'Görüntü analizi başarısız: ',
   },
   en: {
     dashboard: 'Dashboard',
@@ -1693,6 +1699,12 @@ export const translations = {
     tfPeriodCol: 'Period',
     tfKapLink: 'KAP ↗',
     fundReturnsPending: 'preparing returns…',
+    fundAiOcr: 'Extract with AI vision',
+    fundAiOcrBusy: 'Analyzing images…',
+    fundAiOcrHint:
+      'This report is a scanned image; text parsing fails. Page images are sent to a vision-capable model using your default key in Settings › AI Providers (a cheap model suffices: gpt-4o-mini, gemini-flash). Costs are billed to your own account.',
+    fundAiOcrDone: '✓ extracted via AI vision analysis',
+    fundAiOcrFailed: 'Vision analysis failed: ',
   }
 };
 

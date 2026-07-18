@@ -106,6 +106,14 @@ pub async fn get_ticker_funds(
 }
 
 #[tauri::command]
+pub async fn get_fund_holdings_ai(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<crate::kap_pdr::FundHoldingsReport, String> {
+    api::get_fund_holdings_ai(&state, code).await
+}
+
+#[tauri::command]
 pub async fn get_fund_allocation(
     state: State<'_, AppState>,
     code: String,

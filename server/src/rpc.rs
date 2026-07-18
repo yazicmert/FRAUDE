@@ -67,6 +67,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_fund_holdings",
     "get_fund_returns",
     "get_ticker_funds",
+    "get_fund_holdings_ai",
 ];
 
 /// Kişi-başı veri — auth ZORUNLU, Postgres'te `user_id` ile izole edilir.
@@ -334,6 +335,7 @@ pub async fn dispatch(
         "get_fund_disclosures" => run!(args, CodeArgs, |p| api::get_fund_disclosures(s, p.code)),
         "get_fund_holdings" => run!(args, CodeArgs, |p| api::get_fund_holdings(s, p.code)),
         "get_ticker_funds" => run!(args, TickerArgs, |p| api::get_ticker_funds(s, p.ticker)),
+        "get_fund_holdings_ai" => run!(args, CodeArgs, |p| api::get_fund_holdings_ai(s, p.code)),
         _ => err_response(StatusCode::NOT_FOUND, format!("bilinmeyen komut: {command}")),
     }
 }

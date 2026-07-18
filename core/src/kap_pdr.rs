@@ -620,6 +620,177 @@ fn stored_period_codes(period: &str) -> std::collections::HashSet<String> {
         .collect()
 }
 
+// ─── Taranmış PDF'ler için AI görüntü analizi ──────────────────────────────────
+//
+// Bazı PDR PDF'leri metin içermez (tarayıcı çıktısı, sayfa başına tek büyük
+// JPEG). Metin ayrıştırıcı boş kalınca kullanıcı isteğiyle (maliyet onun
+// anahtarına işler, arka planda asla) sayfa görüntüleri OpenAI-uyumlu bir
+// görüntü modeline gönderilir ve tablo JSON olarak geri alınır. Ucuz bir
+// görüntü modeli (gpt-4o-mini, gemini-flash) yeterlidir.
+
+/// Gömülü sayfa görüntülerini (DCTDecode/JPEG) çıkarır. Rasterleştirici
+/// gerektirmez: taranmış PDF'ler sayfayı tek JPEG olarak gömer; logo gibi
+/// küçük görseller boyut eşiğiyle elenir. Nesne kimliği sırası ≈ sayfa sırası.
+fn extract_page_images(pdf: &[u8]) -> Vec<Vec<u8>> {
+    let Ok(document) = pdf_extract::Document::load_mem(pdf) else {
+        return Vec::new();
+    };
+    let mut images: Vec<(u32, Vec<u8>)> = Vec::new();
+    for ((id, _generation), object) in document.objects.iter() {
+        let pdf_extract::Object::Stream(stream) = object else { continue };
+        let is_image = matches!(
+            stream.dict.get(b"Subtype"),
+            Ok(pdf_extract::Object::Name(name)) if name == b"Image"
+        );
+        if !is_image {
+            continue;
+        }
+        let is_jpeg = match stream.dict.get(b"Filter") {
+            Ok(pdf_extract::Object::Name(name)) => name == b"DCTDecode",
+            Ok(pdf_extract::Object::Array(filters)) => filters
+                .iter()
+                .any(|f| matches!(f, pdf_extract::Object::Name(name) if name == b"DCTDecode")),
+            _ => false,
+        };
+        // 40 KB altı görseller sayfa taraması değil logo/imza parçasıdır
+        if !is_jpeg || stream.content.len() < 40_000 {
+            continue;
+        }
+        images.push((*id, stream.content.clone()));
+    }
+    images.sort_by_key(|(id, _)| *id);
+    images.into_iter().map(|(_, content)| content).take(4).collect()
+}
+
+#[derive(Deserialize)]
+struct AiHoldingRow {
+    code: String,
+    #[serde(default)]
+    name: String,
+    pct: f64,
+    #[serde(default)]
+    group: String,
+}
+
+/// Sayfa görüntülerini OpenAI-uyumlu görüntü modeline gönderip tabloyu çözer.
+async fn analyze_holdings_images(
+    client: &reqwest::Client,
+    images: &[Vec<u8>],
+    api_url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<Vec<FundHolding>, String> {
+    use base64::Engine as _;
+
+    let mut content = vec![serde_json::json!({
+        "type": "text",
+        "text": "Bu görüntüler bir yatırım fonunun KAP Portföy Dağılım Raporu sayfalarıdır. \
+                 'III-FON PORTFÖY DEĞERİ TABLOSU' bölümündeki HER varlık satırını çıkar. \
+                 Her satır için: code (BIST/varlık kodu, rapordaki ilk belirteç), name (ihraççı ünvanı), \
+                 pct (fon toplam değerine göre yüzde, sayı), group (bulunduğu varlık grubu başlığı, \
+                 ör. 'HİSSE SENETLERİ'; yoksa boş dize). YALNIZCA şu biçimde bir JSON dizisi döndür, \
+                 başka hiçbir şey yazma: [{\"code\":\"ASELS\",\"name\":\"ASELSAN\",\"pct\":3.42,\"group\":\"HİSSE SENETLERİ\"}]"
+    })];
+    for image in images {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:image/jpeg;base64,{encoded}") }
+        }));
+    }
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": "Sen tablo görüntülerinden veri çıkaran hassas bir OCR asistanısın. Yalnızca istenen JSON'u döndürürsün." },
+            { "role": "user", "content": content }
+        ],
+        "temperature": 0,
+        "max_tokens": 4096
+    });
+
+    let response = client
+        .post(api_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .timeout(Duration::from_secs(120))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("AI isteği gönderilemedi: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("AI yanıtı okunamadı: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("AI sağlayıcısı hata döndürdü ({status}): {}", text.chars().take(200).collect::<String>()));
+    }
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|_| "AI yanıtı çözümlenemedi.".to_string())?;
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or("AI yanıtında içerik yok.")?;
+
+    // Model bazen ```json çiti ekler; ilk '[' ile son ']' arası alınır
+    let start = content.find('[').ok_or("AI yanıtında JSON dizisi yok.")?;
+    let end = content.rfind(']').ok_or("AI yanıtında JSON dizisi kapanmıyor.")?;
+    let rows: Vec<AiHoldingRow> = serde_json::from_str(&content[start..=end])
+        .map_err(|error| format!("AI JSON'u ayrıştırılamadı: {error}"))?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|row| !row.code.trim().is_empty() && row.pct > 0.0 && row.pct <= 100.0)
+        .map(|row| FundHolding {
+            code: row.code.trim().to_uppercase(),
+            name: row.name.trim().to_string(),
+            pct: row.pct,
+            group: row.group.trim().to_string(),
+        })
+        .collect())
+}
+
+/// Metin ayrıştırmasının boş kaldığı (taranmış) PDR'yi kullanıcının AI
+/// anahtarıyla görüntüden çözer; sonuç normal akışla aynı önbelleklere yazılır.
+pub async fn get_fund_holdings_ai(
+    client: &reqwest::Client,
+    fund_code: &str,
+    api_url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<Arc<FundHoldingsReport>, String> {
+    let code = fund_code.trim().to_uppercase();
+    let index = pdr_index(client).await?;
+    let (period, map) = index.as_ref();
+    let disclosure_index = *map
+        .get(&code)
+        .ok_or_else(|| format!("{code} için {period} döneminde KAP portföy dağılım raporu yok."))?;
+
+    let pdf = download_pdr_pdf(client, disclosure_index).await?;
+    let images = extract_page_images(&pdf);
+    if images.is_empty() {
+        return Err("PDF içinde çözümlenebilir sayfa görüntüsü bulunamadı.".to_string());
+    }
+
+    let holdings = analyze_holdings_images(client, &images, api_url, api_key, model).await?;
+    if holdings.is_empty() {
+        return Err("AI, görüntüden portföy tablosu çıkaramadı.".to_string());
+    }
+
+    let report = Arc::new(FundHoldingsReport {
+        period: period.clone(),
+        url: format!("{BASE_URL}/Bildirim/{disclosure_index}"),
+        holdings,
+    });
+    HOLDINGS_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(code.clone(), (Instant::now(), report.clone()));
+    store_report(&code, &report);
+    Ok(report)
+}
+
 /// Bir hisseyi portföyünde taşıyan fon kaydı (ters arama sonucu).
 #[derive(Clone, Debug, Serialize)]
 pub struct TickerFundEntry {

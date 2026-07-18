@@ -175,6 +175,7 @@ pub fn run() {
             commands::get_fund_holdings,
             commands::get_fund_returns,
             commands::get_ticker_funds,
+            commands::get_fund_holdings_ai,
             commands::get_live_quotes,
             commands::get_news_feed,
             commands::get_news_preview,

@@ -147,6 +147,11 @@ export function getFundHoldings(code: string) {
   return invoke<FundHoldingsReport>('get_fund_holdings', { code });
 }
 
+/** Taranmış (metinsiz) PDR'yi kullanıcının AI anahtarıyla görüntüden çözer. */
+export function getFundHoldingsAi(code: string) {
+  return invoke<FundHoldingsReport>('get_fund_holdings_ai', { code });
+}
+
 /** Bir hisseyi portföyünde taşıyan fon (birikmiş PDR dizininden). */
 export interface TickerFundRow {
   fund_code: string;

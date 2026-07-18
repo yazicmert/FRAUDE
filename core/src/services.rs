@@ -648,6 +648,51 @@ pub fn fundamental_summary(equity: &EquityRow) -> Vec<String> {
     ]
 }
 
+/// Varsayılan (veya ilk etkin) AI anahtarının çağrıya hazır uç bilgisi.
+/// Görüntü analizi gibi sohbet dışı tekil görevler bunu kullanır.
+pub struct AiAccess {
+    pub api_url: String,
+    pub secret: String,
+    pub model: String,
+    pub provider: String,
+}
+
+pub fn default_ai_access(store: &mut AppStore) -> Option<AiAccess> {
+    let index = store
+        .ai_keys
+        .iter()
+        .position(|key| key.is_default && key.enabled)
+        .or_else(|| store.ai_keys.iter().position(|key| key.enabled))?;
+    let key = &mut store.ai_keys[index];
+    let secret = crate::keychain::resolve_secret(&key.id, &key.secret);
+    if key.secret.is_empty() && !secret.is_empty() {
+        key.secret = secret.clone();
+    }
+    if secret.is_empty() {
+        return None;
+    }
+    let raw_url = key
+        .api_url
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| default_url_for_provider(&key.provider));
+    let api_url = if raw_url.ends_with("/chat/completions") {
+        raw_url
+    } else if raw_url.ends_with('/') {
+        format!("{raw_url}chat/completions")
+    } else {
+        format!("{raw_url}/chat/completions")
+    };
+    Some(AiAccess {
+        api_url,
+        secret,
+        model: key.default_model.clone(),
+        provider: key.provider.clone(),
+    })
+}
+
 fn default_url_for_provider(provider: &str) -> String {
     let lower = provider.to_lowercase();
     if lower.contains("deepseek") {

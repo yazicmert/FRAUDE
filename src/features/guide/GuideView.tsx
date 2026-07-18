@@ -63,7 +63,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     title: 'FRAUDE nasıl kullanılır',
     sub: 'Modüllerin ne işe yaradığını ve AI özelliklerini açmak için kendi API anahtarını sağlayıcıya göre adım adım nasıl ekleyeceğini gösterir.',
     chips: [
-      { label: 'modül', value: '13' },
+      { label: 'modül', value: '14' },
       { label: 'AI sağlayıcı', value: '5' },
       { label: 'varsayılan veri kaynağı', value: '2' },
       { label: 'BIST · XU100 · XHARZ' },
@@ -81,6 +81,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: 'AI', name: 'AI Araştırma', tag: 'Panel + yan', desc: 'Kendi anahtarınla çalışan araştırma asistanı.', items: ['Aktif sekme bağlamıyla soru-cevap', 'Özel AI ajanları (rol + sistem komutu)', 'Ajan bazlı otomatik analiz', 'Sohbet geçmişi'] },
       { code: 'RD', name: 'İzleme Radarı', tag: 'Monitor', desc: 'Takip listeni arka planda tarar.', items: ['Yeni KAP bildirimlerini periyodik kontrol', 'Ortaklık / iş ilişkisi sınıflandırma', 'Zil rozeti + OS bildirimi', 'AI yorumlu uyarılar'] },
       { code: 'CA', name: 'Kurumsal Olaylar', tag: 'Corporate', desc: 'Şirket aksiyonları ve halka arz takvimi.', items: ['Temettü kayıtları', 'Bedelli/bedelsiz sermaye artırımları', 'Halka arz takvimi ve arşivi'] },
+      { code: 'FO', name: 'Fonlar', tag: 'TEFAS', desc: 'TEFAS fonları: getiriler, dağılım ve fon içi varlık kırılımı.', items: ['~3200 fon; tür filtreleri ve getiri sıralaması', 'KAP PDR\'den fon içi tek tek varlıklar', 'Taranmış raporları AI görüntü analiziyle çözme (kendi anahtarınla, ucuz model yeter)', 'Fon karşılaştırma grafiği'] },
       { code: '$_', name: 'Terminal (FQL)', tag: 'Komut', desc: 'Klavyeyle her şeyi süren komut satırı.', items: ['open THYAO — hisse aç', 'scan … — tarama çalıştır', 'kap · sync · ask … · help'] },
       { code: 'TM', name: 'Ekip', tag: 'Team', desc: 'Ekip çalışma alanı ve paylaşılan görünümler.', items: ['Ortak izleme ve araştırma bağlamı'] },
       { code: 'MD', name: 'Modül Merkezi', tag: 'Modules', desc: 'Modülleri açıp kapatma ve güncelleme.', items: ['Modül kataloğu ve kurulum', 'İmzalı güncelleme / geri alma', 'Kenar çubuğu sekmelerini özelleştirme'] },
@@ -202,7 +203,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     title: 'How to use FRAUDE',
     sub: 'Shows what each module does and how to add your own API key — provider by provider — to unlock the AI features.',
     chips: [
-      { label: 'modules', value: '13' },
+      { label: 'modules', value: '14' },
       { label: 'AI providers', value: '5' },
       { label: 'default data sources', value: '2' },
       { label: 'BIST · XU100 · XHARZ' },
@@ -220,6 +221,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: 'AI', name: 'AI Research', tag: 'Panel + side', desc: 'Research assistant powered by your own key.', items: ['Q&A with active-tab context', 'Custom AI agents (role + system prompt)', 'Agent-based auto analysis', 'Chat history'] },
       { code: 'RD', name: 'Watch Radar', tag: 'Monitor', desc: 'Scans your watchlist in the background.', items: ['Periodic checks for new KAP disclosures', 'Ownership / business-relation classification', 'Bell badge + OS notification', 'AI-commented alerts'] },
       { code: 'CA', name: 'Corporate Actions', tag: 'Corporate', desc: 'Corporate actions and IPO calendar.', items: ['Dividend records', 'Rights / bonus capital increases', 'IPO calendar and archive'] },
+      { code: 'FO', name: 'Funds', tag: 'TEFAS', desc: 'TEFAS funds: returns, allocation and per-holding breakdown.', items: ['~3200 funds; kind filters and return sorting', 'Per-security holdings from KAP PDR', 'Scanned reports solved via AI vision analysis (your own key, a cheap model suffices)', 'Fund comparison chart'] },
       { code: '$_', name: 'Terminal (FQL)', tag: 'Command', desc: 'Command line that drives everything from the keyboard.', items: ['open THYAO — open a ticker', 'scan … — run a screen', 'kap · sync · ask … · help'] },
       { code: 'TM', name: 'Team', tag: 'Team', desc: 'Team workspace and shared views.', items: ['Shared watch and research context'] },
       { code: 'MD', name: 'Module Center', tag: 'Modules', desc: 'Enable/disable and update modules.', items: ['Module catalog and install', 'Signed update / rollback', 'Customize sidebar tabs'] },

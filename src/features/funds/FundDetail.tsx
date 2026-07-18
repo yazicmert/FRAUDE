@@ -5,6 +5,7 @@ import {
   getFundDisclosures,
   getFundHistory,
   getFundHoldings,
+  getFundHoldingsAi,
   getFundIssuer,
   type FundAllocation,
   type FundDisclosure,
@@ -64,8 +65,25 @@ export default function FundDetail({ fund }: { fund: FundRow }) {
   const [disclosures, setDisclosures] = useState<FundDisclosure[]>([]);
   const [holdings, setHoldings] = useState<FundHoldingsReport | null>(null);
   const [holdingsError, setHoldingsError] = useState<string | null>(null);
+  const [aiOcrBusy, setAiOcrBusy] = useState(false);
+  const [aiOcrError, setAiOcrError] = useState<string | null>(null);
+  const [aiOcrUsed, setAiOcrUsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState<string | null>(null);
+
+  // Taranmış PDF: kullanıcı isteğiyle sayfa görüntüleri AI'ya gönderilir.
+  // Maliyet kullanıcının anahtarına işlediği için otomatik tetiklenmez.
+  const runAiOcr = () => {
+    setAiOcrBusy(true);
+    setAiOcrError(null);
+    getFundHoldingsAi(fund.code)
+      .then((report) => {
+        setHoldings(report);
+        setAiOcrUsed(true);
+      })
+      .catch((err: unknown) => setAiOcrError(String(err)))
+      .finally(() => setAiOcrBusy(false));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +95,8 @@ export default function FundDetail({ fund }: { fund: FundRow }) {
     setDisclosures([]);
     setHoldings(null);
     setHoldingsError(null);
+    setAiOcrError(null);
+    setAiOcrUsed(false);
 
     // Uçlar bağımsız: biri gelmezse diğerleri yine gösterilir.
     void (async () => {
@@ -294,9 +314,27 @@ export default function FundDetail({ fund }: { fund: FundRow }) {
             <span className="eco-cal-empty">
               {t('fundPdfUnreadable')}
             </span>
-            <button type="button" className="small-button" onClick={() => void openUrl(holdings.url)}>
-              📄 {t('fundOpenReport')}
-            </button>
+            <span className="eco-cal-empty" style={{ fontSize: '0.74rem' }}>
+              {t('fundAiOcrHint')}
+            </span>
+            {aiOcrError && (
+              <span className="eco-cal-empty" style={{ color: '#f85149', fontSize: '0.76rem' }}>
+                {t('fundAiOcrFailed')}{aiOcrError}
+              </span>
+            )}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="small-button"
+                disabled={aiOcrBusy}
+                onClick={runAiOcr}
+              >
+                {aiOcrBusy ? `⏳ ${t('fundAiOcrBusy')}` : `🖼 ${t('fundAiOcr')}`}
+              </button>
+              <button type="button" className="small-button" onClick={() => void openUrl(holdings.url)}>
+                📄 {t('fundOpenReport')}
+              </button>
+            </div>
           </div>
         ) : holdings ? (
           <>
@@ -324,7 +362,10 @@ export default function FundDetail({ fund }: { fund: FundRow }) {
               })()}
             </div>
             <div className="fund-holdings-foot">
-              <span>{t('fundHoldingsFoot', { n: holdings.holdings.length })}</span>
+              <span>
+                {t('fundHoldingsFoot', { n: holdings.holdings.length })}
+                {aiOcrUsed ? ` · ${t('fundAiOcrDone')}` : ''}
+              </span>
               <button type="button" className="small-button" onClick={() => void openUrl(holdings.url)}>
                 📄 {t('fundOpenReport')}
               </button>

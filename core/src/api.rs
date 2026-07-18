@@ -299,6 +299,29 @@ pub async fn get_ticker_funds(
     Ok(TickerFundsPayload { entries, scanned_funds })
 }
 
+/// Taranmış (metin içermeyen) PDR PDF'ini kullanıcının varsayılan AI
+/// anahtarıyla görüntüden çözer. Maliyet kullanıcının hesabına işlediği için
+/// yalnız açık kullanıcı isteğiyle çağrılır; arka plan taraması bunu KULLANMAZ.
+pub async fn get_fund_holdings_ai(
+    state: &AppState,
+    code: String,
+) -> Result<crate::kap_pdr::FundHoldingsReport, String> {
+    let access = {
+        let mut store = state.store.lock().await;
+        crate::services::default_ai_access(&mut store)
+    }
+    .ok_or("Görüntü analizi için Ayarlar › AI Providers'ta etkin bir anahtar gerekli.")?;
+    crate::kap_pdr::get_fund_holdings_ai(
+        &state.http,
+        &code,
+        &access.api_url,
+        &access.secret,
+        &access.model,
+    )
+    .await
+    .map(|report| (*report).clone())
+}
+
 /// Fon kurucusunun KAP kaydı: şirket sayfası bağlantısı ve internet adresi.
 pub async fn get_fund_issuer(
     state: &AppState,

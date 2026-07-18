@@ -2,6 +2,35 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-taranmis-pdr-ai-goruntu-analizi",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Taranmış fon raporları AI görüntü analiziyle çözülüyor",
+        "en": "Scanned fund reports are solved with AI vision analysis"
+      },
+      "summary": {
+        "tr": "Metin içermeyen (taranmış) KAP PDR PDF'leri için fon detayına 'AI ile görüntüden çöz' düğmesi eklendi: gömülü sayfa JPEG'leri rasterleştirme olmadan sökülüp kullanıcının kendi AI anahtarındaki görüntü destekli modele (ucuz bir model yeterli: gpt-4o-mini, gemini-flash) gönderilir, tablo JSON olarak alınır ve normal önbelleklere yazılır. Maliyet kullanıcının hesabına işlediği için yalnız açık istekle çalışır; arka plan taraması asla AI çağırmaz.",
+        "en": "For text-free (scanned) KAP PDR PDFs, the fund detail gained an 'Extract with AI vision' button: embedded page JPEGs are pulled without rasterization and sent to the vision-capable model on the user's own AI key (a cheap model suffices: gpt-4o-mini, gemini-flash); the table comes back as JSON and lands in the normal caches. Since costs bill to the user's account it only runs on explicit request; background crawling never calls AI."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "core/src/kap_pdr.rs",
+        "core/src/services.rs",
+        "core/src/api.rs",
+        "src/features/funds/FundDetail.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. KAP PDR modülüne (core/src/kap_pdr.rs) gömülü sayfa görüntüsü çıkarıcı ekle: lopdf/pdf_extract ile PDF nesnelerini gez, Subtype=Image ve Filter DCTDecode olan 40 KB üstü akışların ham içeriğini (JPEG) topla; nesne kimliğine göre sırala, en fazla 4 görüntü al. Rasterleştirici bağımlılığı EKLEME — taranmış PDF'ler sayfayı zaten JPEG olarak gömer.\n2. Görüntüleri OpenAI-uyumlu chat/completions ucuna gönderen bir analiz fonksiyonu yaz: system mesajı OCR asistanı; user içeriği, 'III-FON PORTFÖY DEĞERİ TABLOSU'ndaki satırları [{code,name,pct,group}] JSON dizisi olarak isteyen bir metin + data:image/jpeg;base64 image_url girdileri. temperature 0, geniş max_tokens; yanıtta ilk '[' ile son ']' arasını ayrıştır, pct 0-100 dışını ve boş kodları ele.\n3. get_fund_holdings_ai(client, code, api_url, key, model): PDR indeksinden bildirim PDF'ini indir, görüntüleri çıkar (yoksa açıklayıcı hata), analizden gelen varlıklarla FundHoldingsReport kur ve normal bellek + disk önbelleklerine yaz.\n4. AI erişimi: mevcut anahtar deposundan varsayılan (ya da ilk etkin) anahtarın çözülmüş sırrı, modeli ve chat/completions uç adresini döndüren bir yardımcı ekle (services katmanı); komut katmanında bunu kullanan get_fund_holdings_ai komutunu masaüstü ve server rpc allowlist'ine kaydet.\n5. Fon detayında (FundDetail) 'PDF okunamadı' durumuna maliyet uyarılı bir ipucu ve 'AI ile görüntüden çöz' düğmesi ekle: çağrı sürerken beklet, başarıda tabloyu göster ve altbilgiye 'AI görüntü analiziyle çözüldü' notu düş, hatada mesaj göster. Arka plan taramasından ASLA çağırma — maliyet kullanıcının anahtarına işler.\n\nKabul: core'da 'cargo test', src-tauri'de 'cargo check', kökte 'npx tsc --noEmit' ve 'npx vite build' geçmeli.",
+      "notes": {
+        "tr": "Görüntü analizi için Ayarlar › AI Providers'ta görüntü destekleyen bir modelle etkin anahtar gerekir (gpt-4o-mini veya gemini-flash önerilir; DeepSeek görüntü desteklemez).",
+        "en": "Vision analysis needs an enabled key in Settings › AI Providers with a vision-capable model (gpt-4o-mini or gemini-flash recommended; DeepSeek has no vision support)."
+      }
+    },
+    {
       "id": "2026-07-18-eposta-dogrulama-derin-baglanti",
       "date": "2026-07-18",
       "author": "yazicmert",
