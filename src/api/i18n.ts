@@ -819,6 +819,23 @@ export const translations = {
     updIssueTooLong:
       'Gönderim taslak URL sınırını aştı: kayıt JSON panoya kopyalandı, açılan sayfaya yapıştırın.',
     updCancel: 'Vazgeç',
+    updEyebrow: 'Topluluk Kanalı',
+    updFilterAll: 'Tümü',
+    updBannerSub: 'Kurulum dosyası indirilir; kurulum sonrası uygulamayı yeniden açın.',
+    updLastCheck: 'son kontrol',
+    updCount: 'güncelleme',
+    updLatestPkg: 'son paket',
+    updFldToken: 'GitHub token (isteğe bağlı)',
+    updTokenHint:
+      'Token verilirse gönderim sizin adınıza otomatik PR olarak açılır (public_repo yetkisi yeter); verilmezse önceden doldurulmuş bir GitHub taslağı açılır. Token yalnız bu cihazda saklanır.',
+    updOpenPr: 'Otomatik PR Aç ↗',
+    updPrStepUser: 'Hesap doğrulanıyor…',
+    updPrStepFork: 'Depo çatalı (fork) hazırlanıyor…',
+    updPrStepBranch: 'Dal oluşturuluyor…',
+    updPrStepCommit: 'Kayıt işleniyor…',
+    updPrStepPr: 'PR açılıyor…',
+    updPrDone: '✓ PR açıldı — tarayıcıda görüntüleniyor',
+    updPrFailed: 'PR açılamadı: ',
   },
   en: {
     dashboard: 'Dashboard',
@@ -1639,6 +1656,23 @@ export const translations = {
     updIssueTooLong:
       'The submission exceeded the draft URL limit: the entry JSON was copied to your clipboard, paste it into the opened page.',
     updCancel: 'Cancel',
+    updEyebrow: 'Community Channel',
+    updFilterAll: 'All',
+    updBannerSub: 'Downloads the installer; reopen the app after installing.',
+    updLastCheck: 'last check',
+    updCount: 'updates',
+    updLatestPkg: 'latest package',
+    updFldToken: 'GitHub token (optional)',
+    updTokenHint:
+      'With a token, the submission opens as an automatic PR on your behalf (public_repo scope is enough); without one, a prefilled GitHub draft opens. The token is stored only on this device.',
+    updOpenPr: 'Open Automatic PR ↗',
+    updPrStepUser: 'Verifying account…',
+    updPrStepFork: 'Preparing fork…',
+    updPrStepBranch: 'Creating branch…',
+    updPrStepCommit: 'Committing entry…',
+    updPrStepPr: 'Opening PR…',
+    updPrDone: '✓ PR opened — showing in browser',
+    updPrFailed: 'Could not open PR: ',
   }
 };
 

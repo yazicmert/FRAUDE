@@ -1,0 +1,212 @@
+/* FRAUDE — Ayarlar > Güncellemeler sekmesi.
+   Uygulama token'ları (index.css): --accent-primary #00ff9d, --accent-secondary,
+   --bg-panel, --bg-hover, --border-color, --font-mono. Tek koyu tema. */
+
+.upd-view {
+  max-width: 940px;
+  padding: 8px 0 48px;
+  user-select: text;
+  animation: upd-fade 0.25s ease;
+}
+@keyframes upd-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Başlık ───────────────────────────────────────── */
+.upd-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.upd-head-text { flex: 1; min-width: 260px; }
+.upd-eyebrow {
+  font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--accent-primary); margin: 0 0 6px;
+  display: flex; align-items: center; gap: 10px;
+}
+.upd-eyebrow::before { content: ""; width: 20px; height: 1px; background: var(--accent-primary); }
+.upd-title { font-family: var(--font-mono); font-size: 1.45rem; font-weight: 700; margin: 0; }
+.upd-sub { color: var(--text-muted); font-size: 0.86rem; margin: 6px 0 0; max-width: 62ch; }
+.upd-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+
+/* ── Butonlar ─────────────────────────────────────── */
+.upd-btn {
+  font-family: var(--font-mono); font-size: 0.74rem; font-weight: 600;
+  padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  background: var(--bg-panel); color: var(--text-main);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.upd-btn:hover:not(:disabled) {
+  border-color: rgba(0, 255, 157, 0.45);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+.upd-btn:disabled { opacity: 0.55; cursor: default; }
+.upd-btn.primary {
+  background: var(--accent-primary); color: #04140c; border-color: transparent;
+}
+.upd-btn.primary:hover:not(:disabled) {
+  box-shadow: 0 4px 18px rgba(0, 255, 157, 0.25);
+  background: var(--accent-primary);
+}
+.upd-btn.danger-ghost { color: var(--text-muted); }
+
+/* ── Durum şeridi ─────────────────────────────────── */
+.upd-status { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 0; }
+.upd-chip {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted);
+  border: 1px solid var(--border-color); border-radius: 999px;
+  padding: 4px 11px; background: var(--bg-panel);
+}
+.upd-chip b { color: var(--text-main); font-weight: 600; }
+.upd-chip.ok { color: #3fb950; border-color: rgba(63, 185, 80, 0.35); }
+
+/* Yeni sürüm bandı */
+.upd-banner {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 14px; padding: 14px 18px; border-radius: 10px;
+  background: linear-gradient(90deg, rgba(0, 255, 157, 0.10), rgba(0, 195, 255, 0.06));
+  border: 1px solid rgba(0, 255, 157, 0.35);
+}
+.upd-banner-text { flex: 1; min-width: 220px; }
+.upd-banner-title { font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; margin: 0; color: var(--accent-primary); }
+.upd-banner-sub { color: var(--text-muted); font-size: 0.78rem; margin: 3px 0 0; }
+
+/* ── Filtre pillleri ──────────────────────────────── */
+.upd-filters { display: flex; gap: 8px; margin: 18px 0 14px; }
+.upd-filter {
+  font-family: var(--font-mono); font-size: 0.72rem; padding: 5px 13px;
+  border-radius: 999px; cursor: pointer; background: transparent;
+  color: var(--text-muted); border: 1px solid var(--border-color);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.upd-filter:hover { color: var(--text-main); }
+.upd-filter.active {
+  color: #04140c; background: var(--accent-primary); border-color: transparent; font-weight: 700;
+}
+
+/* ── Kartlar ──────────────────────────────────────── */
+.upd-card {
+  position: relative; overflow: hidden;
+  background: var(--bg-panel); border: 1px solid var(--border-color);
+  border-radius: 10px; padding: 15px 18px 14px 22px; margin-bottom: 12px;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.upd-card:hover {
+  border-color: rgba(0, 255, 157, 0.3); transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+.upd-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+}
+.upd-card.kind-feature::before { background: linear-gradient(180deg, var(--accent-primary), rgba(0, 255, 157, 0.15)); }
+.upd-card.kind-fix::before { background: linear-gradient(180deg, #f85149, rgba(248, 81, 73, 0.15)); }
+
+.upd-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.upd-badge {
+  font-size: 0.66rem; font-weight: 700; padding: 2px 9px; border-radius: 999px;
+  letter-spacing: 0.03em;
+}
+.upd-badge.kind-feature { background: rgba(0, 255, 157, 0.12); color: var(--accent-primary); }
+.upd-badge.kind-fix { background: rgba(248, 81, 73, 0.14); color: #f85149; }
+.upd-badge.area { background: var(--bg-hover); color: var(--text-muted); font-family: var(--font-mono); font-weight: 600; }
+.upd-sec { font-size: 0.7rem; color: #3fb950; }
+.upd-meta {
+  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted);
+}
+.upd-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid var(--border-color); background: var(--bg-hover);
+}
+
+.upd-card-title { font-size: 1.02rem; font-weight: 700; margin: 10px 0 5px; color: var(--text-main); }
+.upd-card-sum { color: var(--text-muted); font-size: 0.84rem; line-height: 1.55; margin: 0 0 12px; }
+
+.upd-card-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.upd-ship { font-size: 0.73rem; }
+.upd-ship.in { color: #3fb950; }
+.upd-ship.out { color: #d29922; }
+.upd-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--accent-secondary); font-size: 0.73rem;
+}
+.upd-link:hover { text-decoration: underline; }
+.upd-card-foot .upd-btn { margin-left: auto; padding: 5px 13px; }
+
+/* ── Prompt paneli ────────────────────────────────── */
+.upd-prompt { margin-top: 12px; animation: upd-fade 0.2s ease; }
+.upd-prompt-hint { color: var(--text-muted); font-size: 0.76rem; margin: 0 0 8px; max-width: 74ch; }
+.upd-code { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.upd-code-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.upd-code-bar button {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--accent-primary);
+}
+.upd-code pre {
+  margin: 0; padding: 12px 14px; max-height: 300px; overflow-y: auto;
+  font-size: 0.74rem; line-height: 1.6; white-space: pre-wrap;
+  background: var(--bg-dark); color: var(--text-main);
+}
+.upd-note {
+  margin: 10px 0 0; padding: 9px 13px; font-size: 0.76rem; color: #d29922;
+  background: rgba(210, 153, 34, 0.08); border-left: 3px solid #d29922; border-radius: 0 6px 6px 0;
+}
+
+/* ── Gönderim paneli ──────────────────────────────── */
+.upd-form {
+  background: var(--bg-panel); border: 1px solid rgba(0, 255, 157, 0.25);
+  border-radius: 10px; padding: 18px 20px; margin: 16px 0;
+  animation: upd-fade 0.2s ease;
+}
+.upd-form h3 { font-family: var(--font-mono); margin: 0 0 4px; font-size: 1rem; }
+.upd-form-hint { color: var(--text-muted); font-size: 0.77rem; margin: 0 0 14px; max-width: 76ch; }
+.upd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.upd-form label { display: block; margin-bottom: 12px; font-size: 0.74rem; color: var(--text-muted); }
+.upd-form input, .upd-form select, .upd-form textarea {
+  display: block; width: 100%; margin-top: 4px; box-sizing: border-box;
+  background: var(--bg-dark); border: 1px solid var(--border-color);
+  border-radius: 7px; color: var(--text-main); padding: 8px 11px; font-size: 0.82rem;
+  transition: border-color 0.15s;
+}
+.upd-form input:focus, .upd-form select:focus, .upd-form textarea:focus {
+  outline: none; border-color: rgba(0, 255, 157, 0.5);
+}
+.upd-form textarea { resize: vertical; }
+.upd-form .mono { font-family: var(--font-mono); }
+.upd-token-box {
+  margin: 4px 0 14px; padding: 11px 14px; border-radius: 8px;
+  background: var(--bg-dark); border: 1px dashed var(--border-color);
+}
+.upd-token-box label { margin-bottom: 0; }
+.upd-token-hint { font-size: 0.7rem; color: var(--text-muted); margin: 6px 0 0; }
+.upd-form-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.upd-form-err { color: #f85149; font-size: 0.78rem; margin: 0 0 8px; }
+.upd-progress {
+  font-family: var(--font-mono); font-size: 0.74rem; color: var(--accent-primary);
+}
+.upd-progress.err { color: #f85149; }
+
+/* ── İskelet / durumlar ───────────────────────────── */
+.upd-skel {
+  height: 118px; border-radius: 10px; margin-bottom: 12px;
+  background: linear-gradient(100deg, var(--bg-panel) 40%, var(--bg-hover) 50%, var(--bg-panel) 60%);
+  background-size: 200% 100%; animation: upd-shimmer 1.4s infinite linear;
+  border: 1px solid var(--border-color);
+}
+@keyframes upd-shimmer { to { background-position: -200% 0; } }
+.upd-state {
+  text-align: center; padding: 36px 16px; color: var(--text-muted);
+  border: 1px dashed var(--border-color); border-radius: 10px; font-size: 0.85rem;
+}
+.upd-state .ico { font-size: 1.6rem; display: block; margin-bottom: 8px; }
+
+@media (max-width: 720px) {
+  .upd-grid { grid-template-columns: 1fr; }
+  .upd-meta { margin-left: 0; }
+  .upd-card-foot .upd-btn { margin-left: 0; }
+}

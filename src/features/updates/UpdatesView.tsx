@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { CORE_VERSION } from '../../modules/workspaceRegistry';
 import { openUrl } from '../../lib/openExternal';
+import { submitUpdateViaPr, type PrStep } from './githubSubmit';
+import './UpdatesView.css';
 
 // Topluluk güncellemeleri deponun main dalındaki updates/registry.json'dan
 // okunur. Merge = güvenlik onayı; merge edilmemiş kayıt burada görünmez.
-// Gönderimler GitHub'da issue olarak açılır; akış updates/README.md'de.
+// Gönderim: token varsa otomatik PR (githubSubmit), yoksa önceden doldurulmuş
+// issue taslağı. Akışın tamamı updates/README.md'de belgelidir.
 const REPO = 'yazicmert/FRAUDE';
 const REGISTRY_URL = `https://raw.githubusercontent.com/${REPO}/main/updates/registry.json`;
 const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -14,6 +17,7 @@ const NEW_ISSUE_URL = `https://github.com/${REPO}/issues/new`;
 const DOWNLOAD_MAC = `https://github.com/${REPO}/releases/latest/download/FRAUDE-Terminal_macos_arm64.dmg`;
 const DOWNLOAD_WIN = `https://github.com/${REPO}/releases/latest/download/FRAUDE-Terminal_windows_x64-setup.exe`;
 const CACHE_KEY = 'fraude-updates-cache';
+const TOKEN_KEY = 'fraude-github-token';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 // GitHub ~8 KB üzerindeki URL'leri reddeder; taslak gövde bunu aşarsa
 // JSON panoya kopyalanıp boş issue sayfası açılır.
@@ -110,7 +114,7 @@ const EMPTY_FORM: SubmitForm = {
   summaryTr: '', summaryEn: '', prompt: '', touches: '', commit: '',
 };
 
-function buildEntry(form: SubmitForm): Record<string, unknown> {
+function buildEntry(form: SubmitForm) {
   const today = new Date().toISOString().slice(0, 10);
   return {
     id: `${today}-${slugify(form.titleTr)}`,
@@ -129,19 +133,25 @@ function buildEntry(form: SubmitForm): Record<string, unknown> {
   };
 }
 
+type Filter = 'all' | 'feature' | 'fix';
+
 export default function UpdatesView() {
   const { t, lang } = useTranslation();
+  const locale = (lang === 'en' ? 'en' : 'tr') as 'tr' | 'en';
   const [updates, setUpdates] = useState<CommunityUpdate[] | null>(null);
   const [latestTag, setLatestTag] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [downloadNote, setDownloadNote] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
   const [form, setForm] = useState<SubmitForm>(EMPTY_FORM);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
   const [formError, setFormError] = useState<string | null>(null);
+  const [prStep, setPrStep] = useState<PrStep | 'done' | null>(null);
   const [jsonCopied, setJsonCopied] = useState(false);
 
   const check = useCallback(async (force: boolean) => {
@@ -161,7 +171,7 @@ export default function UpdatesView() {
       const registry = (await res.json()) as UpdatesRegistry;
       if (!Array.isArray(registry.updates)) throw new Error('invalid registry');
 
-      // Son paket sürümü ayrı uçtan gelir; erişilemezse kayıt listesi yine gösterilir
+      // Son paket sürümü ayrı uçtan gelir; erişilemezse liste yine gösterilir
       let tag: string | null = null;
       try {
         const rel = await fetch(LATEST_RELEASE_API, { headers: { accept: 'application/vnd.github+json' } });
@@ -176,7 +186,10 @@ export default function UpdatesView() {
       setUpdates(registry.updates);
       setLatestTag(tag);
       setCheckedAt(new Date().toLocaleTimeString());
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), registry, latestTag: tag } satisfies UpdatesCache));
+      localStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ fetchedAt: Date.now(), registry, latestTag: tag } satisfies UpdatesCache),
+      );
     } catch {
       // Ağ yoksa bayat önbellek boş ekrandan iyidir
       const cached = readCache();
@@ -209,12 +222,17 @@ export default function UpdatesView() {
     });
   };
 
-  const submitToGithub = () => {
+  const validateForm = (): boolean => {
     if (!form.author.trim() || !form.titleTr.trim() || !form.summaryTr.trim() || !form.prompt.trim()) {
       setFormError(t('updFormMissing'));
-      return;
+      return false;
     }
     setFormError(null);
+    return true;
+  };
+
+  const submitViaIssue = () => {
+    if (!validateForm()) return;
     const entry = buildEntry(form);
     const json = JSON.stringify(entry, null, 2);
     const body = [
@@ -225,250 +243,305 @@ export default function UpdatesView() {
       json,
       '```',
     ].join('\n');
-    const url = `${NEW_ISSUE_URL}?labels=update-submission&title=${encodeURIComponent(`[Güncelleme] ${form.titleTr.trim()}`)}&body=${encodeURIComponent(body)}`;
+    const titleParam = encodeURIComponent(`[Güncelleme] ${form.titleTr.trim()}`);
+    const url = `${NEW_ISSUE_URL}?labels=update-submission&title=${titleParam}&body=${encodeURIComponent(body)}`;
     if (url.length > MAX_ISSUE_URL_LEN) {
       navigator.clipboard.writeText(json).then(() => {
         setFormError(t('updIssueTooLong'));
-        void openUrl(`${NEW_ISSUE_URL}?labels=update-submission&title=${encodeURIComponent(`[Güncelleme] ${form.titleTr.trim()}`)}`);
+        void openUrl(`${NEW_ISSUE_URL}?labels=update-submission&title=${titleParam}`);
       });
       return;
     }
     void openUrl(url);
   };
 
+  const submitViaPr = async () => {
+    if (!validateForm()) return;
+    localStorage.setItem(TOKEN_KEY, token.trim());
+    setPrStep('user');
+    try {
+      const url = await submitUpdateViaPr(token.trim(), buildEntry(form), setPrStep);
+      setPrStep('done');
+      void openUrl(url);
+    } catch (err) {
+      setPrStep(null);
+      setFormError(t('updPrFailed') + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const copyEntryJson = () => {
-    const entry = buildEntry(form);
-    navigator.clipboard.writeText(JSON.stringify(entry, null, 2)).then(() => {
+    if (!validateForm()) return;
+    navigator.clipboard.writeText(JSON.stringify(buildEntry(form), null, 2)).then(() => {
       setJsonCopied(true);
       setTimeout(() => setJsonCopied(false), 2000);
     });
   };
 
-  const inputStyle = {
-    width: '100%', background: '#161b22', border: '1px solid #30363d',
-    borderRadius: '6px', color: '#c9d1d9', padding: '7px 10px', fontSize: '0.82rem',
-  } as const;
-  const labelStyle = { display: 'block', marginBottom: '10px', fontSize: '0.78rem', color: '#8b949e' } as const;
-  const btnStyle = (primary: boolean, disabled = false) => ({
-    padding: '6px 14px',
-    background: disabled ? '#30363d' : primary ? '#238636' : 'transparent',
-    color: disabled ? '#8b949e' : primary ? '#fff' : '#c9d1d9',
-    border: primary ? 'none' : '1px solid #30363d',
-    borderRadius: '6px',
-    cursor: disabled ? 'default' : 'pointer',
-    fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 'bold',
-  } as const);
+  const prStepLabel: Record<PrStep | 'done', string> = {
+    user: t('updPrStepUser'),
+    fork: t('updPrStepFork'),
+    branch: t('updPrStepBranch'),
+    commit: t('updPrStepCommit'),
+    pr: t('updPrStepPr'),
+    done: t('updPrDone'),
+  };
+
+  const visible = (updates ?? []).filter((u) => filter === 'all' || u.kind === filter);
+  const busyPr = prStep !== null && prStep !== 'done';
 
   return (
-    <div style={{ padding: '20px 0', maxWidth: '900px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
-        <h2 style={{ margin: 0 }}>{t('updates')}</h2>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => check(true)} disabled={checking} style={btnStyle(false, checking)}>
-          {checking ? t('updChecking') : `⟳ ${t('updCheck')}`}
-        </button>
-        <button onClick={() => { setShowSubmit((v) => !v); setFormError(null); }} style={btnStyle(false)}>
-          ＋ {t('updSubmit')}
-        </button>
-        {newVersionAvailable && (
-          <button onClick={downloadInstaller} style={btnStyle(true)}>
-            ⬆ {t('updUpdateApp')}
+    <div className="upd-view">
+      <div className="upd-head">
+        <div className="upd-head-text">
+          <p className="upd-eyebrow">{t('updEyebrow')}</p>
+          <h2 className="upd-title">{t('updates')}</h2>
+          <p className="upd-sub">{t('updatesSub')}</p>
+        </div>
+        <div className="upd-actions">
+          <button className="upd-btn" onClick={() => check(true)} disabled={checking}>
+            {checking ? t('updChecking') : `⟳ ${t('updCheck')}`}
           </button>
+          <button
+            className="upd-btn"
+            onClick={() => { setShowSubmit((v) => !v); setFormError(null); setPrStep(null); }}
+          >
+            ＋ {t('updSubmit')}
+          </button>
+        </div>
+      </div>
+
+      <div className="upd-status">
+        {checkedAt && updates !== null && (
+          <span className="upd-chip">
+            {t('updLastCheck')} <b>{checkedAt}</b> · <b>{updates.length}</b> {t('updCount')}
+          </span>
+        )}
+        {latestTag !== null && (
+          <span className="upd-chip">
+            {t('updLatestPkg')} <b>v{latestTag}</b>
+          </span>
+        )}
+        {latestTag !== null && !newVersionAvailable && (
+          <span className="upd-chip ok">✓ {t('updUpToDate').replace('{v}', CORE_VERSION)}</span>
         )}
       </div>
-      <p style={{ color: '#8b949e', fontSize: '0.85rem', marginTop: 0 }}>{t('updatesSub')}</p>
 
-      {checkedAt && updates !== null && (
-        <p style={{ color: '#8b949e', fontSize: '0.78rem' }}>
-          {checkedAt} · {(latestTag
-            ? t('updCheckStatus').replace('{v}', latestTag)
-            : t('updCheckStatusNoRelease')
-          ).replace('{n}', String(updates.length))}
-        </p>
+      {newVersionAvailable && (
+        <div className="upd-banner">
+          <div className="upd-banner-text">
+            <p className="upd-banner-title">⬆ {t('updNewVersion').replace('{v}', latestTag as string)}</p>
+            <p className="upd-banner-sub">{t('updBannerSub')}</p>
+          </div>
+          <button className="upd-btn primary" onClick={downloadInstaller}>
+            {t('updUpdateApp')}
+          </button>
+        </div>
       )}
-      {latestTag !== null && (
-        newVersionAvailable ? (
-          <p style={{ color: '#d29922', fontSize: '0.85rem', fontWeight: 'bold' }}>
-            ⬆ {t('updNewVersion').replace('{v}', latestTag)}
-          </p>
-        ) : (
-          <p style={{ color: '#3fb950', fontSize: '0.85rem' }}>
-            ✓ {t('updUpToDate').replace('{v}', CORE_VERSION)}
-          </p>
-        )
-      )}
-      {downloadNote && (
-        <p style={{ color: '#58a6ff', fontSize: '0.8rem' }}>{t('updDownloadStarted')}</p>
-      )}
+      {downloadNote && <p className="upd-chip ok" style={{ display: 'inline-block', marginTop: 10 }}>{t('updDownloadStarted')}</p>}
 
       {showSubmit && (
-        <div style={{
-          border: '1px solid #30363d', borderRadius: '8px', padding: '16px',
-          marginBottom: '16px', background: '#0d1117',
-        }}>
-          <h3 style={{ marginTop: 0 }}>{t('updSubmit')}</h3>
-          <p style={{ color: '#8b949e', fontSize: '0.78rem' }}>
+        <div className="upd-form">
+          <h3>{t('updSubmit')}</h3>
+          <p className="upd-form-hint">
             {t('updSubmitHint')}{' '}
-            <button onClick={() => void openUrl(CONTRIBUTING_URL)} style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', padding: 0, fontSize: '0.78rem' }}>
+            <button className="upd-link" onClick={() => void openUrl(CONTRIBUTING_URL)}>
               {t('updContributeLink')}
             </button>
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <label style={labelStyle}>
+          <div className="upd-grid">
+            <label>
               {t('updFldAuthor')}
-              <input style={inputStyle} value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} />
+              <input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} />
             </label>
-            <div style={{ display: 'flex', gap: '16px' }}>
-              <label style={{ ...labelStyle, flex: 1 }}>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <label style={{ flex: 1 }}>
                 {t('updFldKind')}
-                <select style={inputStyle} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as 'fix' | 'feature' })}>
+                <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as 'fix' | 'feature' })}>
                   <option value="fix">{t('updKindFix')}</option>
                   <option value="feature">{t('updKindFeature')}</option>
                 </select>
               </label>
-              <label style={{ ...labelStyle, flex: 1 }}>
+              <label style={{ flex: 1 }}>
                 {t('updFldArea')}
-                <select style={inputStyle} value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })}>
-                  {['app', 'core', 'site', 'server', 'infra'].map((a) => <option key={a} value={a}>{a}</option>)}
+                <select value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })}>
+                  {['app', 'core', 'site', 'server', 'infra'].map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
                 </select>
               </label>
             </div>
-            <label style={labelStyle}>
+            <label>
               {t('updFldTitleTr')}
-              <input style={inputStyle} value={form.titleTr} onChange={(e) => setForm({ ...form, titleTr: e.target.value })} />
+              <input value={form.titleTr} onChange={(e) => setForm({ ...form, titleTr: e.target.value })} />
             </label>
-            <label style={labelStyle}>
+            <label>
               {t('updFldTitleEn')}
-              <input style={inputStyle} value={form.titleEn} onChange={(e) => setForm({ ...form, titleEn: e.target.value })} />
+              <input value={form.titleEn} onChange={(e) => setForm({ ...form, titleEn: e.target.value })} />
             </label>
-            <label style={labelStyle}>
+            <label>
               {t('updFldSummaryTr')}
-              <textarea style={{ ...inputStyle, minHeight: '58px' }} value={form.summaryTr} onChange={(e) => setForm({ ...form, summaryTr: e.target.value })} />
+              <textarea rows={3} value={form.summaryTr} onChange={(e) => setForm({ ...form, summaryTr: e.target.value })} />
             </label>
-            <label style={labelStyle}>
+            <label>
               {t('updFldSummaryEn')}
-              <textarea style={{ ...inputStyle, minHeight: '58px' }} value={form.summaryEn} onChange={(e) => setForm({ ...form, summaryEn: e.target.value })} />
+              <textarea rows={3} value={form.summaryEn} onChange={(e) => setForm({ ...form, summaryEn: e.target.value })} />
             </label>
           </div>
-          <label style={labelStyle}>
+          <label>
             {t('updFldPrompt')}
             <textarea
-              style={{ ...inputStyle, minHeight: '120px', fontFamily: 'var(--font-mono)' }}
+              rows={6}
+              className="mono"
               placeholder={t('updFldPromptPh')}
               value={form.prompt}
               onChange={(e) => setForm({ ...form, prompt: e.target.value })}
             />
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <label style={labelStyle}>
+          <div className="upd-grid">
+            <label>
               {t('updFldTouches')}
-              <input style={inputStyle} value={form.touches} onChange={(e) => setForm({ ...form, touches: e.target.value })} />
+              <input value={form.touches} onChange={(e) => setForm({ ...form, touches: e.target.value })} />
             </label>
-            <label style={labelStyle}>
+            <label>
               {t('updFldCommit')}
-              <input style={inputStyle} value={form.commit} onChange={(e) => setForm({ ...form, commit: e.target.value })} />
+              <input value={form.commit} onChange={(e) => setForm({ ...form, commit: e.target.value })} />
             </label>
           </div>
-          {formError && <p style={{ color: '#f85149', fontSize: '0.8rem' }}>{formError}</p>}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={submitToGithub} style={btnStyle(true)}>{t('updOpenIssue')}</button>
-            <button onClick={copyEntryJson} style={btnStyle(false)}>
+          <div className="upd-token-box">
+            <label>
+              {t('updFldToken')}
+              <input
+                type="password"
+                className="mono"
+                value={token}
+                autoComplete="off"
+                onChange={(e) => setToken(e.target.value)}
+              />
+            </label>
+            <p className="upd-token-hint">{t('updTokenHint')}</p>
+          </div>
+          {formError && <p className="upd-form-err">{formError}</p>}
+          <div className="upd-form-actions">
+            {token.trim() ? (
+              <button className="upd-btn primary" onClick={() => void submitViaPr()} disabled={busyPr}>
+                {t('updOpenPr')}
+              </button>
+            ) : (
+              <button className="upd-btn primary" onClick={submitViaIssue}>
+                {t('updOpenIssue')}
+              </button>
+            )}
+            <button className="upd-btn" onClick={copyEntryJson}>
               {jsonCopied ? t('updJsonCopied') : `⧉ ${t('updCopyJson')}`}
             </button>
-            <button onClick={() => { setShowSubmit(false); setForm(EMPTY_FORM); setFormError(null); }} style={btnStyle(false)}>
+            <button
+              className="upd-btn danger-ghost"
+              onClick={() => { setShowSubmit(false); setForm(EMPTY_FORM); setFormError(null); setPrStep(null); }}
+            >
               {t('updCancel')}
             </button>
+            {prStep && <span className="upd-progress">{prStepLabel[prStep]}</span>}
           </div>
         </div>
       )}
 
-      {updates === null && checking && <p style={{ color: '#8b949e' }}>{t('updatesLoading')}</p>}
-      {error && <p style={{ color: '#f85149' }}>{t('updatesLoadFailed')}</p>}
-      {updates !== null && updates.length === 0 && (
-        <p style={{ color: '#8b949e' }}>{t('updatesEmpty')}</p>
+      <div className="upd-filters">
+        {(['all', 'feature', 'fix'] as const).map((f) => (
+          <button
+            key={f}
+            className={`upd-filter${filter === f ? ' active' : ''}`}
+            onClick={() => setFilter(f)}
+          >
+            {f === 'all' ? t('updFilterAll') : f === 'feature' ? t('updKindFeature') : t('updKindFix')}
+          </button>
+        ))}
+      </div>
+
+      {updates === null && !error && (
+        <>
+          <div className="upd-skel" />
+          <div className="upd-skel" />
+        </>
+      )}
+      {error && (
+        <div className="upd-state">
+          <span className="ico">⚠</span>
+          {t('updatesLoadFailed')}
+        </div>
+      )}
+      {updates !== null && visible.length === 0 && (
+        <div className="upd-state">
+          <span className="ico">◌</span>
+          {t('updatesEmpty')}
+        </div>
       )}
 
-      {(updates ?? []).map((update) => {
+      {visible.map((update) => {
         const included = update.includedIn !== null && versionLte(update.includedIn, CORE_VERSION);
         const shippedInNewer = update.includedIn !== null && !included;
         const open = expanded === update.id;
         return (
-          <div
-            key={update.id}
-            style={{
-              border: '1px solid #30363d', borderRadius: '8px',
-              padding: '14px 16px', marginBottom: '12px', background: '#0d1117',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{
-                padding: '2px 8px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold',
-                background: update.kind === 'fix' ? '#f8514922' : '#23863622',
-                color: update.kind === 'fix' ? '#f85149' : '#3fb950',
-              }}>
+          <div className={`upd-card kind-${update.kind}`} key={update.id}>
+            <div className="upd-card-head">
+              <span className={`upd-badge kind-${update.kind}`}>
                 {update.kind === 'fix' ? t('updKindFix') : t('updKindFeature')}
               </span>
-              <span style={{
-                padding: '2px 8px', borderRadius: '10px', fontSize: '0.68rem',
-                background: '#30363d', color: '#8b949e', fontFamily: 'var(--font-mono)',
-              }}>
-                {update.area}
-              </span>
-              {update.security.reviewed && (
-                <span style={{ fontSize: '0.7rem', color: '#3fb950' }}>{t('updSecurityOk')}</span>
-              )}
-              <div style={{ flex: 1 }} />
-              <span style={{ fontSize: '0.72rem', color: '#8b949e', fontFamily: 'var(--font-mono)' }}>
-                {update.date} · {update.author}
+              <span className="upd-badge area">{update.area}</span>
+              {update.security.reviewed && <span className="upd-sec">{t('updSecurityOk')}</span>}
+              <span className="upd-meta">
+                <img
+                  className="upd-avatar"
+                  src={`https://github.com/${update.author}.png?size=40`}
+                  alt=""
+                  loading="lazy"
+                  onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
+                />
+                {update.author} · {update.date}
               </span>
             </div>
 
-            <h3 style={{ margin: '10px 0 6px' }}>{update.title[lang as 'tr' | 'en']}</h3>
-            <p style={{ color: '#c9d1d9', fontSize: '0.85rem', margin: '0 0 10px' }}>
-              {update.summary[lang as 'tr' | 'en']}
-            </p>
+            <h3 className="upd-card-title">{update.title[locale]}</h3>
+            <p className="upd-card-sum">{update.summary[locale]}</p>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div className="upd-card-foot">
               {included ? (
-                <span style={{ fontSize: '0.75rem', color: '#3fb950' }}>
+                <span className="upd-ship in">
                   ✓ {t('updShippedIn').replace('{v}', update.includedIn as string)} — {t('updIncludedIn')}
                 </span>
               ) : (
-                <span style={{ fontSize: '0.75rem', color: '#d29922' }}>{t('updNotShipped')}</span>
+                <span className="upd-ship out">{t('updNotShipped')}</span>
               )}
-              <button
-                onClick={() => void openUrl(update.commit)}
-                style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', padding: 0, fontSize: '0.75rem' }}
-              >
+              <button className="upd-link" onClick={() => void openUrl(update.commit)}>
                 {t('updViewCommit')}
               </button>
               {included ? (
-                <button disabled style={btnStyle(false, true)}>✓ {t('updApplyIncluded')}</button>
+                <button className="upd-btn" disabled>✓ {t('updApplyIncluded')}</button>
               ) : shippedInNewer ? (
-                <button onClick={downloadInstaller} style={btnStyle(true)}>⬆ {t('updApply')}</button>
+                <button className="upd-btn primary" onClick={downloadInstaller}>
+                  ⬆ {t('updApply')}
+                </button>
               ) : (
-                <button onClick={() => setExpanded(open ? null : update.id)} style={btnStyle(true)}>
+                <button className="upd-btn primary" onClick={() => setExpanded(open ? null : update.id)}>
                   {open ? '▾' : '▸'} {t('updApply')}
                 </button>
               )}
             </div>
 
             {open && !included && !shippedInNewer && (
-              <div style={{ marginTop: '12px' }}>
-                <p style={{ color: '#8b949e', fontSize: '0.78rem' }}>{t('updPromptHint')}</p>
-                <pre style={{
-                  background: '#161b22', border: '1px solid #30363d', borderRadius: '6px',
-                  padding: '12px', fontSize: '0.75rem', whiteSpace: 'pre-wrap',
-                  color: '#c9d1d9', maxHeight: '320px', overflowY: 'auto',
-                }}>
-                  {update.agentPrompt}
-                </pre>
-                <button onClick={() => copyPrompt(update)} style={btnStyle(true)}>
-                  {copiedId === update.id ? t('updCopied') : `⧉ ${t('updCopyPrompt')}`}
-                </button>
+              <div className="upd-prompt">
+                <p className="upd-prompt-hint">{t('updPromptHint')}</p>
+                <div className="upd-code">
+                  <div className="upd-code-bar">
+                    <span>prompt</span>
+                    <button onClick={() => copyPrompt(update)}>
+                      {copiedId === update.id ? t('updCopied') : `⧉ ${t('updCopyPrompt')}`}
+                    </button>
+                  </div>
+                  <pre>{update.agentPrompt}</pre>
+                </div>
                 {update.notes && (
-                  <p style={{ color: '#d29922', fontSize: '0.78rem', marginTop: '10px' }}>
-                    <strong>{t('updManualNotes')}:</strong> {update.notes[lang as 'tr' | 'en']}
+                  <p className="upd-note">
+                    <strong>{t('updManualNotes')}:</strong> {update.notes[locale]}
                   </p>
                 )}
               </div>
