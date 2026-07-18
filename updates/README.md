@@ -69,6 +69,26 @@ niyet taşır; bu yüzden farklı sürümlere uyarlanabilir olmalıdır:
 - [ ] Testler var ve geçiyor; `security-review` çalıştırıldı
 - [ ] registry kaydındaki `security.reviewed` alanı merge'den önce işaretlendi
 
+## Sürüm çıkarmak (bakımcı)
+
+Bir commit derlenip dağıtılmaya hazırsa mesajının başlığına **`[build]`**
+yaz ve main'e it. Release iş akışı (.github/workflows/release.yml) o zaman:
+
+1. Son etiketten yama sürümünü türetir (v0.1.0 → v0.1.1),
+2. sürümü `src-tauri/tauri.conf.json`, `CORE_VERSION`
+   (src/modules/workspaceRegistry.tsx) ve bu dizindeki `registry.json`'da
+   `includedIn: null` duran tüm kayıtlara damgalar; damga commit'ini +
+   etiketi main'e iter,
+3. macOS ve Windows paketlerini derleyip release'e sabit adlarla yükler.
+
+Sitedeki indirme butonları `releases/latest`'e baktığından kendiliğinden
+yeni sürümü verir; uygulamadaki Güncellemeler sekmesi de "son paket"
+sürümünü aynı yerden görür ve eski sürümlere güncelleme bandı gösterir.
+`[build]` içermeyen push'lar paket üretmez.
+
+Her yeni özellikte iki kayıt güncellenir: uygulama içi Rehber
+(src/features/guide/GuideView.tsx, TR+EN) ve buradaki `registry.json`.
+
 ## Güncellemeyi kendi kopyana uygulamak
 
 Uygulamadaki **Güncellemeler** sekmesinden (veya sitedeki Güncellemeler

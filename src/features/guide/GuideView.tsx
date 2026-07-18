@@ -56,7 +56,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     title: 'FRAUDE nasıl kullanılır',
     sub: 'Modüllerin ne işe yaradığını ve AI özelliklerini açmak için kendi API anahtarını sağlayıcıya göre adım adım nasıl ekleyeceğini gösterir.',
     chips: [
-      { label: 'modül', value: '12' },
+      { label: 'modül', value: '13' },
       { label: 'AI sağlayıcı', value: '5' },
       { label: 'BIST · XU100 · XHARZ' },
       { label: 'TR / EN' },
@@ -76,6 +76,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: '$_', name: 'Terminal (FQL)', tag: 'Komut', desc: 'Klavyeyle her şeyi süren komut satırı.', items: ['open THYAO — hisse aç', 'scan … — tarama çalıştır', 'kap · sync · ask … · help'] },
       { code: 'TM', name: 'Ekip', tag: 'Team', desc: 'Ekip çalışma alanı ve paylaşılan görünümler.', items: ['Ortak izleme ve araştırma bağlamı'] },
       { code: 'MD', name: 'Modül Merkezi', tag: 'Modules', desc: 'Modülleri açıp kapatma ve güncelleme.', items: ['Modül kataloğu ve kurulum', 'İmzalı güncelleme / geri alma', 'Kenar çubuğu sekmelerini özelleştirme'] },
+      { code: 'UP', name: 'Güncellemeler', tag: 'Ayarlar ▸', desc: 'Topluluk güncellemelerini sorgula, uygula ve kendi katkını gönder (⌘, → Güncellemeler).', items: ['Güncelleme Sorgula: kayıt defteri + son paket sürümü', 'Yeni paket çıktığında tek tuşla kurulum indirme', 'Pakete girmemiş kayıtlar için AI ajan promptunu kopyala, yerel klonunda uygula', 'Güncelleme Gönder: GitHub token ile otomatik PR, tokensız önceden doldurulmuş taslak'] },
     ],
     aiHeading: 'API anahtarını sağlayıcına göre ekle',
     aiLead: 'AI Araştırma, İzleme Radarı yorumları ve ajan analizleri senin kendi API anahtarınla çalışır — anahtarı sen alır, uygulamaya girersin, kullanım senin hesabına işler. Sağlayıcını seç; nereye gireceğini, ne alacağını ve FRAUDE\'ye nasıl gireceğini gör.',
@@ -181,7 +182,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
     title: 'How to use FRAUDE',
     sub: 'Shows what each module does and how to add your own API key — provider by provider — to unlock the AI features.',
     chips: [
-      { label: 'modules', value: '12' },
+      { label: 'modules', value: '13' },
       { label: 'AI providers', value: '5' },
       { label: 'BIST · XU100 · XHARZ' },
       { label: 'TR / EN' },
@@ -201,6 +202,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { code: '$_', name: 'Terminal (FQL)', tag: 'Command', desc: 'Command line that drives everything from the keyboard.', items: ['open THYAO — open a ticker', 'scan … — run a screen', 'kap · sync · ask … · help'] },
       { code: 'TM', name: 'Team', tag: 'Team', desc: 'Team workspace and shared views.', items: ['Shared watch and research context'] },
       { code: 'MD', name: 'Module Center', tag: 'Modules', desc: 'Enable/disable and update modules.', items: ['Module catalog and install', 'Signed update / rollback', 'Customize sidebar tabs'] },
+      { code: 'UP', name: 'Updates', tag: 'In Settings ▸', desc: 'Check community updates, apply them and submit your own contribution (⌘, → Updates).', items: ['Check for Updates: registry + latest package version', 'One-click installer download when a new package ships', 'Copy the AI-agent prompt for unpackaged entries, apply in your local clone', 'Submit Update: automatic PR with a GitHub token, prefilled draft without'] },
     ],
     aiHeading: 'Add your API key, provider by provider',
     aiLead: 'AI Research, Watch Radar comments and agent analyses run on your own API key — you obtain it, enter it, and usage bills to your account. Pick your provider; see where to go, what to get, and how to enter it in FRAUDE.',

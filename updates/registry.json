@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-uygulama-ici-guncellemeler",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Ayarlar'da topluluk güncellemeleri: sorgula, uygula, gönder",
+        "en": "Community updates in Settings: check, apply, submit"
+      },
+      "summary": {
+        "tr": "Ayarlar'a Güncellemeler sekmesi eklendi: kayıt defterini ve son paket sürümünü sorgular, yeni paket çıktığında tek tuşla kurulum indirir, pakete girmemiş kayıtlar için AI ajan promptu sunar. Güncelleme Gönder formu GitHub token'ıyla otomatik PR açar; Ayarlar sekmeleri ve panelleri de segment kontrol ve tutarlı kart stilleriyle yenilendi, Rehber'e Güncellemeler kartı eklendi.",
+        "en": "Settings gained an Updates tab: it checks the registry and the latest package version, offers one-click installer download when a new package ships, and exposes AI-agent prompts for unpackaged entries. The Submit Update form opens an automatic PR with a GitHub token; the Settings tabs and panels were restyled with a segmented control and consistent cards, and a Guide card was added."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE/commit/37f926b",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "src/features/updates/UpdatesView.tsx",
+        "src/features/updates/UpdatesView.css",
+        "src/features/updates/githubSubmit.ts",
+        "src/features/settings/SettingsView.tsx",
+        "src/features/settings/SettingsView.css",
+        "src/features/guide/GuideView.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu güncellemeyi sürümüne uyarlayarak uygula:\n\n1. Ayarlar görünümüne dördüncü sekme olarak 'Güncellemeler' ekle; içerik ayrı bir UpdatesView bileşeninde yaşasın.\n2. UpdatesView: deponun main dalındaki updates/registry.json'ı raw.githubusercontent üzerinden çek (1 saat localStorage önbelleği, ağ hatasında bayat önbelleğe düş). 'Güncelleme Sorgula' butonu kaydı zorla tazeleyip GitHub releases/latest'ten son paket sürümünü okusun; uygulama sürümüyle (CORE_VERSION) karşılaştırıp 'güncelsiniz' çipi veya tek tuşla platforma uygun kurulumu (mac dmg / win exe) indiren 'Güncelle' bandı göstersin.\n3. Her kayıt kartında: tür/alan rozetleri, güvenlik onayı, yazar avatarı; includedIn sürümü uygulamadakinden küçük-eşitse pasif 'Dahil', daha yeni pakete girmişse indirme, pakete girmemişse kopyalanabilir AI ajan promptu paneli.\n4. 'Güncelleme Gönder' formu: yazar, tür, alan, TR/EN başlık-özet, ajan promptu, dokunulan dosyalar. GitHub token girilmişse fork → dal → registry.json'ın başına kayıt commit'i → upstream PR zincirini GitHub API ile yürüt (adım adım ilerleme göstergesi); token yoksa kayıt JSON'unu gömen önceden doldurulmuş bir issue taslağı aç (URL ~7000 karakteri aşarsa JSON'u panoya kopyala).\n5. Ayarlar sekmelerini sınıf tabanlı segment kontrole çevir (aktif sekme accent dolgulu), panel başlıklarını çizgili mono etikete, form alanlarına odak halkasına, anahtar/ajan satırlarını çerçeveli hover kartlarına geçir; stiller görünüm-kapsamlı CSS dosyalarında dursun.\n6. Uygulama içi Rehber'in modül turuna 'Güncellemeler' kartını ekle (TR+EN) ve modül sayısını artır.\n\nKabul: 'npx tsc --noEmit' ve 'npx vite build' hatasız geçmeli; Ayarlar'da dört sekme görünmeli ve Güncellemeler sekmesi kayıtları listelemeli.",
+      "notes": null
+    },
+    {
       "id": "2026-07-18-site-indirme-ve-sifre-yenileme",
       "date": "2026-07-18",
       "author": "yazicmert",

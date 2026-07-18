@@ -1,22 +1,86 @@
-# Sürüm paketleri: v* etiketi itildiğinde (veya elle tetiklenince) macOS ve
-# Windows derlemelerini yapar, sabit adlarla release'e yükler. Sitedeki
-# indirme butonları bu sabit adlara işaret eder (site/src/lib/download.ts).
+# Sürüm hattı: main'e mesajında "[build]" geçen bir commit itildiğinde
+# `prepare` işi son etiketten yama sürümü türetir, sürümü dosyalara damgalar
+# (tauri.conf.json, CORE_VERSION, registry'deki includedIn=null kayıtlar),
+# damga commit'ini + v{sürüm} etiketini iter ve release'i açar. `build`
+# matrisi o etiketi derleyip paketleri SABİT adlarla yükler — sitedeki
+# indirme butonları releases/latest'e baktığından kendiliğinden güncellenir,
+# uygulama da "son paket" sürümünü aynı yerden görür.
+# workflow_dispatch mevcut bir etiketi yeniden derlemek içindir.
 name: release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Yüklenecek release etiketi (örn. v0.1.0)'
+        description: 'Derlenecek mevcut release etiketi (örn. v0.1.0)'
         required: true
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive and stamp version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          LATEST=${LATEST:-v0.0.0}
+          BASE=${LATEST#v}
+          IFS=. read -r MA MI PA <<< "$BASE"
+          VERSION="$MA.$MI.$((PA + 1))"
+          echo "Yeni sürüm: v$VERSION (önceki: $LATEST)"
+
+          python3 - "$VERSION" <<'PYEOF'
+          import json, re, sys
+          v = sys.argv[1]
+
+          p = 'src-tauri/tauri.conf.json'
+          conf = json.load(open(p))
+          conf['version'] = v
+          open(p, 'w').write(json.dumps(conf, indent=2, ensure_ascii=False) + '\n')
+
+          p = 'src/modules/workspaceRegistry.tsx'
+          s = open(p).read()
+          s = re.sub(r"export const CORE_VERSION = '[^']*'",
+                     f"export const CORE_VERSION = '{v}'", s, count=1)
+          open(p, 'w').write(s)
+
+          p = 'updates/registry.json'
+          reg = json.load(open(p))
+          for u in reg['updates']:
+              if u.get('includedIn') is None:
+                  u['includedIn'] = v
+          open(p, 'w').write(json.dumps(reg, indent=2, ensure_ascii=False) + '\n')
+          PYEOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/tauri.conf.json src/modules/workspaceRegistry.tsx updates/registry.json
+          git commit -m "release: v$VERSION sürüm damgası"
+          git tag "v$VERSION"
+          git push origin main "v$VERSION"
+
+          gh release create "v$VERSION" --title "FRAUDE Terminal v$VERSION" --generate-notes
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +94,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: actions/setup-node@v4
         with:
@@ -53,8 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG='${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}'
+          TAG='${{ needs.prepare.outputs.tag }}'
           FILE=$(ls ${{ matrix.bundle_glob }} | head -1)
           cp "$FILE" "${{ matrix.asset_name }}"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
           gh release upload "$TAG" "${{ matrix.asset_name }}" --clobber
