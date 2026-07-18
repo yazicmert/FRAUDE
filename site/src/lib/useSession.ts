@@ -45,5 +45,10 @@ export function useSession(): SessionState {
 
 export function displayName(user: User | null): string {
   if (!user) return '';
-  return ((user.user_metadata?.name as string | undefined)?.trim() || user.email) ?? '';
+  const meta = user.user_metadata ?? {};
+  // E-posta kayıtları name yazar; GitHub OAuth full_name / user_name gönderir
+  const name = ([meta.name, meta.full_name, meta.user_name] as (string | undefined)[])
+    .map((value) => value?.trim())
+    .find(Boolean);
+  return (name || user.email) ?? '';
 }
