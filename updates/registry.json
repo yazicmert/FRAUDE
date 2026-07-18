@@ -16,8 +16,11 @@
         "en": "When signing up on desktop, the confirmation email link now returns to the app via the fraude:// deep link instead of the website; tokens are parsed and the session starts automatically. On Windows/Linux, single-instance forwards the link to the running instance."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "includedIn": "0.1.4",
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         "src-tauri/tauri.conf.json",
         "src-tauri/Cargo.toml",
