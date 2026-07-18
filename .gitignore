@@ -40,3 +40,4 @@ target/
 *.njsproj
 *.sln
 *.sw?
+supabase/.temp/

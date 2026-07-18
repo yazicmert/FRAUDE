@@ -37,8 +37,15 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** "Bu talebi ben yapmadım" bağlantısı için tek kullanımlık jeton. */
+function randomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** docs/email-templates/license-key.html ile aynı tasarım; anahtar ve ad gömülü. */
-function renderEmail(licenseKey: string, name: string | null): string {
+function renderEmail(licenseKey: string, name: string | null, revokeUrl: string | null): string {
   const greeting = name ? `Merhaba ${escapeHtml(name)},` : 'Merhaba,';
   return `<!doctype html>
 <html lang="tr">
@@ -113,10 +120,27 @@ function renderEmail(licenseKey: string, name: string | null): string {
           </tr>
           <tr>
             <td align="center" style="padding-top:26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-              FRAUDE Terminal — finansal dostunuz<br>
-              Bu talebi sen yapmadıysan bize bu adresten haber ver.
+              FRAUDE Terminal — finansal dostunuz
             </td>
           </tr>
+          ${revokeUrl ? `<tr>
+            <td align="center" style="padding-top:14px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border:1px solid rgba(255,106,94,0.5);border-radius:8px;">
+                    <a href="${revokeUrl}"
+                       style="display:inline-block;padding:9px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12.5px;font-weight:600;color:#ff6a5e;text-decoration:none;border-radius:8px;">
+                      Bu talebi ben yapmadım — anahtarı iptal et
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>` : `<tr>
+            <td align="center" style="padding-top:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
+              Bu talebi sen yapmadıysan bize bu adresten haber ver.
+            </td>
+          </tr>`}
         </table>
       </td>
     </tr>
@@ -174,6 +198,17 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'not-approved' }, 409);
   }
 
+  // İptal jetonu: her gönderimde yenilenir (eski mailin bağlantısı geçersizleşir).
+  // Kolon yoksa/güncelleme başarısızsa e-posta düğmesiz gönderilir.
+  const revokeToken = randomToken();
+  const { error: tokenError } = await supabase
+    .from('license_requests')
+    .update({ revoke_token: revokeToken })
+    .eq('id', requestId);
+  const revokeUrl = tokenError
+    ? null
+    : `${Deno.env.get('SUPABASE_URL')}/functions/v1/report-license-abuse?token=${revokeToken}`;
+
   const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: { 'api-key': brevoKey, 'Content-Type': 'application/json', accept: 'application/json' },
@@ -181,7 +216,7 @@ Deno.serve(async (req) => {
       sender,
       to: [request.name ? { email: request.email, name: request.name } : { email: request.email }],
       subject: 'FRAUDE Terminal — lisans anahtarın hazır',
-      htmlContent: renderEmail(request.delivered_key, request.name),
+      htmlContent: renderEmail(request.delivered_key, request.name, revokeUrl),
     }),
   });
   if (!brevoResponse.ok) {

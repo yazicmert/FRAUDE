@@ -36,6 +36,7 @@ interface AdminRequest {
   delivered_key: string | null;
   decided_at: string | null;
   emailed_at: string | null;
+  abuse_reported_at: string | null;
   created_at: string;
 }
 
@@ -263,6 +264,11 @@ export default function Admin() {
                             {request.emailed_at && (
                               <span className="badge badge-green" title={fmtDate(request.emailed_at)}>
                                 {t('mailSentBadge')}
+                              </span>
+                            )}
+                            {request.abuse_reported_at && (
+                              <span className="badge badge-red" title={fmtDate(request.abuse_reported_at)}>
+                                {t('abuseBadge')}
                               </span>
                             )}
                             <button

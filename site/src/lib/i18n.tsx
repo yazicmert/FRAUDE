@@ -183,6 +183,7 @@ const STRINGS = {
     mailResend: 'Yeniden gönder',
     mailSentBadge: 'E-posta ✓',
     mailFailed: 'Lisans e-postası gönderilemedi: ',
+    abuseBadge: 'İptal bildirimi',
     accessDenied: 'Bu sayfaya erişim yetkiniz yok.',
 
     // Güncellemeler
@@ -386,6 +387,7 @@ const STRINGS = {
     mailResend: 'Resend',
     mailSentBadge: 'Emailed ✓',
     mailFailed: 'License email failed: ',
+    abuseBadge: 'Abuse reported',
     accessDenied: 'You are not authorized to view this page.',
 
     updTitle: 'Updates',

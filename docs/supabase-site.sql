@@ -16,6 +16,8 @@ create table if not exists public.admins (
 );
 alter table public.admins enable row level security;
 -- Politika yok: tabloya yalnız SQL editor / service_role dokunur.
+-- send-license-email Edge Function admin kontrolünü service_role ile yapar.
+grant select on public.admins to service_role;
 
 create or replace function public.is_admin()
 returns boolean
@@ -46,6 +48,10 @@ create table if not exists public.license_requests (
 alter table public.license_requests enable row level security;
 -- Lisans e-postası gönderim damgası (send-license-email Edge Function yazar)
 alter table public.license_requests add column if not exists emailed_at timestamptz;
+-- "Bu talebi ben yapmadım" akışı: tek kullanımlık jeton + bildirim damgası
+-- (report-license-abuse Edge Function kullanır)
+alter table public.license_requests add column if not exists revoke_token text;
+alter table public.license_requests add column if not exists abuse_reported_at timestamptz;
 
 drop policy if exists "own-insert" on public.license_requests;
 create policy "own-insert" on public.license_requests
@@ -56,6 +62,11 @@ drop policy if exists "own-select" on public.license_requests;
 create policy "own-select" on public.license_requests
   for select to authenticated
   using (user_id = auth.uid());
+
+-- Tablo düzeyi yetkiler: RLS tek başına yetmez, GRANT olmadan
+-- "permission denied for table license_requests" gelir.
+grant select, insert on public.license_requests to authenticated;
+grant select, insert, update, delete on public.license_requests to service_role;
 
 -- ── Anahtar üretimi (SQL içinde; algoritma license.ts / gen-licenses.mjs ile
 --    BİREBİR aynı: 12 karakter yük + SHA-256 tabanlı 4 karakter checksum) ────
@@ -183,6 +194,7 @@ begin
       'delivered_key', r.delivered_key,
       'decided_at', r.decided_at,
       'emailed_at', r.emailed_at,
+      'abuse_reported_at', r.abuse_reported_at,
       'created_at', r.created_at
     ) order by (r.status = 'pending') desc, r.created_at desc)
     from license_requests r

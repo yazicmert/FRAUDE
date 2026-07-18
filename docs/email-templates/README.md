@@ -39,6 +39,13 @@ Onaylı satırlarda "E-posta gönder / Yeniden gönder" düğmesi vardır; e-pos
 hatası onayı bozmaz. (Auth e-postaları Brevo SMTP'den, bu fonksiyon aynı
 hesabın HTTP API'sinden çıkar — gönderici aynı olabilir.)
 
+E-postanın altındaki **"Bu talebi ben yapmadım — anahtarı iptal et"** düğmesi
+tek kullanımlık jetonla `report-license-abuse` fonksiyonuna gider: onay
+sayfasında onaylanınca anahtar revoke edilir, talep `abuse_reported_at` ile
+damgalanır (panelde kırmızı "İptal bildirimi" rozeti) ve `ADMIN_EMAIL`
+secret'ındaki adrese (yoksa `MAIL_FROM` adresine) bildirim maili gider. Bu
+fonksiyon alıcı oturumsuz olduğundan `--no-verify-jwt` ile deploy edilir.
+
 Kanonik şablon fonksiyonun içindedir
 (`supabase/functions/send-license-email/index.ts` → `renderEmail`);
 `license-key.html` elle gönderim yedeğidir — tasarım değişirse **ikisini birden**
