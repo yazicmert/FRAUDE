@@ -1,7 +1,9 @@
 # FRAUDE web API — Fly.io yapılandırması.
-# İlk deploy:  cd server && fly launch --no-deploy   (uygulama adını/region'ı onayla)
-# Gizli anahtarlar:  fly secrets set DATABASE_URL=... FRAUDE_KEY_ENC_SECRET=... SUPABASE_JWKS_URL=...
-# Deploy:  fly deploy
+# Derleme bağlamı repo köküdür (fraude-core path bağımlılığı); komutlar
+# REPO KÖKÜNDEN çalıştırılır:
+#   İlk kurulum:  fly launch --no-deploy -c server/fly.toml
+#   Deploy:       fly deploy -c server/fly.toml
+# Gizli anahtarlar:  fly secrets set ALLOWED_ORIGIN=https://<vercel-domain> ...
 
 app = "fraude-api"
 primary_region = "fra"   # Frankfurt — Türkiye'ye en yakın düşük gecikme

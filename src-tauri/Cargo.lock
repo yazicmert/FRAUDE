@@ -1386,6 +1386,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "fraude-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dirs",
+ "futures",
+ "keyring",
+ "pdf-extract",
+ "regex",
+ "reqwest 0.12.28",
+ "rss",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4412,6 +4432,7 @@ dependencies = [
  "chrono",
  "dirs",
  "ed25519-dalek",
+ "fraude-core",
  "futures",
  "keyring",
  "pdf-extract",

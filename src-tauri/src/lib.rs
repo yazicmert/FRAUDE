@@ -1,73 +1,18 @@
 mod commands;
-mod bist;
-mod bist_indices;
-mod corporate_actions;
-mod domain;
-mod fql;
-mod indicators;
-mod isyatirim;
-mod isyatirim_price;
-mod market_calendar;
-mod economic_calendar;
-mod live_quotes;
-mod kap_pdr;
-mod tefas;
-mod tefas_issuer;
-mod news_tagger;
-mod ai_tagger;
-mod providers;
-mod secrets;
-mod services;
-mod storage;
-mod yahoo;
-mod news;
-mod kap;
-mod ipo_scraper;
-mod ipo_store;
-mod shareholders;
-mod subsidiaries;
-mod monitor;
-mod bist_universe;
-mod persist;
-mod keychain;
 mod module_updater;
 mod publisher;
-mod spk;
+
+// Veri katmanı fraude-core'da yaşar (bkz. core/); yeniden dışa aktarım
+// sayesinde commands.rs içindeki `crate::X` yolları aynen çalışır.
+pub use fraude_core::{
+    ai_tagger, bist, bist_indices, bist_universe, corporate_actions, domain,
+    economic_calendar, fql, fundamentals, indicators, ipo_scraper, ipo_store, isyatirim,
+    isyatirim_price, kap, kap_pdr, keychain, live_quotes, market_calendar, monitor, news,
+    news_tagger, persist, providers, refresh_ipo_cache, secrets, services, shareholders, spk,
+    storage, subsidiaries, tefas, tefas_issuer, yahoo, AppState, IpoCache,
+    IPO_REFRESH_INTERVAL_SECS,
+};
 use tauri::Manager;
-use tokio::sync::Mutex;
-use storage::AppStore;
-
-#[derive(Default)]
-pub struct IpoCache {
-    pub base_records: Vec<domain::IpoRecord>,
-    pub scrape_ok: bool,
-    pub last_updated: Option<String>,
-    pub fetched_at: Option<std::time::Instant>,
-}
-
-pub struct AppState {
-    pub store: Mutex<AppStore>,
-    pub http: reqwest::Client,
-    pub ipo_cache: Mutex<IpoCache>,
-    pub monitor: Mutex<monitor::MonitorRuntime>,
-    /// İzleme turlarını serileştirir: arka plan döngüsü ile elle "Şimdi Tara"
-    /// aynı anda çalışıp mükerrer uyarı üretmesin ve "görüldü" güncellemesi
-    /// kaybolmasın. Tur boyunca tutulur (ağ işlemleri dahil).
-    pub monitor_cycle_lock: Mutex<()>,
-}
-
-/// Halka arz verisi uygulama açıkken bu aralıkla arka planda tazelenir;
-/// takvim kullanıcı sekmeyi açmadan hazır olur ve arşiv güncel kalır.
-pub const IPO_REFRESH_INTERVAL_SECS: u64 = 30 * 60;
-
-pub async fn refresh_ipo_cache(state: &AppState) {
-    let (records, scrape_ok) = corporate_actions::refresh_ipo_base(&state.http).await;
-    let mut cache = state.ipo_cache.lock().await;
-    cache.base_records = records;
-    cache.scrape_ok = scrape_ok;
-    cache.last_updated = Some(chrono::Local::now().format("%d.%m.%Y %H:%M").to_string());
-    cache.fetched_at = Some(std::time::Instant::now());
-}
 
 /// Bir izleme turu çalıştırır; yeni uyarı çıktıysa webview'e olay ve
 /// (yapılandırılmışsa) işletim sistemi bildirimi gönderir.
@@ -120,21 +65,10 @@ pub async fn run_monitor_and_notify(handle: &tauri::AppHandle, state: &AppState)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .expect("Failed to create HTTP client");
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(AppState {
-            store: Mutex::new(AppStore::seeded()),
-            http,
-            ipo_cache: Mutex::new(IpoCache::default()),
-            monitor: Mutex::new(monitor::load()),
-            monitor_cycle_lock: Mutex::new(()),
-        })
+        .manage(AppState::new())
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -242,4 +176,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-mod fundamentals;

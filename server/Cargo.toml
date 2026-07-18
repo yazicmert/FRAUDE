@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "FRAUDE web API — /v1/rpc HTTP kabuğu (Tauri komut sözleşmesinin web karşılığı)"
 
-# Bilinçli olarak bağımsız bir paket: Tauri'yi ve masaüstü bağımlılıklarını
-# çekmez, hızlı derlenir. fraude-core çıkarıldığında buraya path bağımlılığı
-# olarak eklenecek (bkz. README → "fraude-core çıkarımı").
+# Tauri içermez: veri katmanı fraude-core'dan gelir (masaüstüyle birebir aynı
+# komut gövdeleri — bkz. core/src/api.rs).
 
 [dependencies]
+fraude-core = { path = "../core" }
+chrono = "0.4"
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
