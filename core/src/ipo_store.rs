@@ -74,15 +74,35 @@ pub fn looks_like_iso_date(value: &str) -> bool {
 
 /// Taze scrape sonucunu arşive işler. Yeni ticker eklenir, mevcut kayıt
 /// güncellenir; scrape'in boş döndürdüğü alanlar arşivdeki dolu değeri ezmez.
+/// BIST kodu atanmamış (ticker'ı boş) kayıtlar isimle eşleştirilir; kod
+/// sonradan atandığında aynı kayıt güncellenir, mükerrer oluşmaz.
 pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) -> bool {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let mut changed = false;
 
     for ipo in scraped {
-        if ipo.ticker.is_empty() {
+        if ipo.ticker.is_empty() && ipo.name.is_empty() {
             continue;
         }
-        if let Some(existing) = archive.iter_mut().find(|p| p.ticker == ipo.ticker) {
+        let idx = if ipo.ticker.is_empty() {
+            archive.iter().position(|p| p.name == ipo.name)
+        } else {
+            archive
+                .iter()
+                .position(|p| p.ticker == ipo.ticker)
+                .or_else(|| archive.iter().position(|p| p.ticker.is_empty() && p.name == ipo.name))
+        };
+        if let Some(i) = idx {
+            let existing = &mut archive[i];
+            // Kodsuz taslak scrape'i, kod atanmış arşiv kaydını geriletmesin
+            if ipo.ticker.is_empty() && !existing.ticker.is_empty() {
+                existing.last_seen = Some(today.clone());
+                changed = true;
+                continue;
+            }
+            if !ipo.ticker.is_empty() {
+                existing.ticker = ipo.ticker.clone();
+            }
             if ipo.price > 0.0 {
                 existing.price = ipo.price;
             }
@@ -229,6 +249,42 @@ mod tests {
         assert_eq!(archive[0].price, 12.5);
         assert_eq!(archive[0].status, "AKTİF");
         assert_eq!(archive[0].ipo_date, "2027-01-15");
+    }
+
+    #[test]
+    fn merge_matches_codeless_draft_by_name_and_assigns_code_later() {
+        let mut archive = Vec::new();
+        // İlk scrape: kod atanmamış taslak
+        let mut draft = scraped("", 0.0, "TASLAK");
+        draft.name = "Albayrak Hazır Beton A.Ş.".into();
+        draft.ipo_date = "Hazırlanıyor...".into();
+        merge_scraped(&mut archive, &[draft.clone()]);
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].ticker, "");
+
+        // Aynı taslak tekrar gelirse mükerrer oluşmamalı
+        merge_scraped(&mut archive, &[draft]);
+        assert_eq!(archive.len(), 1);
+
+        // Kod atanınca aynı kayıt güncellenmeli
+        let mut coded = scraped("ALBHB", 25.0, "AKTİF");
+        coded.name = "Albayrak Hazır Beton A.Ş.".into();
+        merge_scraped(&mut archive, &[coded]);
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].ticker, "ALBHB");
+        assert_eq!(archive[0].status, "AKTİF");
+    }
+
+    #[test]
+    fn codeless_scrape_does_not_downgrade_coded_record() {
+        let mut archive = vec![persisted("SAMET", 30.0)];
+        archive[0].name = "Samet Kalıp A.Ş.".into();
+        let mut draft = scraped("", 0.0, "TASLAK");
+        draft.name = "Samet Kalıp A.Ş.".into();
+        merge_scraped(&mut archive, &[draft]);
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].ticker, "SAMET");
+        assert_eq!(archive[0].status, "TAMAMLANDI");
     }
 
     #[test]

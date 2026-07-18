@@ -137,7 +137,15 @@ pub fn parse_listing(html: &str, assume_completed: bool) -> Vec<ListedIpo> {
             Some(el) => el.text().collect::<String>().trim().to_string(),
             None => return,
         };
-        if ticker.is_empty() || !seen.insert(ticker.clone()) {
+        // BIST kodu SPK onayından önce atanmaz; sitede bu kayıtların
+        // il-bist-kod elemanı boştur. Ana sayfada isimle tekilleştirilip
+        // tutulurlar; yıl arşivinde kodsuz kayıt taslaktır, TAMAMLANDI
+        // sayılmaması için atlanır.
+        if ticker.is_empty() {
+            if assume_completed || name.is_empty() || !seen.insert(format!("name:{name}")) {
+                return;
+            }
+        } else if !seen.insert(ticker.clone()) {
             return;
         }
 
@@ -264,7 +272,9 @@ async fn resolve_details(
     let mut tasks = Vec::new();
 
     for item in listed {
-        let fetch_url = if skip_details.contains(&item.ticker) {
+        // Kodsuz kayıtlar (200+ taslak) için detay sayfası çekilmez;
+        // liste bilgisi (isim + durum) yeterlidir ve istek sayısı patlamaz.
+        let fetch_url = if item.ticker.is_empty() || skip_details.contains(&item.ticker) {
             None
         } else {
             item.detail_url.clone()
@@ -432,5 +442,27 @@ mod tests {
         assert!(sarae.detail_url.is_some());
         // Taslak bölümü de ayrıştırılmalı
         assert!(listed.iter().any(|l| l.status == "TASLAK"));
+    }
+
+    #[test]
+    fn listing_keeps_entries_without_bist_code() {
+        // BIST kodu atanmamış kayıtlar (boş il-bist-kod) atlanmamalı;
+        // sitedeki 200+ taslak şirket ve kod bekleyen güncel arzlar bunlardır.
+        let html = include_str!("../halkarz.html");
+        let listed = parse_listing(html, false);
+        let codeless: Vec<_> = listed.iter().filter(|l| l.ticker.is_empty()).collect();
+        assert!(codeless.len() > 100, "codeless drafts should be kept, got {}", codeless.len());
+        assert!(codeless.iter().all(|l| !l.name.is_empty()));
+        assert!(codeless.iter().all(|l| l.status == "TASLAK"));
+        // Ana listedeki kod bekleyen arz da dahil olmalı
+        assert!(listed.iter().any(|l| l.name.starts_with("Albayrak Hazır Beton")));
+    }
+
+    #[test]
+    fn year_archive_mode_skips_codeless_entries() {
+        // Yıl arşivi modunda kodsuz kayıtlar TAMAMLANDI sayılmamalı
+        let html = include_str!("../halkarz.html");
+        let listed = parse_listing(html, true);
+        assert!(listed.iter().all(|l| !l.ticker.is_empty()));
     }
 }

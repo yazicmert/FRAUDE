@@ -388,8 +388,8 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
                   return (
                     <tr key={i} style={{ transition: 'background 0.15s' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#161b22')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                       <td style={{ ...tdStyle, fontWeight: 'bold' }}>
-                        {ipo.status === 'TASLAK' || !onSelectTicker ? (
-                          <span style={{ color: '#c9d1d9' }}>{ipo.ticker}</span>
+                        {ipo.status === 'TASLAK' || !onSelectTicker || !ipo.ticker ? (
+                          <span style={{ color: '#c9d1d9' }}>{ipo.ticker || '—'}</span>
                         ) : (
                           <button
                             type="button"
