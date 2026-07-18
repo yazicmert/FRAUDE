@@ -16,8 +16,11 @@
         "en": "Settings gained an Updates tab: it checks the registry and the latest package version, offers one-click installer download when a new package ships, and exposes AI-agent prompts for unpackaged entries. The Submit Update form opens an automatic PR with a GitHub token; the Settings tabs and panels were restyled with a segmented control and consistent cards, and a Guide card was added."
       },
       "commit": "https://github.com/yazicmert/FRAUDE/commit/37f926b",
-      "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "includedIn": "0.1.1",
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         "src/features/updates/UpdatesView.tsx",
         "src/features/updates/UpdatesView.css",
@@ -44,8 +47,11 @@
         "en": "Site download buttons now point at version-independent release assets; a release workflow builds macOS+Windows on v* tags. Sign-in gained a 'forgot password' mode and a /sifre-yenile page; emails are sent through Supabase SMTP."
       },
       "commit": "https://github.com/yazicmert/FRAUDE/commit/895873c",
-      "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "includedIn": "0.1.1",
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         ".github/workflows/release.yml",
         "site/src/lib/download.ts",
@@ -75,8 +81,11 @@
         "en": "halkarz.com leaves the il-bist-kod element empty for companies without an assigned code; the parser dropped them, so only 42 of ~226 homepage entries were fetched. Codeless entries are now kept (deduped by name) as drafts and merge into the same archive record once a code is assigned."
       },
       "commit": "https://github.com/yazicmert/FRAUDE/commit/965b5df",
-      "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "includedIn": "0.1.1",
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         "core/src/ipo_scraper.rs",
         "core/src/ipo_store.rs",
