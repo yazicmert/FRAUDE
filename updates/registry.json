@@ -16,8 +16,11 @@
         "en": "The TEFAS list and returns are now served instantly from disk with stale-while-revalidate; 1M/3M/1Y sorts work at startup and pending return chips are indicated. KAP portfolio allocation reports accumulate in a persistent local index (via background crawling) and ticker pages list the funds carrying the stock with weight percentages."
       },
       "commit": "https://github.com/yazicmert/FRAUDE/commit/2189ccc",
-      "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "includedIn": "0.1.2",
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         "core/src/tefas.rs",
         "core/src/kap_pdr.rs",

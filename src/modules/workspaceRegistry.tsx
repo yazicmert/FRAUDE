@@ -30,7 +30,7 @@ const MonitorView = lazy(() => import('../features/monitor/MonitorView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
 
-export const CORE_VERSION = '0.1.1';
+export const CORE_VERSION = '0.1.2';
 
 /** A single open workspace tab. `data` carries per-tab payloads. */
 export interface WorkspaceTab {
