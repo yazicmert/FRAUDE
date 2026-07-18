@@ -6,9 +6,8 @@ import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
+import ResetPassword from './pages/ResetPassword';
 import './styles.css';
-
-const DOWNLOAD_URL = 'https://github.com/yazicmert/FRAUDE/releases/latest';
 
 export default function App() {
   const path = usePath();
@@ -16,7 +15,9 @@ export default function App() {
   const { t, lang, setLang } = useI18n();
 
   let content: JSX.Element;
-  if (path === '/giris') {
+  if (path === '/sifre-yenile') {
+    content = <ResetPassword />;
+  } else if (path === '/giris') {
     content = user ? <Account user={user} /> : <SignIn />;
   } else if (path === '/hesap') {
     content = !ready ? (
@@ -76,7 +77,7 @@ export default function App() {
             {t('signIn')}
           </button>
         )}
-        <a className="btn btn-primary btn-sm" href={DOWNLOAD_URL} target="_blank" rel="noreferrer">
+        <a className="btn btn-primary btn-sm" href="/#indir">
           {t('downloadShort')}
         </a>
       </nav>

@@ -1,9 +1,8 @@
 import { BrandMark } from '../components/Brand';
 import CandleTape from '../components/CandleTape';
 import { navigate } from '../lib/router';
+import { DOWNLOAD_MAC, DOWNLOAD_WIN } from '../lib/download';
 import { useI18n, type StringKey } from '../lib/i18n';
-
-const DOWNLOAD_URL = 'https://github.com/yazicmert/FRAUDE/releases/latest';
 
 const FEATURES: { icon: string; title: StringKey; text: StringKey }[] = [
   { icon: '📈', title: 'f1t', text: 'f1x' },
@@ -33,7 +32,7 @@ export default function Landing() {
           </h1>
           <p className="lead">{t('heroLead')}</p>
           <div className="hero-ctas">
-            <a className="btn btn-primary" href={DOWNLOAD_URL} target="_blank" rel="noreferrer">
+            <a className="btn btn-primary" href="#indir">
               {t('heroDownload')}
             </a>
             <button className="btn" onClick={() => navigate('/hesap')}>
@@ -76,13 +75,17 @@ export default function Landing() {
         <h2>{t('dlTitle')}</h2>
         <p>{t('dlSub')}</p>
         <div className="platform-btns">
-          <a className="btn btn-primary" href={DOWNLOAD_URL} target="_blank" rel="noreferrer">
+          <a className="btn btn-primary" href={DOWNLOAD_MAC}>
             {t('dlMac')}
+          </a>
+          <a className="btn btn-primary" href={DOWNLOAD_WIN}>
+            {t('dlWin')}
           </a>
           <button className="btn" onClick={() => navigate('/hesap')}>
             {t('dlRequest')}
           </button>
         </div>
+        <p className="hero-note" style={{ marginTop: 14 }}>{t('dlGatekeeper')}</p>
       </section>
     </>
   );

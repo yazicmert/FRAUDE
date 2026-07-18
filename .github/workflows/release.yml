@@ -1,0 +1,60 @@
+# Sürüm paketleri: v* etiketi itildiğinde (veya elle tetiklenince) macOS ve
+# Windows derlemelerini yapar, sabit adlarla release'e yükler. Sitedeki
+# indirme butonları bu sabit adlara işaret eder (site/src/lib/download.ts).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Yüklenecek release etiketi (örn. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            bundle_glob: 'src-tauri/target/release/bundle/dmg/*.dmg'
+            asset_name: FRAUDE-Terminal_macos_arm64.dmg
+          - os: windows-latest
+            bundle_glob: 'src-tauri/target/release/bundle/nsis/*-setup.exe'
+            asset_name: FRAUDE-Terminal_windows_x64-setup.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build app bundle
+        run: npm run tauri build
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG='${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}'
+          FILE=$(ls ${{ matrix.bundle_glob }} | head -1)
+          cp "$FILE" "${{ matrix.asset_name }}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" "${{ matrix.asset_name }}" --clobber

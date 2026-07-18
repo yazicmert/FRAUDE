@@ -23,7 +23,7 @@ const STRINGS = {
       "Borsa İstanbul'dan küresel endekslere, fonlardan emtia ve dövize — canlı veri, KAP izleme ve yapay zeka destekli araştırma tek masaüstü uygulamasında.",
     heroDownload: '⬇ Uygulamayı İndir',
     heroRequest: 'Lisans Talep Et',
-    heroNote: 'macOS için hazır · Lisans anahtarıyla etkinleştirilir',
+    heroNote: 'macOS ve Windows için hazır · Lisans anahtarıyla etkinleştirilir',
 
     // Özellikler
     featuresTitle: 'Araştırma masanız, tek uygulamada',
@@ -46,7 +46,7 @@ const STRINGS = {
     stepsTitle: 'Üç adımda başlayın',
     stepsSub: 'Kurulumdan ilk taramaya birkaç dakika.',
     s1t: 'Uygulamayı indirin',
-    s1x: 'macOS sürümünü indirip kurun; uygulama açılışta sizi karşılar.',
+    s1x: 'macOS veya Windows sürümünü indirip kurun; uygulama açılışta sizi karşılar.',
     s2t: 'Hesap oluşturun',
     s2x: 'E-postanızla kaydolun ve bu siteden lisans talebinizi iletin.',
     s3t: 'Lisansı etkinleştirin',
@@ -56,7 +56,10 @@ const STRINGS = {
     dlTitle: "FRAUDE'yi masaüstünüze kurun",
     dlSub: 'Erişim lisans anahtarıyla sağlanır; anahtarınız yoksa hesabınızdan talep edin.',
     dlMac: ' macOS için indir',
+    dlWin: '⊞ Windows için indir',
     dlRequest: 'Lisans Talep Et →',
+    dlGatekeeper:
+      'macOS ilk açılışta uyarı verirse uygulamaya sağ tıklayıp "Aç" seçin; Windows SmartScreen\'de "Yine de çalıştır" deyin.',
 
     // Giriş / kayıt
     welcomeBack: 'Tekrar hoş geldiniz',
@@ -78,6 +81,25 @@ const STRINGS = {
     errSignUp: 'Kayıt başarısız: ',
     errSignIn: 'Giriş başarısız: ',
     confirmEmail: 'Doğrulama e-postası gönderildi; kutunuzu onaylayıp giriş yapın.',
+
+    // Şifre yenileme
+    forgotPw: 'Şifrenizi mi unuttunuz?',
+    backToSignIn: '← Girişe dön',
+    forgotTitle: 'Şifre yenileme',
+    forgotSub: 'E-postanıza bir yenileme bağlantısı gönderelim.',
+    sendResetBtn: 'Yenileme Bağlantısı Gönder',
+    resetSent: 'Yenileme bağlantısı gönderildi; e-posta kutunuzu kontrol edin.',
+    resetFailed: 'Bağlantı gönderilemedi: ',
+    resetTitle: 'Yeni şifre belirleyin',
+    resetSub: 'Hesabınız için yeni bir şifre girin.',
+    newPwLabel: 'Yeni şifre',
+    newPwAgainLabel: 'Yeni şifre (tekrar)',
+    errPwMatch: 'Şifreler eşleşmiyor.',
+    resetSaveBtn: 'Şifreyi Güncelle',
+    resetSaveFailed: 'Güncelleme başarısız: ',
+    resetDone: 'Şifreniz güncellendi; hesabınıza yönlendiriliyorsunuz…',
+    resetLinkInvalid:
+      'Bağlantı geçersiz veya süresi dolmuş. Giriş sayfasından yeni bir yenileme bağlantısı isteyin.',
 
     // Hesap
     myAccount: 'Hesabım',
@@ -176,7 +198,7 @@ const STRINGS = {
       'From Borsa Istanbul to global indices, funds to commodities and FX — live data, disclosure monitoring and AI-powered research in a single desktop app.',
     heroDownload: '⬇ Download the App',
     heroRequest: 'Request a License',
-    heroNote: 'Ready for macOS · Activated with a license key',
+    heroNote: 'Ready for macOS & Windows · Activated with a license key',
 
     featuresTitle: 'Your research desk, in one app',
     featuresSub:
@@ -197,7 +219,7 @@ const STRINGS = {
     stepsTitle: 'Start in three steps',
     stepsSub: 'A few minutes from install to your first scan.',
     s1t: 'Download the app',
-    s1x: 'Install the macOS build; the app greets you on first launch.',
+    s1x: 'Install the macOS or Windows build; the app greets you on first launch.',
     s2t: 'Create an account',
     s2x: 'Sign up with your email and submit a license request on this site.',
     s3t: 'Activate your license',
@@ -206,7 +228,10 @@ const STRINGS = {
     dlTitle: 'Get FRAUDE on your desktop',
     dlSub: 'Access requires a license key; request one from your account if you don’t have it yet.',
     dlMac: ' Download for macOS',
+    dlWin: '⊞ Download for Windows',
     dlRequest: 'Request a License →',
+    dlGatekeeper:
+      'If macOS warns on first launch, right-click the app and choose "Open"; on Windows SmartScreen pick "Run anyway".',
 
     welcomeBack: 'Welcome back',
     createAccount: 'Create your account',
@@ -227,6 +252,25 @@ const STRINGS = {
     errSignUp: 'Sign-up failed: ',
     errSignIn: 'Sign-in failed: ',
     confirmEmail: 'A confirmation email has been sent; verify your inbox and sign in.',
+
+    // Password reset
+    forgotPw: 'Forgot your password?',
+    backToSignIn: '← Back to sign in',
+    forgotTitle: 'Reset your password',
+    forgotSub: "We'll email you a reset link.",
+    sendResetBtn: 'Send Reset Link',
+    resetSent: 'Reset link sent; check your inbox.',
+    resetFailed: 'Could not send the link: ',
+    resetTitle: 'Set a new password',
+    resetSub: 'Enter a new password for your account.',
+    newPwLabel: 'New password',
+    newPwAgainLabel: 'New password (again)',
+    errPwMatch: 'Passwords do not match.',
+    resetSaveBtn: 'Update Password',
+    resetSaveFailed: 'Update failed: ',
+    resetDone: 'Password updated; taking you to your account…',
+    resetLinkInvalid:
+      'This link is invalid or has expired. Request a new reset link from the sign-in page.',
 
     myAccount: 'My Account',
     yourKeyTitle: 'Your license key',

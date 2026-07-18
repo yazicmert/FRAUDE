@@ -9,7 +9,7 @@ const EMAIL_RE = /.+@.+\..+/;
 /** Giriş/kayıt — uygulamadaki akışla aynı Supabase projesi ve kurallar. */
 export default function SignIn() {
   const { t } = useI18n();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,11 +17,36 @@ export default function SignIn() {
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const switchMode = (next: 'signin' | 'signup' | 'forgot') => {
+    setMode(next);
+    setError(null);
+    setInfo(null);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setInfo(null);
     if (!EMAIL_RE.test(email.trim())) return setError(t('errEmail'));
+    if (mode === 'forgot') {
+      // Yenileme e-postası Supabase Auth üzerinden (projede tanımlı SMTP ile)
+      // gönderilir; bağlantı /sifre-yenile sayfasına döner.
+      setBusy(true);
+      try {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+          email.trim().toLowerCase(),
+          { redirectTo: `${window.location.origin}/sifre-yenile` },
+        );
+        if (resetError) {
+          setError(t('resetFailed') + resetError.message);
+        } else {
+          setInfo(t('resetSent'));
+        }
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (mode === 'signup' && !name.trim()) return setError(t('errName'));
     if (mode === 'signup' && password.length < 8) return setError(t('errPwShort'));
     if (!password) return setError(t('errPwRequired'));
@@ -71,9 +96,11 @@ export default function SignIn() {
       <div className="card" style={{ textAlign: 'center', paddingTop: 34 }}>
         <BrandMark size={54} />
         <h1 style={{ marginTop: 12 }}>
-          {mode === 'signin' ? t('welcomeBack') : t('createAccount')}
+          {mode === 'signin' ? t('welcomeBack') : mode === 'signup' ? t('createAccount') : t('forgotTitle')}
         </h1>
-        <p className="page-sub">{mode === 'signin' ? t('signInSub') : t('signUpSub')}</p>
+        <p className="page-sub">
+          {mode === 'signin' ? t('signInSub') : mode === 'signup' ? t('signUpSub') : t('forgotSub')}
+        </p>
         <form className="form" onSubmit={submit} style={{ textAlign: 'left' }}>
           {mode === 'signup' && (
             <label>
@@ -91,25 +118,39 @@ export default function SignIn() {
               autoFocus
             />
           </label>
-          <label>
-            {t('passwordLabel')}
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            />
-          </label>
+          {mode !== 'forgot' && (
+            <label>
+              {t('passwordLabel')}
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              />
+            </label>
+          )}
           {info ? <p className="form-info">{info}</p> : <p className="form-error">{error ?? ''}</p>}
           <button className="btn btn-primary" type="submit" disabled={busy}>
-            {busy ? t('working') : mode === 'signin' ? t('signIn') : t('signUpBtn')}
+            {busy
+              ? t('working')
+              : mode === 'signin'
+                ? t('signIn')
+                : mode === 'signup'
+                  ? t('signUpBtn')
+                  : t('sendResetBtn')}
           </button>
         </form>
         <p className="auth-switch-line">
           {mode === 'signin' ? (
-            <button onClick={() => setMode('signup')}>{t('noAccount')}</button>
+            <>
+              <button onClick={() => switchMode('signup')}>{t('noAccount')}</button>
+              {' · '}
+              <button onClick={() => switchMode('forgot')}>{t('forgotPw')}</button>
+            </>
           ) : (
-            <button onClick={() => setMode('signin')}>{t('haveAccount')}</button>
+            <button onClick={() => switchMode('signin')}>
+              {mode === 'signup' ? t('haveAccount') : t('backToSignIn')}
+            </button>
           )}
         </p>
       </div>
