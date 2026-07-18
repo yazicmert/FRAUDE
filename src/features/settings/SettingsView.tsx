@@ -14,6 +14,7 @@ import { useTranslation } from '../../api/i18n';
 import { getSession, signOut } from '../auth/session';
 import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
 import UpdatesView from '../updates/UpdatesView';
+import './SettingsView.css';
 
 const emptyForm: SaveAiKeyRequest = {
   provider: 'openai',
@@ -177,7 +178,7 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="view">
+    <div className="view settings-view">
       <div className="view-header">
         <div>
           <p className="eyebrow">Fraude Configuration</p>
@@ -185,33 +186,34 @@ export default function SettingsView() {
         </div>
         {account && (
           <div style={{ textAlign: 'right' }}>
-            <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <p className="st-signed">
               {t('authSignedInAs')}: {account.name} · {account.email}
             </p>
-            <button
-              type="button"
-              onClick={signOut}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '6px',
-                border: '1px solid rgba(255,106,94,0.4)',
-                background: 'transparent',
-                color: '#ff6a5e',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
+            <button type="button" className="st-danger-btn" onClick={signOut}>
               {t('authSignOut')}
             </button>
           </div>
         )}
       </div>
 
-      <div className="tabs" style={{ display: 'flex', gap: '12px', padding: '0 24px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
-        <button type="button" onClick={() => setActiveTab('account')} style={{ padding: '8px 16px', borderBottom: activeTab === 'account' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'account' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{t('authAccount')}</button>
-        <button type="button" onClick={() => setActiveTab('keys')} style={{ padding: '8px 16px', borderBottom: activeTab === 'keys' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'keys' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Providers</button>
-        <button type="button" onClick={() => setActiveTab('agents')} style={{ padding: '8px 16px', borderBottom: activeTab === 'agents' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'agents' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Agents</button>
-        <button type="button" onClick={() => setActiveTab('updates')} style={{ padding: '8px 16px', borderBottom: activeTab === 'updates' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'updates' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{t('updates')}</button>
+      <div className="st-tabs" role="tablist">
+        {([
+          ['account', t('authAccount')],
+          ['keys', 'AI Providers'],
+          ['agents', 'AI Agents'],
+          ['updates', t('updates')],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={`st-tab${activeTab === tab ? ' active' : ''}`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {activeTab === 'account' && (
@@ -219,12 +221,12 @@ export default function SettingsView() {
           <section className="panel">
             <h2>{t('authProfile')}</h2>
             {account ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 24px', fontSize: '13px', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>{t('authName')}</span>
+              <div className="st-kv">
+                <span className="k">{t('authName')}</span>
                 <span>{account.name}</span>
-                <span style={{ color: 'var(--text-muted)' }}>{t('authEmail')}</span>
+                <span className="k">{t('authEmail')}</span>
                 <span>{account.email}</span>
-                <span style={{ color: 'var(--text-muted)' }}>{t('authMemberSince')}</span>
+                <span className="k">{t('authMemberSince')}</span>
                 <span>{new Date(account.createdAt).toLocaleDateString()}</span>
               </div>
             ) : (
@@ -238,35 +240,29 @@ export default function SettingsView() {
               <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{t('authLicenseChecking')}</p>
             ) : license ? (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '8px 24px', fontSize: '13px', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseStatus')}</span>
+                <div className="st-kv">
+                  <span className="k">{t('authLicenseStatus')}</span>
                   <span>
-                    <span style={{ background: 'rgba(0,232,150,0.12)', color: '#00e896', padding: '2px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600 }}>
-                      {t('authLicenseActive')}
-                    </span>
+                    <span className="st-pill">{t('authLicenseActive')}</span>
                   </span>
-                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicensePlan')}</span>
+                  <span className="k">{t('authLicensePlan')}</span>
                   <span style={{ textTransform: 'capitalize' }}>{license.plan}</span>
-                  <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseExpires')}</span>
+                  <span className="k">{t('authLicenseExpires')}</span>
                   <span>{license.expiresAt ? new Date(license.expiresAt).toLocaleDateString() : t('authLicenseNoExpiry')}</span>
                   {license.maxDevices > 0 && (
                     <>
-                      <span style={{ color: 'var(--text-muted)' }}>{t('authLicenseDevices')}</span>
+                      <span className="k">{t('authLicenseDevices')}</span>
                       <span>{license.devices.length} / {license.maxDevices}</span>
                     </>
                   )}
                 </div>
                 {license.devices.length > 0 && (
-                  <ul style={{ listStyle: 'none', margin: '14px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <ul className="st-devices">
                     {license.devices.map((device, index) => (
-                      <li key={index} style={{ display: 'flex', gap: '10px', alignItems: 'baseline', fontSize: '13px', border: '1px solid var(--border-color, rgba(255,255,255,0.08))', borderRadius: '8px', padding: '8px 12px' }}>
+                      <li key={index}>
                         <span>{device.device_name ?? 'unknown'}</span>
-                        {device.current && (
-                          <span style={{ color: '#00e896', fontSize: '11px' }}>● {t('authThisDevice')}</span>
-                        )}
-                        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '11px' }}>
-                          {new Date(device.last_seen_at).toLocaleString()}
-                        </span>
+                        {device.current && <span className="cur">● {t('authThisDevice')}</span>}
+                        <span className="seen">{new Date(device.last_seen_at).toLocaleString()}</span>
                       </li>
                     ))}
                   </ul>
@@ -279,11 +275,7 @@ export default function SettingsView() {
 
           <section className="panel">
             <h2>{t('authSignedInAs')}</h2>
-            <button
-              type="button"
-              onClick={signOut}
-              style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid rgba(255,106,94,0.4)', background: 'transparent', color: '#ff6a5e', cursor: 'pointer', fontSize: '13px' }}
-            >
+            <button type="button" className="st-danger-btn" onClick={signOut}>
               {t('authSignOut')}
             </button>
           </section>
@@ -427,15 +419,7 @@ export default function SettingsView() {
               placeholder="Sen bir teknik analiz uzmanısın..."
               rows={4}
               required
-              style={{
-                background: 'var(--bg-dark)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-main)',
-                padding: '12px',
-                borderRadius: '6px',
-                resize: 'vertical',
-                minHeight: '100px'
-              }}
+              style={{ resize: 'vertical', minHeight: '100px' }}
             />
           </label>
           <label>
@@ -451,22 +435,7 @@ export default function SettingsView() {
               ))}
             </select>
           </label>
-          <button 
-            type="submit" 
-            className="primary-button" 
-            style={{ 
-              gridColumn: '1 / -1', 
-              justifySelf: 'end', 
-              marginTop: '12px', 
-              padding: '8px 24px', 
-              background: 'var(--accent-primary)',
-              color: '#000',
-              fontWeight: 'bold',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-          >
+          <button type="submit" className="primary-button" style={{ gridColumn: '1 / -1' }}>
             Save Agent
           </button>
         </form>
