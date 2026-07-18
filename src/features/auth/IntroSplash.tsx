@@ -82,7 +82,9 @@ export default function IntroSplash({ onDone }: { onDone: () => void }) {
   }, [onDone]);
 
   return (
-    <div className={`intro-splash intro-${phase}`} role="presentation">
+    // Faz sınıfı "intro-phase-*" önekiyle verilir: "intro-brand" fazı, aynı
+    // adlı yazı kapsayıcısının (.intro-brand) stilini ezmesin (ortalama kaybı).
+    <div className={`intro-splash intro-phase-${phase}`} role="presentation">
       <div className="intro-strip intro-strip-far">
         <CandleStrip candles={far} />
       </div>

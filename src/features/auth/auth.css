@@ -15,7 +15,7 @@
   user-select: none;
 }
 
-.intro-splash.intro-out {
+.intro-splash.intro-phase-out {
   opacity: 0;
   transition: opacity 0.45s ease;
   pointer-events: none;

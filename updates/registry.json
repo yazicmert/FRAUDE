@@ -2,6 +2,30 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-18-intro-yazisi-ortalama",
+      "date": "2026-07-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Giriş introsunda FRAUDE TERMINAL yazısı yeniden ortada",
+        "en": "FRAUDE TERMINAL wordmark centered again in the intro"
+      },
+      "summary": {
+        "tr": "İntro kapsayıcısının faz sınıfı (intro-brand) yazı kapsayıcısının aynı adlı sınıfıyla çakışıyor, ortalayan grid düzenini ezip yazıyı köşeye itiyordu. Faz sınıfları intro-phase-* önekine taşındı.",
+        "en": "The splash container's phase class (intro-brand) collided with the wordmark container's class of the same name, overriding the centering grid and pushing the text to a corner. Phase classes now use an intro-phase-* prefix."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "touches": [
+        "src/features/auth/IntroSplash.tsx",
+        "src/features/auth/auth.css"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda şu düzeltmeyi uygula: Giriş introsu bileşeninde (src/features/auth/IntroSplash.tsx) kapsayıcı div'in faz sınıfı `intro-${phase}` kalıbıyla üretiliyor; `brand` fazında bu, yazı kapsayıcısının `.intro-brand` sınıfıyla çakışıp splash'in position:fixed + grid ortalamasını eziyor. Faz sınıfını `intro-phase-${phase}` yap ve auth.css'te `.intro-splash.intro-out` seçicisini `.intro-splash.intro-phase-out` olarak güncelle; `.intro-brand` (yazı) stilleri olduğu gibi kalsın.\n\nKabul: 'npx tsc --noEmit' ve 'npx vite build' geçmeli; intro oynatıldığında FRAUDE TERMINAL yazısı ekranın ortasında belirmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-07-18-fon-hizi-ve-hisse-fon-dizini",
       "date": "2026-07-18",
       "author": "yazicmert",
