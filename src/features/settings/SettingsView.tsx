@@ -13,6 +13,7 @@ import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest } from 
 import { useTranslation } from '../../api/i18n';
 import { getSession, signOut } from '../auth/session';
 import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
+import UpdatesView from '../updates/UpdatesView';
 
 const emptyForm: SaveAiKeyRequest = {
   provider: 'openai',
@@ -71,7 +72,7 @@ const emptyAgentForm: SaveAiAgentRequest = {
 export default function SettingsView() {
   const { t } = useTranslation();
   const account = getSession();
-  const [activeTab, setActiveTab] = useState<'account' | 'keys' | 'agents'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'keys' | 'agents' | 'updates'>('account');
   const [license, setLicense] = useState<LicenseOverview | null | 'loading'>('loading');
 
   // Hesap sekmesi: lisans özeti (cihaz listesi RPC'si yoksa temel bilgiye düş).
@@ -210,6 +211,7 @@ export default function SettingsView() {
         <button type="button" onClick={() => setActiveTab('account')} style={{ padding: '8px 16px', borderBottom: activeTab === 'account' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'account' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{t('authAccount')}</button>
         <button type="button" onClick={() => setActiveTab('keys')} style={{ padding: '8px 16px', borderBottom: activeTab === 'keys' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'keys' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Providers</button>
         <button type="button" onClick={() => setActiveTab('agents')} style={{ padding: '8px 16px', borderBottom: activeTab === 'agents' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'agents' ? 'var(--text-primary)' : 'var(--text-muted)' }}>AI Agents</button>
+        <button type="button" onClick={() => setActiveTab('updates')} style={{ padding: '8px 16px', borderBottom: activeTab === 'updates' ? '2px solid var(--accent-primary)' : 'none', background: 'transparent', color: activeTab === 'updates' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{t('updates')}</button>
       </div>
 
       {activeTab === 'account' && (
@@ -489,6 +491,8 @@ export default function SettingsView() {
       </section>
         </>
       )}
+
+      {activeTab === 'updates' && <UpdatesView />}
     </div>
   );
 }
