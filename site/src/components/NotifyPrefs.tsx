@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
+import { BIST_TICKERS } from '../lib/bistTickers';
 
 interface Prefs {
   enabled: boolean;
@@ -23,11 +24,21 @@ const DEFAULTS: Prefs = {
   min_priority: 3,
 };
 
+/** Türkçe duyarsız arama normalizasyonu (İ/ı/ş/ğ… → sade). */
+function norm(s: string): string {
+  return s
+    .toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
+    .trim();
+}
+
 /** Hesap sayfasındaki bildirim tercihleri kartı (notify_prefs tablosu). */
 export default function NotifyPrefs({ user }: { user: User }) {
   const { t } = useI18n();
   const [prefs, setPrefs] = useState<Prefs>(DEFAULTS);
-  const [tickerText, setTickerText] = useState('');
+  const [newTicker, setNewTicker] = useState('');
+  const [tickerFocus, setTickerFocus] = useState(false);
   const [keywordText, setKeywordText] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -41,37 +52,41 @@ export default function NotifyPrefs({ user }: { user: User }) {
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
-          setPrefs(data as Prefs);
-          setTickerText(((data as Prefs).tickers ?? []).join(', '));
+          setPrefs({ ...DEFAULTS, ...(data as Prefs) });
           setKeywordText(((data as Prefs).keywords ?? []).join(', '));
         }
         setReady(true);
       });
   }, [user.id]);
 
-  const parseList = (raw: string, upper: boolean): string[] =>
-    Array.from(
-      new Set(
-        raw
-          .split(/[,\n]/)
-          .map((s) => (upper ? s.trim().toUpperCase() : s.trim()))
-          .filter(Boolean),
-      ),
-    );
+  const suggestions = useMemo(() => {
+    const q = norm(newTicker);
+    if (q.length < 1) return [];
+    return BIST_TICKERS.filter(
+      ([code, name]) => norm(code).includes(q) || norm(name).includes(q),
+    ).slice(0, 8);
+  }, [newTicker]);
+
+  const toggleTicker = (code: string) => {
+    const up = code.toUpperCase();
+    setPrefs((p) => ({
+      ...p,
+      tickers: p.tickers.includes(up) ? p.tickers.filter((x) => x !== up) : [...p.tickers, up],
+    }));
+    setSaved(false);
+  };
 
   const save = async () => {
     setBusy(true);
     setSaved(false);
     try {
-      const row = {
-        user_id: user.id,
-        email: user.email,
-        ...prefs,
-        tickers: parseList(tickerText, true),
-        keywords: parseList(keywordText, false),
-        updated_at: new Date().toISOString(),
-      };
-      const { error } = await supabase.from('notify_prefs').upsert(row, { onConflict: 'user_id' });
+      const keywords = Array.from(
+        new Set(keywordText.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)),
+      );
+      const { error } = await supabase.from('notify_prefs').upsert(
+        { user_id: user.id, email: user.email, ...prefs, keywords, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      );
       if (!error) {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
@@ -112,14 +127,50 @@ export default function NotifyPrefs({ user }: { user: User }) {
         </div>
 
         <div className="form" style={{ marginTop: 14 }}>
-          <label>
-            {t('notifyTickers')}
-            <input
-              value={tickerText}
-              onChange={(e) => setTickerText(e.target.value)}
-              placeholder="THYAO, GARAN, ASELS"
-            />
-          </label>
+          <div>
+            <label style={{ display: 'block' }}>{t('notifyTickers')}</label>
+            {prefs.tickers.length > 0 && (
+              <div className="nt-chips">
+                {prefs.tickers.map((tk) => (
+                  <span key={tk} className="nt-chip">
+                    {tk}
+                    <button type="button" onClick={() => toggleTicker(tk)}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="nt-autocomplete">
+              <input
+                value={newTicker}
+                onChange={(e) => setNewTicker(e.target.value)}
+                onFocus={() => setTickerFocus(true)}
+                onBlur={() => setTimeout(() => setTickerFocus(false), 120)}
+                placeholder={t('notifyTickerSearch')}
+              />
+              {tickerFocus && suggestions.length > 0 && (
+                <ul className="nt-suggest">
+                  {suggestions.map(([code, name]) => {
+                    const on = prefs.tickers.includes(code.toUpperCase());
+                    return (
+                      <li
+                        key={code}
+                        className={on ? 'on' : ''}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          toggleTicker(code);
+                          setNewTicker('');
+                        }}
+                      >
+                        <span className="nt-tk">{code}</span>
+                        <span className="nt-nm">{name}</span>
+                        <span className="nt-mark">{on ? '✓' : '+'}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
           <label>
             {t('notifyKeywords')}
             <input

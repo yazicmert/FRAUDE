@@ -3,6 +3,8 @@ import { useTranslation } from '../../api/i18n';
 import { getSession } from '../auth/session';
 import { supabase } from '../auth/supabaseClient';
 import { useWatchlist } from '../../hooks/useWatchlist';
+import { getDashboardSnapshot } from '../../api/tauriClient';
+import { normalizeSearch } from '../../components/symbolCatalog';
 import './NotificationsView.css';
 
 interface Prefs {
@@ -42,6 +44,8 @@ export default function NotificationsView() {
   const [newKeyword, setNewKeyword] = useState('');
   const [state, setState] = useState<SaveState>('idle');
   const [ready, setReady] = useState(false);
+  const [universe, setUniverse] = useState<{ ticker: string; name: string }[]>([]);
+  const [tickerFocus, setTickerFocus] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -64,11 +68,45 @@ export default function NotificationsView() {
     };
   }, [session?.id]);
 
+  // BIST evreni — hisse adı/kodu yazınca öneri açılır listesi (CommandPalette deseni)
+  useEffect(() => {
+    let cancelled = false;
+    void getDashboardSnapshot()
+      .then((snap) => {
+        if (cancelled) return;
+        const rows = (snap?.equities ?? []).map((e) => ({ ticker: e.ticker, name: e.name }));
+        setUniverse(rows);
+      })
+      .catch(() => {
+        /* veri çalışma zamanı yoksa öneri kapalı; elle giriş yine çalışır */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const watchlistTickers = useMemo(
     () => Array.from(new Set(watchlist.map((w) => w.ticker.toUpperCase()))),
     [watchlist],
   );
   const importable = watchlistTickers.filter((tk) => !prefs.tickers.includes(tk));
+
+  const suggestions = useMemo(() => {
+    const q = normalizeSearch(newTicker.trim());
+    if (q.length < 1 || universe.length === 0) return [];
+    return universe
+      .filter((u) => normalizeSearch(u.ticker).includes(q) || normalizeSearch(u.name).includes(q))
+      .slice(0, 8);
+  }, [newTicker, universe]);
+
+  const toggleTicker = (raw: string) => {
+    const up = raw.toUpperCase();
+    patch({
+      tickers: prefs.tickers.includes(up)
+        ? prefs.tickers.filter((x) => x !== up)
+        : [...prefs.tickers, up],
+    });
+  };
 
   const patch = (p: Partial<Prefs>) => {
     setPrefs((prev) => ({ ...prev, ...p }));
@@ -164,12 +202,37 @@ export default function NotificationsView() {
             ))}
           </div>
           <div className="notif-add">
-            <input
-              value={newTicker}
-              onChange={(e) => setNewTicker(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addTicker(newTicker)}
-              placeholder="THYAO"
-            />
+            <div className="notif-autocomplete">
+              <input
+                value={newTicker}
+                onChange={(e) => setNewTicker(e.target.value)}
+                onFocus={() => setTickerFocus(true)}
+                onBlur={() => setTimeout(() => setTickerFocus(false), 120)}
+                onKeyDown={(e) => e.key === 'Enter' && addTicker(newTicker)}
+                placeholder="THYAO"
+              />
+              {tickerFocus && suggestions.length > 0 && (
+                <ul className="notif-suggest">
+                  {suggestions.map((s) => {
+                    const on = prefs.tickers.includes(s.ticker.toUpperCase());
+                    return (
+                      <li
+                        key={s.ticker}
+                        className={on ? 'on' : ''}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          toggleTicker(s.ticker);
+                        }}
+                      >
+                        <span className="notif-suggest-tk">{s.ticker}</span>
+                        <span className="notif-suggest-nm">{s.name}</span>
+                        <span className="notif-suggest-mark">{on ? '✓' : '+'}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
             <button className="notif-btn" onClick={() => addTicker(newTicker)}>{t('notifAdd')}</button>
           </div>
           {importable.length > 0 && (
