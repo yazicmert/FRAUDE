@@ -2,6 +2,35 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-27-mali-tablo-kalem-eslemesi-denetimi",
+      "date": "2026-07-27",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Mali tablo kalem eşlemesi denetlendi: serbest nakit akımı ve banka kârı düzeltildi",
+        "en": "Financial statement line mapping audited: free cash flow and bank profit fixed"
+      },
+      "summary": {
+        "tr": "Sayıların doğru kaleme bağlanıp bağlanmadığı sağlayıcının kendi kalem açıklamalarıyla karşılaştırılarak denetlendi. Doğru çıkanlar: sanayi eşlemesi (hasılat 3C, brüt kâr 3D, faaliyet kârı 3DF, aktif 1BL), bilanço denkliği (varlıklar = kaynaklar, 474,9 milyar TL'de 1 TL yuvarlama farkı), ana ortaklık payı tercihi (net kâr 3Z ile özkaynak 2O tutarlı — ROE doğru), toplam borcun yalnız finansal borç olması (ticari borçlar hariç), banka tespiti ve kümülatiften çeyreğe indirme (dört çeyreğin toplamı yıllığa BİREBİR eşit, hem sanayi hem banka). İki hata bulundu. (1) Serbest nakit akımı HİÇBİR şirkette dolmuyordu: kod tabloda bulunmayan bir kalem açıklaması arıyordu ('maddi ve maddi olmayan duran varlıkların alımı') ve dört şirkette de sıfır eşleşme veriyordu. Oysa sağlayıcı serbest nakit akımını kendisi hesaplayıp `4CB` kalemi olarak veriyor; artık o kullanılıyor (= işletme nakdi + yatırım faaliyetleri nakdi, birebir doğrulandı). (2) Banka net kârı ve vergi öncesi kârı açıklama aramasıyla okunuyordu; arama iki kaleme birden uyuyor — sürdürülen (3CN/3CL) ve durdurulan (3CT/3CR) faaliyetler — ve yanıttaki sıraya göre biri seçiliyordu. Sıra değişse her bankanın net kârı sıfır görünürdü. Artık kod üzerinden okunuyor ve ikisi toplanıyor. Ayrıca bankalarda nakit akış tablosu bu uçtan hiç gelmediği için ilgili alanlar açıkça boş bırakılıyor.",
+        "en": "Whether the numbers land on the right line items was audited against the provider's own item descriptions. Confirmed correct: the industrial mapping (revenue 3C, gross profit 3D, operating profit 3DF, assets 1BL), the balance-sheet identity (assets = liabilities + equity, 1 TRY rounding difference on 474.9 billion), the parent-share preference (net income 3Z paired with equity 2O — so ROE is consistent), total debt covering financial debt only (excluding trade payables), bank detection, and the cumulative-to-quarterly derivation (four quarters sum EXACTLY to the annual figure, for both industrials and banks). Two bugs were found. (1) Free cash flow was never populated for any company: the code searched for an item description that does not exist in the table ('purchases of tangible and intangible fixed assets'), matching zero rows across four companies. The provider computes free cash flow itself and serves it as item `4CB`; that is now used (= operating cash flow + investing cash flow, verified exactly). (2) Bank net income and pre-tax profit were read via description search, which matches two items — continuing (3CN/3CL) and discontinued (3CT/3CR) operations — with the winner decided by response order. Had the order changed, every bank's net income would have read as zero. They are now read by code and summed. Banks also get no cash-flow statement from this endpoint, so those fields are now explicitly left empty."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
+      "touches": [
+        "core/src/fundamentals.rs"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda core/src/fundamentals.rs kalem eşlemesini denetle ve düzelt. ÖNCE ham veriyle doğrula, sonra değiştir:\n\nHam veri: MaliTablo ucundan bir şirket çek ve her kalemin `itemCode` + `itemDescTr` çiftini yazdır. Kodun aradığı her kalemin sağlayıcıda gerçekten ne olduğunu gör.\n\n1. Serbest nakit akımı: kod `by_desc(items, \"4\", \"MADDI VE MADDI OLMAYAN DURAN VARLIKLARIN ALIM\")` ile capex arıyorsa bu kalem TABLODA YOK (ASELS/THYAO/EREGL/TUPRS'te sıfır eşleşme) ve serbest nakit akımı her şirkette None kalıyor demektir. Sağlayıcı serbest nakit akımını `4CB` (Serbest Nakit Akım) olarak zaten veriyor; onu kullan, yedek olarak `4C` + `4CAK` türet (birebir eşit olduğu doğrulandı).\n2. Banka gelir tablosu: `by_desc(items, \"3\", \"DONEM NET K\")` iki kaleme uyuyor — 3CN sürdürülen, 3CT durdurulan faaliyetler. `.find()` yanıt sırasına bağımlı. `sum_codes(items, &[\"3CN\", \"3CT\"])` kullan, yedek `2OV`. Aynısı vergi öncesi kâr için: `sum_codes(items, &[\"3CL\", \"3CR\"])`.\n3. Bankalarda '4' ile başlayan hiç kalem gelmiyor (nakit akış tablosu yok); operating_cash_flow'u None bırak ve ölü by_desc yedeğini kaldır.\n\nRegresyon testleri yaz: (a) fixture ile 4CB tercihi ve 4C+4CAK yedeği, (b) banka net kârının sürdürülen+durdurulanı topladığı, (c) kalem SIRASI değişince sonucun DEĞİŞMEDİĞİ, (d) canlı testte dört çeyreğin toplamının yıllığa birebir eşit olduğu (sanayi + banka), (e) canlı testte serbest nakit akımının sanayi şirketlerinde dolu olduğu.\n\nKabul: 'npm run rust:check', 'cargo test --manifest-path core/Cargo.toml' ve canlı testler ('--lib -- --ignored') geçmeli.",
+      "notes": {
+        "tr": "Banka rakamları sayısal olarak değişmedi (durdurulan faaliyetler bugün sıfır); değişen, sonucun artık yanıt sırasına bağımlı olmaması. Serbest nakit akımı ise ilk kez dolu geliyor.",
+        "en": "Bank figures did not change numerically (discontinued operations are currently zero); what changed is that the result no longer depends on response order. Free cash flow, by contrast, is populated for the first time."
+      }
+    },
+    {
       "id": "2026-07-27-kap-spk-mali-tablo-veri-dogrulugu",
       "date": "2026-07-27",
       "author": "yazicmert",

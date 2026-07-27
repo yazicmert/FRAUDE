@@ -174,29 +174,34 @@ fn sum_codes(items: &PeriodItems, codes: &[&str]) -> Option<f64> {
 /// faiz gelirleri hasılat, net faiz geliri brüt kâr karşılığı olarak okunur.
 fn extract_period(items: &PeriodItems, is_bank: bool, period_label: String) -> FinancialPeriod {
     if is_bank {
-        let operating_cash_flow = by_code(items, "4C")
-            .or_else(|| by_desc(items, "4", "ISLETME FAALIYETLERINDEN"));
         return FinancialPeriod {
             period: period_label,
+            // "I. FAİZ GELİRLERİ" — bankada hasılatın karşılığı.
             revenue: by_code(items, "3A"),
+            // "III. NET FAİZ GELİRİ/GİDERİ" — brüt kârın karşılığı.
             gross_profit: by_code(items, "3C"),
-            operating_income: by_code(items, "3CL").or_else(|| by_desc(items, "3", "VERGI ONCESI")),
-            net_income: by_desc(items, "3", "DONEM NET K").or_else(|| by_code(items, "2OV")),
+            // Vergi öncesi kâr: sürdürülen (3CL) + durdurulan (3CR) faaliyetler.
+            operating_income: sum_codes(items, &["3CL", "3CR"]),
+            // Dönem net kârı: sürdürülen (3CN) + durdurulan (3CT) faaliyetler.
+            // Yedek, özkaynak bölümündeki toplam satırı (2OV).
+            net_income: sum_codes(items, &["3CN", "3CT"]).or_else(|| by_code(items, "2OV")),
             total_assets: by_code(items, "1Z").or_else(|| by_desc(items, "1", "AKTIF TOPLAMI")),
             total_equity: by_code(items, "2O"),
+            // Bankada "toplam borç" kaldıraç anlamında tanımsızdır: fonlama
+            // tabanı mevduattır, finansal borç değil.
             total_debt: None,
-            operating_cash_flow,
+            // Uç bankalar için nakit akış tablosu (4* kalemleri) hiç döndürmüyor.
+            operating_cash_flow: None,
             free_cash_flow: None,
         };
     }
 
     let operating_cash_flow = by_code(items, "4C");
-    let capex = by_desc(items, "4", "MADDI VE MADDI OLMAYAN DURAN VARLIKLARIN ALIM");
-    let free_cash_flow = match (operating_cash_flow, capex) {
-        // Nakit çıkışları tabloda işaretli gelir; pozitifse mutlak değeri düşülür.
-        (Some(ocf), Some(spend)) => Some(if spend < 0.0 { ocf + spend } else { ocf - spend }),
-        _ => None,
-    };
+    // Serbest nakit akımını sağlayıcı kendisi hesaplayıp `4CB` olarak veriyor
+    // (= 4C işletme nakdi + 4CAK yatırım faaliyetleri nakdi; birebir doğrulandı).
+    // Kendi türetmemiz İş Yatırım'ın sitesinde gösterdiği rakamdan sapardı.
+    let free_cash_flow = by_code(items, "4CB")
+        .or_else(|| Some(operating_cash_flow? + by_code(items, "4CAK")?));
     FinancialPeriod {
         period: period_label,
         revenue: by_code(items, "3C"),
@@ -384,6 +389,123 @@ mod tests {
         assert_eq!(fold_tr("İşletme Faaliyetlerinden"), "ISLETME FAALIYETLERINDEN");
     }
 
+    fn items(rows: &[(&str, &str, f64)]) -> PeriodItems {
+        rows.iter().map(|(c, d, v)| (c.to_string(), fold_tr(d), *v)).collect()
+    }
+
+    /// Serbest nakit akımı sağlayıcının kendi `4CB` kalemidir.
+    ///
+    /// Önceki kod bunun yerine "MADDI VE MADDI OLMAYAN DURAN VARLIKLARIN ALIM"
+    /// açıklamasını arıyordu; bu kalem tabloda YOK (ASELS/THYAO/EREGL/TUPRS'te
+    /// sıfır eşleşme), dolayısıyla serbest nakit akımı her şirkette boş kalıyordu.
+    #[test]
+    fn free_cash_flow_uses_provider_line() {
+        let period = extract_period(
+            &items(&[
+                ("3C", "Satış Gelirleri", 100.0),
+                ("4C", "İşletme Faaliyetlerinden Kaynaklanan Net Nakit", 53.0),
+                ("4CAK", "Yatırım Faaliyetlerinden Kaynaklanan Nakit", -42.0),
+                ("4CB", "Serbest Nakit Akım", 11.0),
+            ]),
+            false,
+            "2025-12-31".into(),
+        );
+        assert_eq!(period.free_cash_flow, Some(11.0), "sağlayıcının kalemi kullanılmalı");
+    }
+
+    /// `4CB` yoksa aynı tanımdan türetilir: işletme nakdi + yatırım nakdi.
+    /// (Sağlayıcıda birebir doğrulandı: 4CB = 4C + 4CAK.)
+    #[test]
+    fn free_cash_flow_falls_back_to_the_same_definition() {
+        let period = extract_period(
+            &items(&[
+                ("4C", "İşletme Faaliyetlerinden Kaynaklanan Net Nakit", 53.0),
+                ("4CAK", "Yatırım Faaliyetlerinden Kaynaklanan Nakit", -42.0),
+            ]),
+            false,
+            "2025-12-31".into(),
+        );
+        assert_eq!(period.free_cash_flow, Some(11.0));
+
+        // Yatırım kalemi de yoksa uydurma yapılmaz.
+        let partial = extract_period(
+            &items(&[("4C", "İşletme Faaliyetlerinden Kaynaklanan Net Nakit", 53.0)]),
+            false,
+            "2025-12-31".into(),
+        );
+        assert_eq!(partial.free_cash_flow, None);
+    }
+
+    /// Banka net kârı ve vergi öncesi kârı **kod** üzerinden okunmalı.
+    ///
+    /// Açıklama araması ("DONEM NET K") iki kaleme birden uyuyor: sürdürülen
+    /// (3CN) ve durdurulan (3CT) faaliyetler. `.find()` yanıttaki sıraya göre
+    /// birini seçiyordu — sıra değişse her bankanın net kârı 0 olurdu.
+    #[test]
+    fn bank_income_sums_continuing_and_discontinued_operations() {
+        let rows = items(&[
+            ("3A", "I. FAİZ GELİRLERİ", 710.0),
+            ("3C", "III. NET FAİZ GELİRİ/GİDERİ", 165.0),
+            ("3CL", "XV. SÜRDÜRÜLEN FAALİYETLER VERGİ ÖNCESİ K/Z", 142.0),
+            ("3CR", "XX. DURDURULAN FAALİYETLER VERGİ ÖNCESİ K/Z", 8.0),
+            ("3CN", "XVII. SÜRDÜRÜLEN FAALİYETLER DÖNEM NET K/Z", 110.0),
+            ("3CT", "XXII. DURDURULAN FAALİYETLER DÖNEM NET K/Z", 5.0),
+            ("1Z", "AKTİF TOPLAMI", 3820.0),
+            ("2O", "XVI. ÖZKAYNAKLAR", 444.0),
+        ]);
+        let period = extract_period(&rows, true, "2025-12-31".into());
+        assert_eq!(period.revenue, Some(710.0));
+        assert_eq!(period.gross_profit, Some(165.0));
+        assert_eq!(period.operating_income, Some(150.0), "142 + 8 durdurulan");
+        assert_eq!(period.net_income, Some(115.0), "110 + 5 durdurulan");
+        assert_eq!(period.total_assets, Some(3820.0));
+        assert_eq!(period.total_equity, Some(444.0));
+        // Bankada kaldıraç anlamında "toplam borç" ve nakit akış tablosu yok.
+        assert_eq!(period.total_debt, None);
+        assert_eq!(period.operating_cash_flow, None);
+    }
+
+    /// Kalemlerin yanıttaki sırası sonucu DEĞİŞTİRMEMELİ.
+    #[test]
+    fn bank_income_is_order_independent() {
+        let forward = items(&[
+            ("3CN", "XVII. SÜRDÜRÜLEN FAALİYETLER DÖNEM NET K/Z", 110.0),
+            ("3CT", "XXII. DURDURULAN FAALİYETLER DÖNEM NET K/Z", 5.0),
+        ]);
+        let mut reversed = forward.clone();
+        reversed.reverse();
+        assert_eq!(
+            extract_period(&forward, true, "x".into()).net_income,
+            extract_period(&reversed, true, "x".into()).net_income,
+        );
+    }
+
+    /// Sanayi eşlemesi: kâr ve özkaynak ANA ORTAKLIK payı olmalı (tutarlı ROE),
+    /// toplam borç yalnız finansal borç (ticari borçlar hariç).
+    #[test]
+    fn industrial_mapping_prefers_parent_share_and_financial_debt() {
+        let period = extract_period(
+            &items(&[
+                ("3C", "Satış Gelirleri", 198.0),
+                ("3D", "BRÜT KAR (ZARAR)", 63.0),
+                ("3DF", "FAALİYET KARI (ZARARI)", 54.0),
+                ("3Z", "Ana Ortaklık Payları", 32.9),
+                ("3L", "DÖNEM KARI (ZARARI)", 32.5),
+                ("1BL", "TOPLAM VARLIKLAR", 474.0),
+                ("2O", "Ana Ortaklığa Ait Özkaynaklar", 275.0),
+                ("2N", "Özkaynaklar", 277.0),
+                ("2AA", "Finansal Borçlar", 41.0),
+                ("2BA", "Finansal Borçlar", 5.0),
+                ("2AAGAA", "Ticari Borçlar", 41.7),
+            ]),
+            false,
+            "2025-12-31".into(),
+        );
+        assert_eq!(period.net_income, Some(32.9), "ana ortaklık payı");
+        assert_eq!(period.total_equity, Some(275.0), "ana ortaklığa ait özkaynak");
+        assert_eq!(period.total_debt, Some(46.0), "kısa+uzun finansal borç; ticari borç hariç");
+    }
+
     /// Yıllık seri sağlayıcıda hazır duran derin geçmişi kapsamalı.
     ///
     /// Ölçüm: İş Yatırım MaliTablo ucu 2008'e kadar tam tablo döndürüyor
@@ -443,6 +565,66 @@ mod tests {
         let last = statement.annuals.last().unwrap();
         let margin = last.net_income.unwrap() / last.revenue.unwrap() * 100.0;
         assert!(margin.abs() < 100.0, "net marj makul olmalı: {margin}");
+    }
+
+    /// Kümülatiften çeyreğe indirme doğrulaması: bir yılın dört çeyreği
+    /// toplandığında o yılın yıllık rakamını **birebir** vermeli. Çıkarma
+    /// sırası ya da dönem eşlemesi bozulursa bu test yakalar.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_quarters_sum_back_to_the_annual_figure() {
+        let client = crate::http_client();
+        // Sanayi ve banka formatı birlikte denenir.
+        for ticker in ["ASELS", "THYAO", "GARAN", "AKBNK"] {
+            let statement = get_financial_statements(&client, ticker).await.unwrap();
+            // Tamamlanmış en son yıl: dört çeyreği de elde olan.
+            let Some(year) = statement
+                .annuals
+                .iter()
+                .rev()
+                .map(|p| p.period[..4].to_string())
+                .find(|year| {
+                    statement.quarterlies.iter().filter(|q| q.period.starts_with(year)).count() == 4
+                })
+            else {
+                panic!("{ticker}: dört çeyreği tam bir yıl bulunamadı");
+            };
+
+            let annual = statement.annuals.iter().find(|p| p.period.starts_with(&year)).unwrap();
+            let quarters: Vec<_> =
+                statement.quarterlies.iter().filter(|q| q.period.starts_with(&year)).collect();
+
+            for (label, annual_value, sum) in [
+                ("hasılat", annual.revenue, quarters.iter().filter_map(|q| q.revenue).sum::<f64>()),
+                ("net kâr", annual.net_income, quarters.iter().filter_map(|q| q.net_income).sum::<f64>()),
+            ] {
+                let Some(expected) = annual_value else { continue };
+                let drift = (sum - expected).abs() / expected.abs().max(1.0);
+                assert!(
+                    drift < 1e-6,
+                    "{ticker} {year} {label}: Σçeyrek {sum:.0} ≠ yıllık {expected:.0}"
+                );
+            }
+            println!("{ticker} {year}: dört çeyrek yıllığa birebir toplanıyor");
+        }
+    }
+
+    /// Sanayi şirketlerinde serbest nakit akımı gerçekten dolmalı.
+    /// (Eski açıklama araması hiçbir şirkette eşleşmediği için alan her zaman
+    /// boştu — sessiz bir özellik kaybıydı.)
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_free_cash_flow_is_populated_for_industrials() {
+        let client = crate::http_client();
+        for ticker in ["ASELS", "THYAO", "EREGL", "BIMAS"] {
+            let statement = get_financial_statements(&client, ticker).await.unwrap();
+            let with_ocf = statement.annuals.iter().filter(|p| p.operating_cash_flow.is_some()).count();
+            let with_fcf = statement.annuals.iter().filter(|p| p.free_cash_flow.is_some()).count();
+            println!("{ticker}: işletme nakdi {with_ocf} dönem, serbest nakit {with_fcf} dönem");
+            assert!(with_fcf > 0, "{ticker}: serbest nakit akımı hiç dolmadı");
+            // Nakit akış tablosu olan her dönemde serbest nakit de üretilebilmeli.
+            assert_eq!(with_fcf, with_ocf, "{ticker}: işletme nakdi olup serbest nakdi olmayan dönem var");
+        }
     }
 
     #[tokio::test]
