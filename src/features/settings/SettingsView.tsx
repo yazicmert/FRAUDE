@@ -8,8 +8,10 @@ import {
   listAiAgents,
   saveAiAgent,
   deleteAiAgent,
+  getBridgeInfo,
+  regenerateBridgeToken,
 } from '../../api/tauriClient';
-import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest } from '../../types';
+import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest, BridgeInfo } from '../../types';
 import { useTranslation } from '../../api/i18n';
 import { getSession, signOut } from '../auth/session';
 import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
@@ -109,6 +111,26 @@ export default function SettingsView() {
   const [agents, setAgents] = useState<AiAgent[]>([]);
   const [agentForm, setAgentForm] = useState<SaveAiAgentRequest>(emptyAgentForm);
   const [agentMessage, setAgentMessage] = useState('');
+
+  const [bridge, setBridge] = useState<BridgeInfo | null>(null);
+  const [bridgeCopied, setBridgeCopied] = useState(false);
+  useEffect(() => {
+    getBridgeInfo().then(setBridge).catch(() => setBridge(null));
+  }, []);
+  const handleRegenerateToken = async () => {
+    try {
+      setBridge(await regenerateBridgeToken());
+    } catch (e) {
+      console.error('Token yenilenemedi:', e);
+    }
+  };
+  const copyBridge = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setBridgeCopied(true);
+      setTimeout(() => setBridgeCopied(false), 1500);
+    } catch { /* pano erişimi yok */ }
+  };
 
   const load = async () => {
     setKeys(await listAiKeys());
@@ -457,6 +479,38 @@ export default function SettingsView() {
           ))}
           {agents.length === 0 && <p className="muted">No agents configured yet.</p>}
         </div>
+      </section>
+
+      <section className="panel">
+        <h2>🧩 {t('bridgeTitle')}</h2>
+        <p className="muted" style={{ marginTop: 0 }}>{t('bridgeDesc')}</p>
+        {bridge ? (
+          bridge.running ? (
+            <div className="st-kv">
+              <div><span>{t('bridgePort')}</span><strong>{bridge.port}</strong></div>
+              <div>
+                <span>{t('bridgeToken')}</span>
+                <code style={{ fontSize: '0.8rem', wordBreak: 'break-all', background: 'var(--bg-elevated)', padding: '4px 8px', borderRadius: '4px' }}>{bridge.token}</code>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button type="button" onClick={() => copyBridge(`127.0.0.1:${bridge.port}`)}>
+                  {bridgeCopied ? t('bridgeCopied') : t('bridgeCopyAddress')}
+                </button>
+                <button type="button" onClick={() => copyBridge(bridge.token)}>
+                  {t('bridgeCopyToken')}
+                </button>
+                <button type="button" className="st-danger-btn" onClick={handleRegenerateToken}>
+                  {t('bridgeRegenerate')}
+                </button>
+              </div>
+              <p className="muted" style={{ marginTop: '12px', fontSize: '0.82rem' }}>{t('bridgeHint')}</p>
+            </div>
+          ) : (
+            <p className="muted">{t('bridgeNotRunning')}</p>
+          )
+        ) : (
+          <p className="muted">{t('bridgeUnavailable')}</p>
+        )}
       </section>
         </>
       )}

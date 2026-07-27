@@ -5,9 +5,9 @@
     "sidebar marquee marquee"
     "sidebar workspace ai"
     "sidebar terminal terminal";
-  grid-template-columns: 208px minmax(0, 1fr) 300px;
+  grid-template-columns: var(--sidebar-width, 208px) minmax(0, 1fr) var(--ai-width, 300px);
   /* Satırlar App.tsx'teki shellStyle ile birebir aynı: topbar/marquee/workspace/terminal */
-  grid-template-rows: 52px auto minmax(0, 1fr) auto;
+  grid-template-rows: 52px auto minmax(0, 1fr) var(--terminal-height, auto);
   height: 100vh;
   background: var(--bg-dark);
 }
@@ -82,6 +82,202 @@ button {
   background: var(--bg-hover);
   color: var(--accent-primary);
   border-left-color: var(--accent-primary);
+}
+
+/* ── Navigasyon ağacı (varlık sınıfına göre gruplanmış kenar çubuğu) ── */
+.nav-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 4px;
+}
+
+.nav-section {
+  padding: 2px 0 4px;
+}
+.nav-section + .nav-section {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 6px;
+}
+
+.nav-section-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.55;
+  padding: 6px 16px 4px;
+}
+
+/* Ağaçtaki her satır (modül yaprağı, grup başlığı, yer tutucu) daha sık. */
+.nav-leaf,
+.nav-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  padding-right: 14px;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.nav-leaf {
+  justify-content: space-between;
+}
+
+.nav-group-head {
+  font-weight: 600;
+  color: var(--text-primary, #d6dae0);
+}
+.nav-group-head:hover {
+  color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+
+.nav-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+.nav-group-icon {
+  flex-shrink: 0;
+}
+.nav-group-label {
+  flex: 1;
+}
+
+.nav-soon {
+  opacity: 0.4;
+  cursor: default;
+}
+.nav-soon-badge {
+  flex-shrink: 0;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ── Yatay gruplu üst menü (NavMenu) ── */
+.navmenu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 4px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
+}
+.navmenu-slot {
+  position: relative;
+}
+.navmenu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.navmenu-item:hover,
+.navmenu-item.open {
+  color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+.navmenu-item.active {
+  color: var(--accent-primary);
+}
+.navmenu-icon {
+  font-size: 0.9em;
+}
+.navmenu-caret {
+  margin-left: 2px;
+  font-size: 0.6rem;
+  opacity: 0.6;
+}
+.navmenu-soon {
+  opacity: 0.4;
+  cursor: default;
+}
+.navmenu-soon:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.navmenu-dd {
+  z-index: 1000;
+  min-width: 210px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+}
+.navmenu-dd-header {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.6;
+  padding: 8px 12px 4px;
+}
+.navmenu-dd-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary, #cdd2da);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+.navmenu-dd-item:hover {
+  background: var(--bg-hover);
+  color: var(--accent-primary);
+}
+.navmenu-dd-item.active {
+  color: var(--accent-primary);
+}
+.navmenu-dd-soon,
+.navmenu-dd-soon:hover {
+  opacity: 0.4;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+.navmenu-soon-badge {
+  flex-shrink: 0;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .topbar {
@@ -868,20 +1064,16 @@ tr.clickable-row:hover {
   .app-shell {
     grid-template-areas:
       "topbar"
+      "marquee"
       "workspace"
-      "ai"
       "terminal";
-    grid-template-columns: 1fr;
-    grid-template-rows: 52px minmax(0, 1fr) 220px 180px;
-  }
-
-  .sidebar {
-    display: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 52px 32px minmax(0, 1fr) var(--terminal-height, 0px);
   }
 
   .split-grid,
   .settings-form {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 }
 
@@ -2884,4 +3076,568 @@ tr.clickable-row:hover {
 
 .marquee-change.negative {
   color: #f85149;
+}
+
+/* ── Responsive application shell and module contract ─────────────────────
+   Modüller aynı çalışma alanında yaşar. Bu bölüm, her modülün ayrı sabit
+   genişlik varsayması yerine ortak dar-ekran davranışını tanımlar. */
+
+.responsive-backdrop {
+  display: none;
+}
+
+.workspace-tab-pane,
+.workspace-tab-pane > *,
+.view,
+.panel {
+  min-width: 0;
+}
+
+.morning-brief-banner {
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    --ai-width: min(270px, 28vw);
+  }
+
+  .topbar {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .topbar-search {
+    gap: 8px;
+  }
+
+  .context-chip {
+    display: none;
+  }
+
+  .market-status,
+  .sync-chip {
+    padding-inline: 3px;
+  }
+}
+
+@media (max-width: 980px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1000;
+    width: min(280px, 86vw);
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.48);
+  }
+
+  .right-panel {
+    position: fixed;
+    inset: 52px 0 0 auto;
+    z-index: 900;
+    width: min(380px, 100vw);
+    border-top: 1px solid var(--border-color);
+    box-shadow: -20px 0 50px rgba(0, 0, 0, 0.48);
+  }
+
+  .responsive-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 850;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(2px);
+  }
+
+  .workspace,
+  .workspace-tab-pane {
+    overscroll-behavior: contain;
+  }
+
+  .navmenu {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .navmenu::-webkit-scrollbar,
+  .topbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navmenu-slot {
+    flex: 0 0 auto;
+  }
+
+  .navmenu-dd {
+    max-width: calc(100vw - 16px);
+    max-height: min(65vh, 440px);
+    overflow-y: auto;
+  }
+
+  .view {
+    padding: 16px;
+  }
+
+  .view-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .view-header > * {
+    min-width: 0;
+  }
+
+  .panel {
+    overflow-x: auto;
+  }
+
+  .dashboard-module-grid,
+  .module-center-layout,
+  .brief-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .research-view,
+  .team-view {
+    padding: 16px !important;
+  }
+
+  .research-header {
+    align-items: flex-start !important;
+    flex-direction: column;
+  }
+
+  .research-tabs {
+    width: 100%;
+    margin-left: 0 !important;
+    overflow-x: auto;
+  }
+
+  .research-tabs > button {
+    flex: 1 0 auto;
+  }
+
+  .research-jobs-layout {
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .research-job-list {
+    flex: 0 0 auto !important;
+    max-height: 230px;
+  }
+
+  .research-job-detail {
+    flex: 0 0 auto !important;
+    min-height: 220px;
+    overflow: visible !important;
+  }
+
+  .research-detail-header {
+    flex-wrap: wrap;
+  }
+
+  .research-detail-actions {
+    flex-wrap: wrap;
+  }
+
+  .team-view {
+    height: auto !important;
+    min-height: 100%;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .team-agents-pane {
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+  }
+
+  .team-artifacts-pane {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    padding: 16px !important;
+  }
+
+  .ai-workspace {
+    flex-direction: column !important;
+  }
+
+  .ai-history-pane {
+    width: auto !important;
+    max-height: 200px;
+    flex: 0 0 200px;
+    padding: 14px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .ai-main-pane {
+    padding: 18px !important;
+  }
+
+  .ownership-grid {
+    grid-template-columns: 200px minmax(0, 1fr) !important;
+  }
+
+  .corporate-tabs,
+  .tabs,
+  .range-selector,
+  .fund-chips {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .corporate-tabs > button,
+  .tabs > button,
+  .range-selector > button,
+  .fund-chips > button {
+    flex: 0 0 auto;
+  }
+
+  .corporate-filter {
+    flex-wrap: wrap;
+  }
+
+  .corporate-filter input {
+    max-width: none !important;
+    min-width: min(260px, 100%);
+  }
+
+  .fund-list {
+    max-height: 44vh;
+  }
+
+  .source-row,
+  .key-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .eco-cal-dropdown {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    position: relative;
+    z-index: 950;
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  .topbar-search {
+    flex: 1 1 44%;
+    min-width: 128px;
+  }
+
+  .topbar-actions {
+    flex: 1 1 54%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .topbar-actions .market-status,
+  .topbar-actions .sync-chip,
+  .topbar-sep {
+    display: none;
+  }
+
+  .top-input {
+    padding-right: 10px;
+  }
+
+  .top-input-kbd {
+    display: none;
+  }
+
+  .view {
+    padding: 12px;
+  }
+
+  .view h1 {
+    font-size: 1.3rem;
+  }
+
+  .panel {
+    padding: 11px;
+  }
+
+  .view-header,
+  .panel-title,
+  .module-heading,
+  .module-section-heading,
+  .fund-list-head {
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .price-block {
+    text-align: left;
+  }
+
+  .bulletin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analysis-filters,
+  .settings-form,
+  .update-check-grid,
+  .publish-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .source-row,
+  .key-row,
+  .capability-results > div,
+  .contributor-identity-panel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .source-row > *,
+  .key-row > * {
+    min-width: 0;
+  }
+
+  .module-card,
+  .module-center-header,
+  .update-preview-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .module-details div,
+  .settings-view .st-devices li {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .module-details dd,
+  .settings-view .st-devices .seen {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .settings-view .st-kv,
+  .guide-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-view .panel,
+  .notif-card,
+  .upd-form {
+    padding: 14px;
+  }
+
+  .notif-view {
+    padding: 14px 12px;
+  }
+
+  .notif-head,
+  .notif-add,
+  .notif-feed-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notif-btn {
+    width: 100%;
+  }
+
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-prov-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .guide-prov-tab {
+    flex: 0 0 auto;
+  }
+
+  .publish-view {
+    padding: 18px 14px 42px;
+  }
+
+  .publish-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .publish-btn {
+    width: 100%;
+  }
+
+  .research-view,
+  .team-view {
+    padding: 12px !important;
+  }
+
+  .research-job-detail {
+    padding: 14px !important;
+  }
+
+  .research-team-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .team-agents-pane > div {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ai-history-pane {
+    display: none !important;
+  }
+
+  .ai-main-pane {
+    padding: 12px !important;
+  }
+
+  .ownership-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .screener-query-row,
+  .news-search-form,
+  .news-article-actions {
+    flex-wrap: wrap;
+  }
+
+  .screener-query-row > div,
+  .news-search-form .top-input {
+    min-width: 0;
+  }
+
+  .monitor-view {
+    padding: 14px !important;
+    max-width: none !important;
+  }
+
+  .monitor-config,
+  .monitor-inline-control,
+  .monitor-intervals {
+    align-items: stretch !important;
+    width: 100%;
+  }
+
+  .monitor-inline-control {
+    flex-direction: column;
+  }
+
+  .monitor-intervals {
+    overflow-x: auto;
+  }
+
+  .monitor-config > label:last-child {
+    margin-left: 0 !important;
+  }
+
+  .news-article-head {
+    flex-wrap: wrap;
+  }
+
+  .fund-search {
+    min-width: 100%;
+  }
+
+  .fund-row {
+    grid-template-columns: 18px 48px minmax(110px, 1fr) 58px;
+  }
+
+  .fund-row .fund-size,
+  .fund-row .fund-change:nth-last-child(2) {
+    display: none;
+  }
+
+  .fund-holding-code {
+    min-width: 58px;
+  }
+
+  .fund-holding-meter {
+    display: none;
+  }
+
+  .fund-disclosure {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .fund-disclosure-date {
+    min-width: 0;
+  }
+
+  .fund-disclosure-open {
+    display: none;
+  }
+
+  .morning-brief-banner {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+    margin-inline: 8px !important;
+  }
+
+  .brief-modal,
+  .fund-compare-modal {
+    width: calc(100vw - 20px);
+    max-width: none;
+    padding: 14px;
+  }
+
+  .brief-metrics,
+  .fund-stats,
+  .fund-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-cal-dropdown {
+    position: fixed;
+    top: 58px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: calc(100vh - 70px);
+  }
+
+  .eco-cal-values {
+    min-width: 0;
+  }
+
+  .view table {
+    min-width: 540px;
+  }
+}
+
+@media (max-width: 460px) {
+  .navmenu-item {
+    padding-inline: 9px;
+  }
+
+  .bulletin-grid,
+  .brief-metrics,
+  .fund-stats,
+  .fund-legend {
+    grid-template-columns: 1fr;
+  }
+
+  .fund-row {
+    grid-template-columns: 18px 46px minmax(96px, 1fr) 54px;
+    gap: 5px;
+    font-size: 0.68rem;
+  }
+
+  .fund-holding-rank,
+  .fund-holding-name {
+    display: none;
+  }
+
+  .research-tabs > button {
+    padding-inline: 10px !important;
+  }
 }

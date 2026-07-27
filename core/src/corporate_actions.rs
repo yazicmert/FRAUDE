@@ -619,7 +619,10 @@ async fn fetch_upcoming_dividends(
 ) -> Option<Vec<crate::domain::UpcomingDividend>> {
     use futures::future::join_all;
 
-    let client = reqwest::Client::builder()
+    // Ayrı istemci: crumb akışı kendi çerez oturumunu ister. Ortak yapılandırma
+    // (sıkıştırma, havuz) `http_client_builder`'dan gelir; yalnız çerez deposu
+    // ve daha kısa zaman aşımı eklenir.
+    let client = crate::http_client_builder()
         .cookie_store(true)
         .timeout(std::time::Duration::from_secs(20))
         .build()

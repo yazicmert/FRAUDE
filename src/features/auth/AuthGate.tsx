@@ -6,6 +6,8 @@ import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import { AUTH_EVENT, getSession, initSession, type AuthUser } from './session';
 import { checkLicense } from './license';
 import { useTranslation } from '../../api/i18n';
+import { isDesktopRuntime } from '../../api/platformClient';
+import { setBridgeIdentity } from '../../api/tauriClient';
 import './auth.css';
 
 // Pencere oturumu başına intro bir kez oynar; sayfa yenilemeleri (HMR dahil)
@@ -48,6 +50,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     });
     return () => window.removeEventListener(AUTH_EVENT, onAuthChanged);
   }, []);
+
+  // Chrome eklentisi köprüsüne giriş yapmış üyeyi bildir: köprü Rust'ta uygulama
+  // açılışında (webview oturumundan bağımsız) başladığından, üyelik yalnızca bu
+  // yolla tanınır. Lisans onaylıyken hesap yazılır, çıkışta temizlenir; böylece
+  // köprü oturum yoksa eklentiden iş kabul etmez.
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    if (user && license === 'ok') {
+      setBridgeIdentity({ email: user.email, name: user.name }).catch(() => {});
+    } else if (!user) {
+      setBridgeIdentity(null).catch(() => {});
+    }
+  }, [user?.id, user?.email, user?.name, license]);
 
   // Kullanıcı değişince lisans yeniden denetlenir; çıkışta durum sıfırlanır.
   useEffect(() => {

@@ -13,7 +13,12 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # default-features kapalı: varsayılan native-tls Linux'ta openssl-sys ister ve
 # slim Docker imajında derleme kırılır; TLS tamamen rustls'ten gelir.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies", "charset", "http2", "macos-system-configuration", "system-proxy"] }
+#
+# gzip/deflate: sağlayıcıların hepsi sıkıştırma sunuyor ama Accept-Encoding
+# gönderilmediği sürece düz metin dönüyorlardı. Ölçümler için bkz. AGENTS.md
+# "Network layer". Brotli hiçbir sağlayıcıda desteklenmediğinden bilerek
+# eklenmedi (boşuna bağımlılık).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies", "charset", "http2", "gzip", "deflate", "macos-system-configuration", "system-proxy"] }
 chrono = { version = "0.4", features = ["serde"] }
 rss = "2.1.0"
 regex = "1.13.0"
@@ -26,3 +31,13 @@ base64 = "0.22"
 # kütüphanesi bağımlılığı Docker'da derlenemiyor; sunucu zaten sır saklamaz.
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 pdf-extract = "0.12.0"
+
+[profile.dev]
+# Full debug symbols and incremental histories made local artifacts grow to
+# tens of gigabytes. Line-level symbols keep backtraces useful at lower cost.
+debug = 1
+incremental = false
+
+[profile.test]
+debug = 1
+incremental = false

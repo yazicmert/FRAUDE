@@ -46,6 +46,8 @@ export default function NotificationsView() {
   const [ready, setReady] = useState(false);
   const [universe, setUniverse] = useState<{ ticker: string; name: string }[]>([]);
   const [tickerFocus, setTickerFocus] = useState(false);
+  const [feedToken, setFeedToken] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!session) {
@@ -55,18 +57,32 @@ export default function NotificationsView() {
     let cancelled = false;
     void supabase
       .from('notify_prefs')
-      .select('enabled, kap_enabled, spk_enabled, news_enabled, tickers, keywords, min_priority')
+      .select('enabled, kap_enabled, spk_enabled, news_enabled, tickers, keywords, min_priority, feed_token')
       .eq('user_id', session.id)
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled) return;
-        if (data) setPrefs({ ...DEFAULTS, ...(data as Prefs) });
+        if (data) {
+          const { feed_token, ...rest } = data as Prefs & { feed_token?: string };
+          setPrefs({ ...DEFAULTS, ...(rest as Prefs) });
+          if (feed_token) setFeedToken(feed_token);
+        }
         setReady(true);
       });
     return () => {
       cancelled = true;
     };
   }, [session?.id]);
+
+  const copyFeedToken = async () => {
+    try {
+      await navigator.clipboard.writeText(feedToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* pano yoksa yoksay */
+    }
+  };
 
   // BIST evreni — hisse adı/kodu yazınca öneri açılır listesi (CommandPalette deseni)
   useEffect(() => {
@@ -143,7 +159,19 @@ export default function NotificationsView() {
       { onConflict: 'user_id' },
     );
     setState(error ? 'error' : 'saved');
-    if (!error) setTimeout(() => setState('idle'), 2000);
+    if (!error) {
+      setTimeout(() => setState('idle'), 2000);
+      if (!feedToken) {
+        // Satır ilk kez oluştuysa varsayılan besleme anahtarı üretildi — çek.
+        const { data } = await supabase
+          .from('notify_prefs')
+          .select('feed_token')
+          .eq('user_id', session.id)
+          .maybeSingle();
+        const tok = (data as { feed_token?: string } | null)?.feed_token;
+        if (tok) setFeedToken(tok);
+      }
+    }
   };
 
   if (!session) {
@@ -289,6 +317,22 @@ export default function NotificationsView() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Chrome eklentisi besleme anahtarı */}
+        <section className="notif-card">
+          <h2>{t('notifFeedTitle')}</h2>
+          <p className="notif-muted small">{t('notifFeedHint')}</p>
+          {feedToken ? (
+            <div className="notif-feed-row">
+              <input readOnly value={feedToken} onFocus={(e) => e.currentTarget.select()} />
+              <button className="notif-btn" onClick={() => void copyFeedToken()}>
+                {copied ? t('notifFeedCopied') : t('notifFeedCopy')}
+              </button>
+            </div>
+          ) : (
+            <p className="notif-muted small">{t('notifFeedEmpty')}</p>
+          )}
         </section>
       </div>
 

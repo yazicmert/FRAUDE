@@ -10,7 +10,9 @@
     "registry:verify": "node scripts/verify-registry-dev.mjs",
     "registry:verify-persistence": "node scripts/verify-registry-persistence.mjs",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "rust:check": "cargo check --manifest-path core/Cargo.toml && cargo check --manifest-path src-tauri/Cargo.toml && cargo check --manifest-path server/Cargo.toml",
+    "rust:clean": "cargo clean --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

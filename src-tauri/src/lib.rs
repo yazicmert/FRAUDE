@@ -1,6 +1,8 @@
+mod bridge;
 mod commands;
 mod module_updater;
 mod publisher;
+mod research_worker;
 
 // Veri katmanı fraude-core'da yaşar (bkz. core/); yeniden dışa aktarım
 // sayesinde commands.rs içindeki `crate::X` yolları aynen çalışır.
@@ -8,8 +10,8 @@ pub use fraude_core::{
     ai_tagger, bist, bist_indices, bist_universe, corporate_actions, domain,
     economic_calendar, fql, fundamentals, indicators, ipo_scraper, ipo_store, isyatirim,
     isyatirim_price, kap, kap_pdr, keychain, live_quotes, market_calendar, monitor, news,
-    news_tagger, persist, providers, refresh_ipo_cache, secrets, services, shareholders, spk,
-    storage, subsidiaries, tefas, tefas_issuer, yahoo, AppState, IpoCache,
+    news_tagger, persist, providers, refresh_ipo_cache, research, secrets, services, shareholders,
+    spk, storage, subsidiaries, tefas, tefas_issuer, yahoo, AppState, IpoCache,
     IPO_REFRESH_INTERVAL_SECS,
 };
 use tauri::Manager;
@@ -76,6 +78,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::new())
+        .manage(research_worker::ResearchSignal::default())
+        .manage(bridge::BridgeHandle::load())
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -140,6 +144,20 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                 }
             });
+
+            // Araştırma worker'ı: kuyruktaki AI araştırma işlerini (uygulama ve
+            // Chrome eklentisi kaynaklı) arka planda işler.
+            let research_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                research_worker::run_research_worker(research_handle).await;
+            });
+
+            // Chrome eklentisi köprüsü: 127.0.0.1'de araştırma görevi alır.
+            let bridge_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                bridge::run_bridge(bridge_handle).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -198,6 +216,16 @@ pub fn run() {
             commands::clear_monitor_alerts,
             commands::get_corporate_events,
             commands::run_agent_analysis,
+            commands::submit_research_job,
+            commands::list_research_jobs,
+            commands::get_research_job,
+            commands::delete_research_job,
+            commands::cancel_research_job,
+            commands::get_team_config,
+            commands::save_team_config,
+            commands::get_bridge_info,
+            commands::regenerate_bridge_token,
+            commands::set_bridge_identity,
             module_updater::activate_module_release,
             module_updater::rollback_module_release,
             publisher::publish_config_status,

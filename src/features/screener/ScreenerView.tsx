@@ -52,7 +52,7 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
   };
 
   return (
-    <div className="view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="view screener-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div className="view-header" style={{ marginBottom: 0 }}>
         <div>
           <p className="eyebrow">{t('fqlScreener')}</p>
@@ -136,7 +136,7 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="screener-query-row" style={{ display: 'flex', gap: '10px' }}>
           <div style={{
             flex: 1,
             display: 'flex',

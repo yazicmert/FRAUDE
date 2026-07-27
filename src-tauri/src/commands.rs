@@ -646,3 +646,116 @@ pub async fn run_agent_analysis(
         tickers: analyzed,
     })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Araştırma işleri (agent takımı + Chrome eklentisi görevleri)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::bridge::BridgeHandle;
+use crate::research::{self, ResearchJob, SubmitResearchJobRequest, TeamConfig};
+use crate::research_worker::ResearchSignal;
+
+/// Yeni araştırma işi kuyruğa alır ve worker'ı uyandırır. İş id'sini döner.
+#[tauri::command]
+pub async fn submit_research_job(
+    state: State<'_, AppState>,
+    signal: State<'_, ResearchSignal>,
+    request: SubmitResearchJobRequest,
+) -> Result<String, String> {
+    let id = {
+        let mut store = state.store.lock().await;
+        research::enqueue_job(&mut store, research::JobSource::App, request)?
+    };
+    signal.wake();
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn list_research_jobs(state: State<'_, AppState>) -> Result<Vec<ResearchJob>, String> {
+    let store = state.store.lock().await;
+    Ok(store.research_jobs.clone())
+}
+
+#[tauri::command]
+pub async fn get_research_job(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<ResearchJob>, String> {
+    let store = state.store.lock().await;
+    Ok(store.research_jobs.iter().find(|j| j.id == id).cloned())
+}
+
+#[tauri::command]
+pub async fn delete_research_job(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut store = state.store.lock().await;
+    store.research_jobs.retain(|j| j.id != id);
+    store.save_research_jobs();
+    Ok(())
+}
+
+/// Kuyrukta bekleyen işi iptal eder (Error olarak işaretlenir). Çalışan iş
+/// yarıda kesilemez; yalnız henüz başlamamış işler iptal edilir.
+#[tauri::command]
+pub async fn cancel_research_job(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut store = state.store.lock().await;
+    if let Some(job) = store.research_jobs.iter_mut().find(|j| j.id == id) {
+        if job.status == research::JobStatus::Queued {
+            job.status = research::JobStatus::Error;
+            job.error = Some("İptal edildi.".into());
+            job.finished_at = Some(research::iso_now());
+            job.updated_at_ms = research::now_ms();
+            store.save_research_jobs();
+        } else {
+            return Err("Yalnızca kuyruktaki işler iptal edilebilir.".into());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_team_config(state: State<'_, AppState>) -> Result<TeamConfig, String> {
+    let store = state.store.lock().await;
+    Ok(store.team_config.clone())
+}
+
+#[tauri::command]
+pub async fn save_team_config(
+    state: State<'_, AppState>,
+    config: TeamConfig,
+) -> Result<TeamConfig, String> {
+    let mut store = state.store.lock().await;
+    store.team_config = config.normalized();
+    store.save_team_config();
+    Ok(store.team_config.clone())
+}
+
+/// Chrome eklentisinin bağlanacağı köprü bilgisini döner (port + token).
+#[tauri::command]
+pub async fn get_bridge_info(
+    bridge: State<'_, crate::bridge::BridgeHandle>,
+) -> Result<serde_json::Value, String> {
+    let port = *BridgeHandle::guard(&bridge.port);
+    let token = BridgeHandle::guard(&bridge.token).clone();
+    Ok(serde_json::json!({ "port": port, "token": token, "running": port != 0 }))
+}
+
+/// Köprü token'ını yeniler (mevcut eklenti bağlantısı geçersiz olur).
+#[tauri::command]
+pub async fn regenerate_bridge_token(
+    bridge: State<'_, crate::bridge::BridgeHandle>,
+) -> Result<serde_json::Value, String> {
+    let token = crate::bridge::regenerate_token(bridge.inner());
+    let port = *BridgeHandle::guard(&bridge.port);
+    Ok(serde_json::json!({ "port": port, "token": token, "running": port != 0 }))
+}
+
+/// Giriş yapmış üyeyi köprüye bildirir. AuthGate lisansı onayladığında hesap
+/// bilgisiyle, çıkışta `None` ile çağrılır. Köprü oturum yoksa iş kabul etmez.
+#[tauri::command]
+pub async fn set_bridge_identity(
+    bridge: State<'_, crate::bridge::BridgeHandle>,
+    account: Option<crate::bridge::BridgeAccount>,
+) -> Result<(), String> {
+    *BridgeHandle::guard(&bridge.account) = account;
+    Ok(())
+}

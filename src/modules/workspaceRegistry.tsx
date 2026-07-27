@@ -414,6 +414,95 @@ export function moduleIsTransient(module: WorkspaceModule | undefined): boolean 
   return Boolean(module?.transient);
 }
 
+// ---------------------------------------------------------------------------
+// Navigasyon ağacı — kenar çubuğunun varlık sınıfına göre gruplanmış görünümü.
+//
+// Düz modül listesi yerine Piyasalar (Hisse › Türkiye › işlemler, Fon, Emtia)
+// + Araçlar + Sistem şeklinde bir ağaç. Yapraklar (`type: 'module'`) gerçek bir
+// workspace modülüne çözülür (başlık/rozet/etkinlik oradan gelir); `soon`
+// girişleri ileride açılacak (pasif) bölge/varlık yer tutucularıdır. Yeni bir
+// modülü menüde konumlamak için buraya bir yaprak eklemek yeter.
+// ---------------------------------------------------------------------------
+
+export type NavEntry =
+  | { type: 'module'; kind: string }
+  | { type: 'group'; id: string; labelKey: string; icon?: string; defaultOpen?: boolean; children: NavEntry[] }
+  | { type: 'soon'; id: string; labelKey: string };
+
+export interface NavSection {
+  id: string;
+  /** Bölüm başlığı (PİYASALAR, ARAÇLAR); yoksa başlıksız grup. */
+  labelKey?: string;
+  entries: NavEntry[];
+  /**
+   * Yatay üst menüde bölümün nasıl görüneceği:
+   * - 'flat' (varsayılan): girişler üst düzey menü öğesi olur (Hisse, Fon, Emtia…).
+   * - 'group': tüm bölüm tek bir açılır menü olur (etiketi `labelKey`, ör. Araçlar).
+   * Dikey sidebar ağacını etkilemez.
+   */
+  menu?: 'flat' | 'group';
+}
+
+export const NAV_TREE: NavSection[] = [
+  {
+    id: 'home',
+    entries: [{ type: 'module', kind: 'dashboard' }],
+  },
+  {
+    id: 'markets',
+    labelKey: 'navMarkets',
+    entries: [
+      {
+        type: 'group',
+        id: 'stocks',
+        labelKey: 'navStocks',
+        icon: '📈',
+        defaultOpen: true,
+        children: [
+          {
+            type: 'group',
+            id: 'stocks-tr',
+            labelKey: 'navTurkey',
+            defaultOpen: true,
+            children: [
+              { type: 'module', kind: 'screener' },
+              { type: 'module', kind: 'kap' },
+              { type: 'module', kind: 'corporate' },
+              { type: 'module', kind: 'monitor' },
+            ],
+          },
+          { type: 'soon', id: 'stocks-us', labelKey: 'navUsa' },
+          { type: 'soon', id: 'stocks-de', labelKey: 'navGermany' },
+        ],
+      },
+      {
+        type: 'group',
+        id: 'funds',
+        labelKey: 'navFunds',
+        icon: '🧺',
+        children: [{ type: 'module', kind: 'funds' }],
+      },
+      { type: 'soon', id: 'commodities', labelKey: 'navCommodities' },
+    ],
+  },
+  {
+    id: 'tools',
+    labelKey: 'navTools',
+    menu: 'group',
+    entries: [
+      { type: 'module', kind: 'news' },
+      { type: 'module', kind: 'ai' },
+      { type: 'module', kind: 'research' },
+      { type: 'module', kind: 'team' },
+      { type: 'module', kind: 'notifications' },
+    ],
+  },
+  {
+    id: 'system',
+    entries: [{ type: 'module', kind: 'modules' }],
+  },
+];
+
 /** FMUP catalog, derived from every registry entry that ships a manifest. */
 export const moduleCatalog: ModuleManifest[] = workspaceModules
   .filter((module): module is WorkspaceModule & { manifest: ModuleManifest } => Boolean(module.manifest))

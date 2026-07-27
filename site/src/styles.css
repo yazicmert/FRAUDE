@@ -367,6 +367,18 @@ button { font-family: inherit; }
 .nt-nm { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nt-mark { color: var(--green); font-weight: 700; }
 
+/* Chrome eklentisi besleme anahtarı */
+.nt-feed { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.nt-feed h3 { margin: 0 0 4px; font-size: 14px; }
+.nt-feed-row { display: flex; gap: 8px; margin-top: 8px; }
+.nt-feed-row input {
+  flex: 1;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.nt-feed-row .btn { white-space: nowrap; }
+
 /* Bildirim tercihleri kartı */
 .notify-row {
   display: flex;

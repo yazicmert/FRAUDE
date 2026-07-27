@@ -95,12 +95,12 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
   };
 
   return (
-    <div style={{ padding: '20px', overflow: 'auto', flex: 1 }}>
+    <div className="view corporate-actions-view" style={{ padding: '20px', overflow: 'auto', flex: 1 }}>
       <h1 style={{ fontSize: '1.3rem', color: '#fff', marginBottom: '16px' }}>
         {t('corporateActions')}
       </h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '20px' }}>
+      <div className="corporate-tabs" style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '20px' }}>
         <button type="button" style={tabStyle('dividends')} onClick={() => setActiveTab('dividends')}>
           💰 {t('caDividends')}
         </button>
@@ -114,7 +114,7 @@ export default function CorporateActionsView({ onSelectTicker }: CorporateAction
 
       {/* Canlı filtre (temettü & sermaye sekmeleri) */}
       {activeTab !== 'ipo' && (
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center' }}>
+        <div className="corporate-filter" style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center' }}>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}

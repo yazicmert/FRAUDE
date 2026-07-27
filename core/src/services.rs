@@ -48,7 +48,12 @@ pub fn dashboard(store: &AppStore, market_metrics: Vec<MarketMetric>) -> Dashboa
     // Yükselen/risk listeleri BIST'e özeldir: ABD hisseleri (Global) ve
     // emtia/döviz satırları elenir; frontend'deki isBistEquity ile aynı kural.
     let is_bist = |row: &&EquityRow| !row.index_memberships.iter()
-        .any(|group| group == crate::yahoo::GLOBAL_GROUP || group == "Emtialar");
+        .any(|group| [
+            crate::yahoo::GLOBAL_GROUP,
+            crate::yahoo::COMMODITY_GROUP,
+            crate::yahoo::FX_GROUP,
+            crate::yahoo::CRYPTO_GROUP,
+        ].contains(&group.as_str()));
 
     let mut top_gainers: Vec<EquityRow> = store.equities.iter().filter(is_bist).cloned().collect();
     top_gainers.sort_by(|a, b| b.change_pct.total_cmp(&a.change_pct));
@@ -69,9 +74,9 @@ pub fn dashboard(store: &AppStore, market_metrics: Vec<MarketMetric>) -> Dashboa
 }
 
 pub fn ticker_snapshot(store: &AppStore, ticker: &str) -> Result<TickerSnapshot, String> {
-    let normalized = ticker.to_uppercase();
-    // Senkron bazı emtia/döviz satırlarını okunur adla saklar (GC=F → "Altın
-    // Ons ($)"); sekmeler Yahoo sembolüyle açıldığından iki ad da yerelde aranır.
+    let normalized = crate::yahoo::canonical_ticker(ticker);
+    // Yeni store kayıtları kanonik sembol taşır; `display_ticker` eşleşmesi
+    // önceki oturumlardan kalmış okunur-anahtarlı kayıtlar için geçiş desteğidir.
     let display = crate::yahoo::display_ticker(&normalized);
     let equity = store
         .equities
@@ -443,6 +448,7 @@ pub async fn execute(store: &mut AppStore, client: &reqwest::Client, command: &s
 /// aşınca tam senkrona yükselir: gün devrilince artımlı fiyat tabanı (önceki
 /// kapanış) ve günlük göstergeler ancak tam senkronla tazelenir.
 const FULL_SYNC_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+const MIN_FULL_SYNC_COVERAGE: f64 = 0.85;
 
 static LAST_FULL_SYNC: std::sync::OnceLock<std::sync::Mutex<Option<std::time::Instant>>> =
     std::sync::OnceLock::new();
@@ -453,10 +459,21 @@ pub fn record_full_sync() {
         .lock().unwrap_or_else(|error| error.into_inner()) = Some(std::time::Instant::now());
 }
 
+/// Kısmi bir Yahoo turu eski kayıtların üzerine güvenle bindirilebilir; ancak
+/// yeterli kapsama ulaşmadıysa "tam senkron" sayılmaz ve sonraki periyodik tur
+/// yeniden tam çekimi dener.
+pub fn full_sync_is_acceptable(coverage: f64) -> bool {
+    coverage.is_finite() && coverage >= MIN_FULL_SYNC_COVERAGE
+}
+
+/// Son tam senkronun yaşı. Süreç içinde hiç tam senkron yapılmadıysa diskteki
+/// önbelleğin damgasına düşer; aksi halde yeniden başlatılan uygulama, evren
+/// diskten dolu gelmiş olsa bile tam senkrona yükselirdi.
 fn last_full_sync_age() -> Option<std::time::Duration> {
     LAST_FULL_SYNC.get_or_init(|| std::sync::Mutex::new(None))
         .lock().unwrap_or_else(|error| error.into_inner())
         .map(|instant| instant.elapsed())
+        .or_else(crate::market_cache::disk_full_sync_age)
 }
 
 fn full_sync_is_stale(age: Option<std::time::Duration>) -> bool {
@@ -499,8 +516,9 @@ pub fn merge_equities(existing: &mut Vec<EquityRow>, fresh: Vec<EquityRow>) {
 
 /// Kaynak durum panosunu store'daki güncel sayılarla yeniden kurar.
 pub fn refresh_source_status(store: &mut AppStore) {
+    let market_as_of_ts = store.equities.iter().filter_map(|row| row.as_of_ts).max();
     store.sources = vec![
-        BistProvider.status(store.equities.len()),
+        BistProvider.status_at(store.equities.len(), market_as_of_ts),
         FundamentalsProvider.status(store.equities.iter().filter(|row| row.fundamentals_available).count()),
         IpoIndexProvider.status(store.equities.iter().filter(|row| row.index_memberships.iter().any(|index| index == "BIST HALKA ARZ")).count()),
         KapProvider.status(store.kap.len()),
@@ -522,25 +540,48 @@ pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &
             crate::yahoo::fetch_global_quotes(client),
         );
         let updated = crate::yahoo::apply_incremental_prices(&mut store.equities, &closes, &global_quotes);
+        if updated > 0 {
+            crate::market_cache::save(&store.equities, false);
+        }
         if let Ok(news_items) = crate::news::fetch_news(client).await {
             store.news = news_items;
         }
         refresh_source_status(store);
+        let market_as_of_ts = global_quotes.iter().filter_map(|quote| quote.as_of_ts).max()
+            .or_else(|| (!closes.is_empty()).then(|| chrono::Utc::now().timestamp()));
         return SyncResult {
             source: source.into(),
             mode: "incremental".into(),
-            status: "completed".into(),
-            message: format!("Incremental sync: {updated} prices refreshed."),
+            status: if updated > 0 { "completed" } else { "partial" }.into(),
+            message: if updated > 0 {
+                format!("Incremental sync: {updated} prices refreshed.")
+            } else {
+                "Incremental sync completed without any fresh market prices.".into()
+            },
             updated_records: updated,
+            market_updated_records: updated,
+            market_coverage: None,
+            market_as_of_ts,
         };
     }
 
-    let equities = crate::yahoo::fetch_all_equities(client, false).await;
+    let report = crate::yahoo::fetch_all_equities_report(client, false).await;
+    let coverage = report.coverage();
+    let requested = report.requested;
+    let fetched = report.fetched;
+    let market_as_of_ts = report.rows.iter().filter_map(|row| row.as_of_ts).max();
+    let equities = report.rows;
     let eq_count = equities.len();
 
     if !equities.is_empty() {
         merge_equities(&mut store.equities, equities);
-        record_full_sync();
+        let complete = full_sync_is_acceptable(coverage);
+        if complete {
+            record_full_sync();
+        }
+        // Kısmi tur da yazılır (evren büyümüş olabilir) ama tam senkron damgasını
+        // ileri taşımaz; bir sonraki açılış yeniden tam senkron dener.
+        crate::market_cache::save(&store.equities, complete);
     }
 
     if let Ok(news_items) = crate::news::fetch_news(client).await {
@@ -552,9 +593,15 @@ pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &
     SyncResult {
         source: source.into(),
         mode: "full".into(),
-        status: "completed".into(),
-        message: format!("Synced {} equities from Yahoo Finance (full mode).", eq_count),
+        status: if full_sync_is_acceptable(coverage) { "completed" } else { "partial" }.into(),
+        message: format!(
+            "Synced {fetched}/{requested} market symbols from Yahoo Finance ({:.1}% coverage).",
+            coverage * 100.0
+        ),
         updated_records: eq_count + store.kap.len(),
+        market_updated_records: eq_count,
+        market_coverage: Some(coverage),
+        market_as_of_ts,
     }
 }
 
@@ -1131,6 +1178,75 @@ pub async fn run_completion(
         .and_then(|c| c.as_str())
         .map(|s| s.trim().to_string())
         .ok_or_else(|| "AI yanıtı çözümlenemedi".to_string())
+}
+
+/// OpenAI uyumlu görüntü + metin tamamlaması. `image_data_urls` her biri tam
+/// bir `data:image/...;base64,...` veri-URL'idir (eklentiden olduğu gibi geçer).
+/// `run_completion`'ın vision karşılığıdır; sağlayıcının OpenAI-uyumlu vision
+/// uç noktasına gider (bkz. kap_pdr görüntü analizi deseni).
+pub async fn run_vision_completion(
+    client: &reqwest::Client,
+    key: &crate::domain::StoredAiKey,
+    system_prompt: &str,
+    user_text: &str,
+    image_data_urls: &[String],
+) -> Result<String, String> {
+    let raw_url = key.api_url.as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| default_url_for_provider(&key.provider));
+    let api_url = if raw_url.ends_with("/chat/completions") {
+        raw_url
+    } else if raw_url.ends_with('/') {
+        format!("{}chat/completions", raw_url)
+    } else {
+        format!("{}/chat/completions", raw_url)
+    };
+
+    let mut content = vec![serde_json::json!({ "type": "text", "text": user_text })];
+    for url in image_data_urls {
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": url }
+        }));
+    }
+
+    let body = serde_json::json!({
+        "model": key.default_model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": content },
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2048,
+    });
+
+    let resp = client
+        .post(&api_url)
+        .header("Authorization", format!("Bearer {}", crate::keychain::resolve_secret(&key.id, &key.secret)))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("AI görüntü isteği başarısız: {e}"))?;
+
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("AI sağlayıcı hatası (HTTP {status}): {}", text.chars().take(300).collect::<String>()));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    parsed
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.trim().to_string())
+        .ok_or_else(|| "AI görüntü yanıtı çözümlenemedi".to_string())
 }
 
 fn company_query(ticker: Option<&str>, company: Option<&str>) -> String {
@@ -1737,5 +1853,14 @@ mod sync_tests {
         assert!(full_sync_is_stale(None));
         assert!(full_sync_is_stale(Some(FULL_SYNC_MAX_AGE)));
         assert!(!full_sync_is_stale(Some(std::time::Duration::from_secs(60))));
+    }
+
+    #[test]
+    fn full_sync_requires_real_coverage() {
+        assert!(!full_sync_is_acceptable(f64::NAN));
+        assert!(!full_sync_is_acceptable(0.0));
+        assert!(!full_sync_is_acceptable(MIN_FULL_SYNC_COVERAGE - 0.001));
+        assert!(full_sync_is_acceptable(MIN_FULL_SYNC_COVERAGE));
+        assert!(full_sync_is_acceptable(1.0));
     }
 }

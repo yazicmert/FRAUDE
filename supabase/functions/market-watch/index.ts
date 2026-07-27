@@ -289,6 +289,8 @@ Deno.serve(async (req) => {
     .select('user_id, email, kap_enabled, news_enabled, spk_enabled, tickers, keywords, min_priority')
     .eq('enabled', true);
 
+  // Chrome eklentisi (notify-feed) için kullanıcı başına teslim kayıtları.
+  const deliveries: Array<Record<string, unknown>> = [];
   let sent = 0;
   for (const pref of (prefs ?? []) as Pref[]) {
     const mine = feed.filter((it) => matches(pref, it));
@@ -300,6 +302,40 @@ Deno.serve(async (req) => {
         : 'FRAUDE — yeni SPK bülteni';
     await sendMail(pref.email, subject, renderDigest(mine, spkForUser));
     sent++;
+
+    for (const it of mine) {
+      deliveries.push({
+        user_id: pref.user_id,
+        source: it.source,
+        priority: it.priority,
+        title: it.title.slice(0, 300),
+        summary: (it.summary || it.title).slice(0, 500),
+        tickers: it.tickers,
+        url: it.url,
+      });
+    }
+    if (spkForUser) {
+      deliveries.push({
+        user_id: pref.user_id,
+        source: 'spk',
+        priority: 4,
+        title: `Yeni SPK bülteni (${spkForUser.no})`,
+        summary: `SPK haftalık bülteni yayımlandı: ${spkForUser.no}`,
+        tickers: [],
+        url: spkForUser.url,
+      });
+    }
+  }
+
+  // Teslimleri yaz (parça parça) ve eski kayıtları buda (30 günden eski).
+  if (deliveries.length > 0) {
+    for (let i = 0; i < deliveries.length; i += 500) {
+      await supabase.from('notify_deliveries').insert(deliveries.slice(i, i + 500));
+    }
+    await supabase
+      .from('notify_deliveries')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 30 * 864e5).toISOString());
   }
 
   // İmleçleri en yeniye ilerlet (eşleşme olsun olmasın, tekrar işlenmesin)
@@ -318,7 +354,13 @@ Deno.serve(async (req) => {
   }
 
   return new Response(
-    JSON.stringify({ ok: true, new_items: feed.length, spk: spkNew?.no ?? null, mails_sent: sent }),
+    JSON.stringify({
+      ok: true,
+      new_items: feed.length,
+      spk: spkNew?.no ?? null,
+      mails_sent: sent,
+      deliveries: deliveries.length,
+    }),
     { headers: { 'Content-Type': 'application/json' } },
   );
 });

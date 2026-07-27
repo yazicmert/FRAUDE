@@ -25,12 +25,14 @@ pub mod kap;
 pub mod kap_pdr;
 pub mod keychain;
 pub mod live_quotes;
+pub mod market_cache;
 pub mod market_calendar;
 pub mod monitor;
 pub mod news;
 pub mod news_tagger;
 pub mod persist;
 pub mod providers;
+pub mod research;
 pub mod secrets;
 pub mod services;
 pub mod shareholders;
@@ -63,17 +65,57 @@ pub struct AppState {
     pub monitor_cycle_lock: Mutex<()>,
 }
 
+/// Boştaki bağlantıların havuzda tutulma süresi.
+///
+/// reqwest'in varsayılanı 90 sn, ama İş Yatırım keep-alive bağlantılarını bundan
+/// çok daha erken kapatıyor. Havuzdan ölü bir bağlantı seçen istek "error sending
+/// request" ile düşüyor — canlı fiyat yolundaki elle yeniden deneme tam olarak bu
+/// yüzden var. Süreyi sağlayıcının kapatma penceresinin altına çekmek sorunu
+/// kaynağında bitirir; yeniden deneme gerçek ağ dalgalanmaları için kalır.
+const POOL_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Host başına havuzda tutulan boş bağlantı sayısı. Tam senkron Yahoo'ya 8,
+/// canlı fiyat İş Yatırım'a 6 eşzamanlı istek gönderiyor; havuzun bu tepe
+/// değerin altında kalması her turda yeniden TLS el sıkışması demek olurdu.
+const POOL_MAX_IDLE_PER_HOST: usize = 12;
+
+/// Ortak istemci yapılandırması: sıkıştırma, bağlantı havuzu, zaman aşımı.
+///
+/// Ayrı bir istemciye gerçekten ihtiyaç duyan tek yer (Yahoo crumb oturumu için
+/// çerez deposu gereken `corporate_actions`) buradan türetir; böylece "ayrı
+/// istemci" kararı sıkıştırmayı sessizce kaybetmeye dönüşmez.
+pub fn http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        // Accept-Encoding otomatik eklenir ve yanıt saydam çözülür. Sağlayıcı
+        // sıkıştırmayı desteklemiyorsa istek aynen düz metin döner.
+        .gzip(true)
+        .deflate(true)
+        .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+        .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+        // Uzun süren senkron turlarında sessizce düşen NAT/güvenlik duvarı
+        // bağlantılarını canlı tutar.
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+}
+
+/// Tüm dış istekler için paylaşılan HTTP istemcisi.
+///
+/// Tek yapılandırma noktasıdır. Modüller kendi `Client::new()`ini kurmamalıdır —
+/// öyle bir istemci havuzu paylaşmaz, her çağrıda yeniden TLS el sıkışır ve
+/// sıkıştırma istemez.
+pub fn http_client() -> reqwest::Client {
+    http_client_builder()
+        .build()
+        .expect("Failed to create HTTP client")
+}
+
 impl AppState {
-    /// Varsayılan durum: tohumlanmış depo + 30 sn zaman aşımı olan HTTP istemcisi.
+    /// Varsayılan durum: tohumlanmış depo + paylaşılan HTTP istemcisi.
     /// Masaüstü ve server aynı kurulumu paylaşır.
     pub fn new() -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
         AppState {
             store: Mutex::new(AppStore::seeded()),
-            http,
+            http: http_client(),
             ipo_cache: Mutex::new(IpoCache::default()),
             monitor: Mutex::new(monitor::load()),
             monitor_cycle_lock: Mutex::new(()),

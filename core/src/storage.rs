@@ -14,17 +14,23 @@ pub struct AppStore {
     pub artifacts: Vec<crate::domain::Artifact>,
     pub indices: std::collections::HashMap<String, Vec<crate::domain::IndexConstituent>>,
     pub index_changes: Vec<crate::domain::IndexChange>,
+    pub research_jobs: Vec<crate::research::ResearchJob>,
+    pub team_config: crate::research::TeamConfig,
 }
 
 impl AppStore {
     pub fn seeded() -> Self {
         let mut store = Self {
-            equities: Vec::new(),
+            // Evren diskteki son senkrondan geri yüklenir; boşsa ilk istek
+            // otomatik tam senkrona yükselir (bkz. services::effective_sync_mode).
+            equities: crate::market_cache::load(),
             news: Vec::new(),
             spk_bulletins: Vec::new(),
             artifacts: Vec::new(),
             indices: std::collections::HashMap::new(),
             index_changes: Vec::new(),
+            research_jobs: Vec::new(),
+            team_config: crate::research::TeamConfig::default(),
             kap: vec![
                 KapAnnouncement {
                     id: "KAP-001".into(),
@@ -129,8 +135,8 @@ impl AppStore {
             ],
             sources: vec![
                 DataSourceStatus {
-                    name: "BIST OHLCV".into(),
-                    provider: "Yahoo chart adapter".into(),
+                    name: "Market OHLCV".into(),
+                    provider: "Yahoo Finance / İş Yatırım routed adapter".into(),
                     status: "ready".into(),
                     last_sync: clock_string(),
                     records: 41,
@@ -239,7 +245,49 @@ Kurallar:
         }
 
         store.load_artifacts();
+        store.load_research_jobs();
+        store.load_team_config();
         store
+    }
+
+    fn research_jobs_file_path() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".fraude_research_jobs.json"))
+    }
+
+    pub fn load_research_jobs(&mut self) {
+        if let Some(path) = Self::research_jobs_file_path() {
+            if let Ok(data) = std::fs::read_to_string(&path) {
+                if let Ok(jobs) = serde_json::from_str::<Vec<crate::research::ResearchJob>>(&data) {
+                    self.research_jobs = jobs;
+                }
+            }
+        }
+    }
+
+    pub fn save_research_jobs(&self) {
+        if let Some(path) = Self::research_jobs_file_path() {
+            let _ = crate::persist::write_json_atomic(&path, &self.research_jobs);
+        }
+    }
+
+    fn team_config_file_path() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".fraude_team_config.json"))
+    }
+
+    pub fn load_team_config(&mut self) {
+        if let Some(path) = Self::team_config_file_path() {
+            if let Ok(data) = std::fs::read_to_string(&path) {
+                if let Ok(cfg) = serde_json::from_str::<crate::research::TeamConfig>(&data) {
+                    self.team_config = cfg.normalized();
+                }
+            }
+        }
+    }
+
+    pub fn save_team_config(&self) {
+        if let Some(path) = Self::team_config_file_path() {
+            let _ = crate::persist::write_json_atomic(&path, &self.team_config);
+        }
     }
 
     fn artifacts_file_path() -> Option<std::path::PathBuf> {

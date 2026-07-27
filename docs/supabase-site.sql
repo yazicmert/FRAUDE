@@ -359,6 +359,43 @@ create policy "prefs-own-update" on public.notify_prefs
 grant select, insert, update on public.notify_prefs to authenticated;
 grant select, insert, update, delete on public.notify_prefs to service_role;
 
+-- Chrome eklentisi besleme anahtarı: eklenti bu anahtarla notify-feed'i çekip
+-- sunucu bildirimlerini uygulama kapalıyken de gösterir (kimlik = feed_token).
+-- Kullanıcı /hesap (web) ya da Bildirimler modülünden (app) kopyalar. Insert'te
+-- varsayılan üretilir; mevcut satırlar geriye dönük doldurulur.
+alter table public.notify_prefs
+  add column if not exists feed_token text;
+update public.notify_prefs
+  set feed_token = replace(gen_random_uuid()::text, '-', '')
+  where feed_token is null;
+alter table public.notify_prefs
+  alter column feed_token set default replace(gen_random_uuid()::text, '-', '');
+create unique index if not exists notify_prefs_feed_token_idx
+  on public.notify_prefs (feed_token);
+
+-- Kullanıcı başına teslim edilen bildirimler (mail + Chrome eklentisi beslemesi).
+-- market-watch her eşleşen öğeyi buraya da yazar; notify-feed Edge Function
+-- feed_token ile okur. RLS: sahibi okur; yalnız fonksiyon yazar.
+create table if not exists public.notify_deliveries (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  source     text not null,               -- 'kap' | 'news' | 'spk'
+  priority   smallint not null default 3,
+  title      text not null default '',
+  summary    text not null default '',
+  tickers    text[] not null default '{}',
+  url        text,
+  created_at timestamptz not null default now()
+);
+alter table public.notify_deliveries enable row level security;
+drop policy if exists "deliveries-own-select" on public.notify_deliveries;
+create policy "deliveries-own-select" on public.notify_deliveries
+  for select to authenticated using (user_id = auth.uid());
+grant select on public.notify_deliveries to authenticated;
+grant select, insert, delete on public.notify_deliveries to service_role;
+create index if not exists notify_deliveries_user_time_idx
+  on public.notify_deliveries (user_id, created_at desc);
+
 -- Kaynak imleçleri (global tekilleştirme; yalnız fonksiyon yazar)
 create table if not exists public.notify_seen (
   source     text primary key,   -- 'kap' | 'news' | 'spk'

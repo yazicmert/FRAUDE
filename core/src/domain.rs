@@ -33,12 +33,21 @@ pub struct MarketMetric {
     pub as_of_ts: Option<i64>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+/// `Deserialize` + `serde(default)`: satırlar disk önbelleğinden geri okunuyor
+/// (bkz. `market_cache`). Alan eklendiğinde eski önbellek dosyası çöpe gitmesin
+/// diye eksik alanlar varsayılana düşer.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EquityRow {
     pub ticker: String,
     pub name: String,
     pub price: f64,
     pub change_pct: f64,
+    /// Fiyat sağlayıcısının bildirdiği son veri zamanı (unix saniye).
+    ///
+    /// `DashboardSnapshot.generated_at` yalnızca yanıtın üretim zamanıdır;
+    /// fiyat tazeliği bununla değil bu alanla değerlendirilir.
+    pub as_of_ts: Option<i64>,
     pub change_1w: Option<f64>,
     pub change_1m: Option<f64>,
     pub change_6m: Option<f64>,
@@ -277,6 +286,12 @@ pub struct SyncResult {
     pub status: String,
     pub message: String,
     pub updated_records: usize,
+    /// Bu turda gerçekten yeni piyasa fiyatı alan satır sayısı.
+    pub market_updated_records: usize,
+    /// Tam turda istenen sembollerin alınabilen oranı; artımlıda `None`.
+    pub market_coverage: Option<f64>,
+    /// Güncellenen fiyatlar içindeki en yeni sağlayıcı zaman damgası.
+    pub market_as_of_ts: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

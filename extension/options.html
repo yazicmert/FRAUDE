@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap options">
+    <h2>🔍 Fraude Eklentisi Ayarları</h2>
+
+    <h3 class="sect">1 · Bildirim beslemesi <span class="muted">(masaüstü kapalıyken de)</span></h3>
+    <p class="muted">
+      Sunucudaki KAP/SPK/haber bildirimlerinizi Chrome'da almak için
+      <strong>besleme anahtarınızı</strong> girin. Fraude hesabınızda
+      <strong>web → Hesap</strong> ya da uygulamada <strong>Bildirimler</strong>
+      modülünde görünür.
+    </p>
+    <label>Besleme anahtarı</label>
+    <input id="feedToken" type="text" placeholder="Hesabınızdaki besleme anahtarı" />
+    <div class="row">
+      <button id="saveFeed" class="primary">Kaydet</button>
+      <button id="testFeed">Beslemeyi Test Et</button>
+    </div>
+    <p id="feedMsg" class="msg"></p>
+
+    <h3 class="sect">2 · Araştırma köprüsü <span class="muted">(masaüstü açıkken)</span></h3>
+    <p class="muted">
+      Metin/URL/görsel gönderip AI ajanlarına araştırtmak için, masaüstünde
+      <strong>Ayarlar → AI Agents → Chrome Eklentisi Köprüsü</strong>
+      bölümündeki port ve token'ı girin. Fraude'nin açık olması gerekir.
+    </p>
+    <label>Port</label>
+    <input id="port" type="number" placeholder="8799" />
+    <label>Token</label>
+    <input id="token" type="text" placeholder="Uygulamadaki token" />
+    <div class="row">
+      <button id="save" class="primary">Kaydet</button>
+      <button id="test">Bağlantıyı Test Et</button>
+    </div>
+    <p id="msg" class="msg"></p>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

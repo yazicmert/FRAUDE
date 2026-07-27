@@ -135,7 +135,7 @@ export default function TeamView() {
     <div className="view team-view" style={{ padding: '24px', display: 'flex', gap: '24px', height: '100%', boxSizing: 'border-box' }}>
       
       {/* AGENTS SECTION */}
-      <div style={{ flex: 2, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div className="team-agents-pane" style={{ flex: 2, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: 600 }}>{t('teamTitle')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
           {agents.map(agent => (
@@ -211,7 +211,7 @@ export default function TeamView() {
       </div>
 
       {/* ARTIFACTS SECTION */}
-      <div style={{ flex: 1, background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="team-artifacts-pane" style={{ flex: 1, background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px', display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <h2 style={{ margin: 0, fontSize: '1.2rem' }}>{t('teamArtifactStore')}</h2>
           <button

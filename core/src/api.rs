@@ -41,6 +41,9 @@ pub async fn sync_data(state: &AppState, source: String, mode: String) -> Result
 
         let mut store = state.store.lock().await;
         let updated = crate::yahoo::apply_incremental_prices(&mut store.equities, &closes, &global_quotes);
+        if updated > 0 {
+            crate::market_cache::save(&store.equities, false);
+        }
         if !kap.is_empty() {
             store.kap = kap;
         }
@@ -48,22 +51,36 @@ pub async fn sync_data(state: &AppState, source: String, mode: String) -> Result
             store.spk_bulletins = spk;
         }
         services::refresh_source_status(&mut store);
+        let market_as_of_ts = global_quotes.iter().filter_map(|quote| quote.as_of_ts).max()
+            .or_else(|| (!closes.is_empty()).then(|| chrono::Utc::now().timestamp()));
 
         return Ok(SyncResult {
             source,
             mode: "incremental".into(),
-            status: "completed".into(),
-            message: format!("Incremental sync: {} prices refreshed.", updated),
+            status: if updated > 0 { "completed" } else { "partial" }.into(),
+            message: if updated > 0 {
+                format!("Incremental sync: {} prices refreshed.", updated)
+            } else {
+                "Incremental sync completed without any fresh market prices.".into()
+            },
             updated_records: updated + store.kap.len(),
+            market_updated_records: updated,
+            market_coverage: None,
+            market_as_of_ts,
         });
     }
 
     let (equities_res, kap_res, spk_res) = tokio::join!(
-        crate::yahoo::fetch_all_equities(&state.http, force_bist),
+        crate::yahoo::fetch_all_equities_report(&state.http, force_bist),
         crate::kap::fetch_kap_announcements(&state.http),
         crate::spk::fetch_latest_bulletins(&state.http)
     );
-    let equities = equities_res;
+    let report = equities_res;
+    let coverage = report.coverage();
+    let requested = report.requested;
+    let fetched = report.fetched;
+    let market_as_of_ts = report.rows.iter().filter_map(|row| row.as_of_ts).max();
+    let equities = report.rows;
     let kap = kap_res.unwrap_or_default();
     let spk = spk_res.unwrap_or_default();
 
@@ -74,7 +91,13 @@ pub async fn sync_data(state: &AppState, source: String, mode: String) -> Result
         // Bindirme (merge): bu turda gelmeyen semboller eski değerini korur;
         // hız sınırına takılan kısmi senkron evreni sessizce küçültemez.
         services::merge_equities(&mut store.equities, equities);
-        services::record_full_sync();
+        let complete = services::full_sync_is_acceptable(coverage);
+        if complete {
+            services::record_full_sync();
+        }
+        // Evren diske yazılır: yeniden açılış ~650 grafik isteğini tekrarlamaz.
+        // Kısmi tur da yazılır ama tam senkron damgasını ileri taşımaz.
+        crate::market_cache::save(&store.equities, complete);
     }
     if !kap.is_empty() {
         store.kap = kap;
@@ -85,12 +108,19 @@ pub async fn sync_data(state: &AppState, source: String, mode: String) -> Result
 
     services::refresh_source_status(&mut store);
 
+    let complete = services::full_sync_is_acceptable(coverage);
     Ok(SyncResult {
         source,
         mode: "full".into(),
-        status: "completed".into(),
-        message: format!("Synced {} equities from Yahoo Finance.", eq_count),
+        status: if complete { "completed" } else { "partial" }.into(),
+        message: format!(
+            "Synced {}/{} market symbols from Yahoo Finance ({:.1}% coverage).",
+            fetched, requested, coverage * 100.0
+        ),
         updated_records: eq_count + store.kap.len(),
+        market_updated_records: eq_count,
+        market_coverage: Some(coverage),
+        market_as_of_ts,
     })
 }
 
@@ -104,13 +134,38 @@ pub async fn get_dashboard_snapshot(state: &AppState) -> Result<DashboardSnapsho
 }
 
 pub async fn get_ticker_snapshot(state: &AppState, ticker: String) -> Result<TickerSnapshot, String> {
-    let normalized = ticker.trim().to_uppercase();
+    let normalized = crate::yahoo::canonical_ticker(&ticker);
 
-    {
+    let local_snapshot = {
         let store = state.store.lock().await;
-        if let Ok(snapshot) = services::ticker_snapshot(&store, &normalized) {
-            return Ok(snapshot);
+        services::ticker_snapshot(&store, &normalized).ok()
+    };
+
+    if let Some(mut snapshot) = local_snapshot {
+        // Snapshot'ın temel/teknik alanları yerel store'dan gelir; fiyat katmanı
+        // ise enstrüman tipine göre yönlendirilen kısa ömürlü canlı uçtan
+        // bindirilir. Ağ başarısızsa doğrulanmış son kayıt korunur.
+        let live = crate::live_quotes::get_live_quotes(&state.http, std::slice::from_ref(&normalized))
+            .await
+            .into_iter()
+            .find(|quote| crate::yahoo::canonical_ticker(&quote.ticker) == normalized);
+        if let Some(quote) = live {
+            snapshot.equity.price = quote.price;
+            snapshot.equity.change_pct = quote.change_pct;
+            snapshot.equity.as_of_ts = Some(quote.as_of_ts);
+
+            let mut store = state.store.lock().await;
+            if let Some(row) = store
+                .equities
+                .iter_mut()
+                .find(|row| crate::yahoo::canonical_ticker(&row.ticker) == normalized)
+            {
+                row.price = quote.price;
+                row.change_pct = quote.change_pct;
+                row.as_of_ts = Some(quote.as_of_ts);
+            }
         }
+        return Ok(snapshot);
     }
 
     // Yerel evrende yok (örn. sync'ten önce tıklanan yeni halka arz):
@@ -125,10 +180,8 @@ pub async fn get_ticker_snapshot(state: &AppState, ticker: String) -> Result<Tic
         .await
         .map_err(|e| format!("{normalized} yerel evrende yok ve canlı veri alınamadı: {e}"))?;
 
-    // Önbelleğe store'daki adla yazılır: yeniden adlandırılan semboller (GC=F →
-    // "Altın Ons ($)") görünen ad altında saklanır; böylece merge'li senkron
-    // sonrası aynı enstrümanın bayat bir kopyası aramayı gölgeleyemez.
-    let store_key = crate::yahoo::display_ticker(&normalized).unwrap_or(normalized.as_str());
+    // Store anahtarı her varlık sınıfında kanonik sağlayıcı sembolüdür.
+    let store_key = normalized.as_str();
     let mut store = state.store.lock().await;
     if !store.equities.iter().any(|row| row.ticker == store_key) {
         let mut cached = equity.clone();
@@ -348,7 +401,7 @@ pub async fn get_fund_holdings(
         .map(|report| (*report).clone())
 }
 
-/// Verilen sembollerin ~15 dk gecikmeli canlı fiyatları.
+/// Verilen sembollerin enstrüman türüne göre yönlendirilmiş güncel fiyatları.
 pub async fn get_live_quotes(
     state: &AppState,
     tickers: Vec<String>,

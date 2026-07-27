@@ -24,11 +24,14 @@ Yönlendirme zinciri şablona gömülü değildir, `ConfirmationURL` içindeki
 `redirect_to`'dan gelir:
 
 - Masaüstünden kayıt → `fraude://auth-callback` (bkz. `src/features/auth/deepLink.ts`)
+- Masaüstünden GitHub OAuth → `fraude://auth-callback` (sistem tarayıcısı uygulamaya geri döner)
 - Siteden şifre yenileme → `<site-origin>/sifre-yenile`
 
-İkisi de panodaki **Redirect URLs allowlist**'te olmalı; e-postalar Auth → SMTP
-ayarındaki sunucudan çıkar. Not: pano bu hesaptaki `supabase` CLI'da görünmez,
-işlemler elle yapılır.
+Bu yönlendirmeler panodaki **Redirect URLs allowlist**'te olmalı. GitHub girişi
+için Authentication → Providers altındaki GitHub sağlayıcısı da etkin kalmalı;
+site ve masaüstü aynı sağlayıcıyı kullanır. E-postalar Auth → SMTP ayarındaki
+sunucudan çıkar. Not: pano bu hesaptaki `supabase` CLI'da görünmez, işlemler
+elle yapılır.
 
 ## Lisans anahtarı — Edge Function + Brevo
 

@@ -8,6 +8,7 @@
 import { supabase } from './supabaseClient';
 import type { User } from '@supabase/supabase-js';
 import { isDesktopRuntime } from '../../api/platformClient';
+import { openUrl } from '../../lib/openExternal';
 import { DESKTOP_AUTH_REDIRECT, initAuthDeepLink } from './deepLink';
 
 export interface AuthUser {
@@ -25,13 +26,18 @@ export type AuthError =
   | 'invalid-credentials'
   | 'confirm-email'
   | 'weak-password'
+  | 'oauth-unavailable'
   | 'network'
   | 'unknown';
 
 function toUser(user: User | null | undefined): AuthUser | null {
   if (!user || !user.email) return null;
-  const name =
-    (user.user_metadata?.name as string | undefined)?.trim() || user.email.split('@')[0];
+  const metadata = user.user_metadata ?? {};
+  // E-posta kaydı `name`, GitHub ise çoğunlukla `full_name` / `user_name`
+  // gönderir. İlk dolu değeri kullanarak iki giriş yöntemini aynı profile çevir.
+  const name = ([metadata.name, metadata.full_name, metadata.user_name] as unknown[])
+    .map((value) => typeof value === 'string' ? value.trim() : '')
+    .find(Boolean) || user.email.split('@')[0];
   return { id: user.id, name, email: user.email, createdAt: user.created_at };
 }
 
@@ -107,6 +113,32 @@ export async function signIn(email: string, password: string): Promise<AuthUser 
     return toUser(data.user)!;
   } catch {
     return 'network';
+  }
+}
+
+/**
+ * GitHub OAuth'u sistem tarayıcısında başlatır. Masaüstü dönüşü kayıtlı
+ * `fraude://auth-callback` şemasına gelir ve deepLink.ts oturumu tamamlar.
+ */
+export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network' | null> {
+  try {
+    const redirectTo = isDesktopRuntime()
+      ? DESKTOP_AUTH_REDIRECT
+      : `${window.location.origin}${window.location.pathname}`;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo,
+        // OAuth'u webview içinde gezdirmeyip varsayılan tarayıcıda açıyoruz.
+        skipBrowserRedirect: true,
+      },
+    });
+    if (error || !data.url) return 'oauth-unavailable';
+    await openUrl(data.url);
+    return null;
+  } catch (error) {
+    if (error instanceof TypeError) return 'network';
+    return 'oauth-unavailable';
   }
 }
 

@@ -113,7 +113,7 @@ export default function MonitorView({
   const { config } = state;
 
   return (
-    <div className="view" style={{ padding: '24px', maxWidth: '1100px' }}>
+    <div className="view monitor-view" style={{ padding: '24px', maxWidth: '1100px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <p className="eyebrow" style={{ margin: 0 }}>{t('monEyebrow')}</p>
@@ -137,15 +137,15 @@ export default function MonitorView({
       </div>
 
       {/* AYAR ÇUBUĞU */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', marginTop: '20px', padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
+      <div className="monitor-config" style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', marginTop: '20px', padding: '14px 16px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
           <input type="checkbox" checked={config.enabled} disabled={busy} onChange={(e) => patchConfig({ enabled: e.target.checked })} style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }} />
           <strong>{config.enabled ? t('monEnabledOn') : t('monEnabledOff')}</strong>
         </label>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
+        <div className="monitor-inline-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
           <span style={{ color: 'var(--text-muted)' }}>{t('monInterval')}</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
+          <div className="monitor-intervals" style={{ display: 'flex', gap: '4px' }}>
             {INTERVAL_OPTIONS.map((opt) => (
               <button
                 key={opt.secs}
@@ -161,7 +161,7 @@ export default function MonitorView({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
+        <div className="monitor-inline-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
           <span style={{ color: 'var(--text-muted)' }}>{t('monAgent')}</span>
           <select
             value={config.agent_id ?? ''}

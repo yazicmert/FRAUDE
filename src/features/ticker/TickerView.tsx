@@ -7,7 +7,7 @@ import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, Divide
 import PriceChart from './PriceChart';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
-import { dispatchAiAsk, dispatchOpenAlerts } from '../../lib/actions';
+import { dispatchAiAsk, dispatchOpenAlerts, dispatchResearchTicker } from '../../lib/actions';
 import FinancialsTab from './FinancialsTab';
 import WatchlistJournal from './WatchlistJournal';
 import FlashValue from '../../components/FlashValue';
@@ -256,8 +256,8 @@ export default function TickerView({ ticker }: { ticker: string }) {
 
   const { equity } = snapshot;
 
-  // Gecikmeli canlı fiyat varsa onu göster; yoksa (global hisse, seans kapalı,
-  // sağlayıcı erişilemedi) anlık görüntüdeki değer korunur.
+  // Yönlendirilmiş canlı fiyat varsa onu göster; sağlayıcı erişilemezse anlık
+  // görüntüdeki son doğrulanmış değer korunur.
   const quote = live.get(ticker.trim().replace(/\.IS$/i, '').toUpperCase());
   const price = quote?.price ?? equity.price;
   const changePct = quote?.change_pct ?? equity.change_pct;
@@ -319,10 +319,30 @@ export default function TickerView({ ticker }: { ticker: string }) {
               <BellIcon />
               {t('setAlert')}
             </button>
+            {corporate && (
+              <button
+                type="button"
+                className="ticker-action-btn"
+                onClick={() => dispatchResearchTicker(equity.ticker)}
+                title={t('researchTeamDesc')}
+              >
+                🔍 {t('researchTeamTitle')}
+              </button>
+            )}
           </div>
           <p>{equity.name}</p>
         </div>
-        <div className="price-block" title={quote ? t('liveDelayedHint') : undefined}>
+        <div
+          className="price-block"
+          title={quote
+            ? quote.delay_seconds
+              ? t('liveSourceDelayedHint', {
+                source: quote.source,
+                minutes: Math.round(quote.delay_seconds / 60),
+              })
+              : t('liveSourceHint', { source: quote.source })
+            : undefined}
+        >
           <strong><FlashValue value={price} format={(v) => v.toFixed(2)} style={{ borderRadius: '4px', padding: '0 4px' }} /></strong>
           <span className={changePct >= 0 ? 'positive' : 'negative'}>
             {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
@@ -566,7 +586,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
           <div className="empty-state error" style={{ padding: '20px', fontSize: '0.82rem' }}>{shareholdersError}</div>
         ) : shareholders && shareholders.holders.length > 0 ? (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: '20px', alignItems: 'center', marginTop: '8px' }}>
+            <div className="ownership-grid" style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: '20px', alignItems: 'center', marginTop: '8px' }}>
               <div style={{ height: '190px' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>

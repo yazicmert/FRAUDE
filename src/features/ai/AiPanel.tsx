@@ -200,7 +200,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
 
       {/* SIDEBAR FOR HISTORY */}
       {mode === 'workspace' && (
-        <div style={{
+        <div className="ai-history-pane" style={{
           width: '300px',
           borderRight: '1px solid var(--border-color)',
           background: 'rgba(0,0,0,0.1)',
@@ -294,7 +294,7 @@ export default function AiPanel({ mode, activeContext, quickPrompt }: AiPanelPro
       )}
 
       {/* MAIN CONTENT */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: compact ? '14px 14px 12px' : '32px', overflow: 'hidden', background: 'var(--bg-default)' }}>
+      <div className="ai-main-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: compact ? '14px 14px 12px' : '32px', overflow: 'hidden', background: 'var(--bg-default)' }}>
         {compact ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>

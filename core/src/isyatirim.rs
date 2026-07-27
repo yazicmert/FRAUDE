@@ -86,11 +86,26 @@ pub async fn current_closes(client: &reqwest::Client) -> HashMap<String, f64> {
         .collect()
 }
 
+/// Tazeleme sırasını serileştirir (tek-uçuş).
+///
+/// Bir tur beş isteğe mal oluyor (çerez GET'i + dört screener POST'u). Önbellek
+/// süresi dolduğu anda artımlı senkron, tam senkron ve fon ekranı aynı anda
+/// çağırırsa kilitsiz kurulumda bu beşlik tur üç kez birden gidiyordu. Kilidi
+/// alan çeker, bekleyenler dolmuş önbellekten okur.
+static REFRESH_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
 /// Oran haritasını önbellekten verir; süresi geçmişse ağdan tazeleyip saklar.
 async fn load_ratios(client: &reqwest::Client) -> Option<RatioMap> {
     if let Some(rows) = cached_ratios() {
         return Some(rows);
     }
+
+    let _guard = REFRESH_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    // Sırada beklerken başka bir çağıran önbelleği doldurmuş olabilir.
+    if let Some(rows) = cached_ratios() {
+        return Some(rows);
+    }
+
     let rows = fetch_ratios(client).await.ok()?;
     *CACHE.get_or_init(|| Mutex::new(None))
         .lock().unwrap_or_else(|error| error.into_inner()) =

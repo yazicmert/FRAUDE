@@ -20,6 +20,7 @@ export interface PresetSymbol {
 
 export const PRESET_SYMBOLS: PresetSymbol[] = [
   { symbol: 'XU100.IS', label: 'BIST 100', group: 'Endeks', keywords: ['xu100', 'bist100'], indexName: 'BIST 100' },
+  { symbol: 'XU050.IS', label: 'BIST 50', group: 'Endeks', keywords: ['xu050', 'bist50'], indexName: 'BIST 50' },
   { symbol: 'XU030.IS', label: 'BIST 30', group: 'Endeks', keywords: ['xu030', 'bist30'], indexName: 'BIST 30' },
   { symbol: 'XBANK.IS', label: 'BIST Banka', group: 'Endeks', indexName: 'BIST BANKA' },
   { symbol: 'XUSIN.IS', label: 'BIST Sınai', group: 'Endeks', indexName: 'BIST SINAI' },

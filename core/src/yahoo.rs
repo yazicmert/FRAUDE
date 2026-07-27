@@ -7,10 +7,30 @@ use crate::indicators;
 
 pub const YAHOO_USER_AGENT: &str = "FraudeFinance/1.0";
 
+pub const COMMODITY_GROUP: &str = "Emtialar";
+pub const FX_GROUP: &str = "Döviz";
+pub const CRYPTO_GROUP: &str = "Kripto";
+
 pub const COMMODITY_TICKERS: &[(&str, &str)] = &[
     ("GC=F", "Altın Ons ($)"),
     ("SI=F", "Gümüş Ons ($)"),
+    ("BZ=F", "Brent Petrol ($)"),
+    ("CL=F", "WTI Petrol ($)"),
+    ("NG=F", "Doğalgaz ($)"),
+    ("HG=F", "Bakır ($)"),
+];
+
+pub const FX_TICKERS: &[(&str, &str)] = &[
     ("USDTRY=X", "USD/TRY"),
+    ("EURTRY=X", "EUR/TRY"),
+    ("GBPTRY=X", "GBP/TRY"),
+];
+
+pub const CRYPTO_TICKERS: &[(&str, &str)] = &[
+    ("BTC-USD", "Bitcoin ($)"),
+    ("ETH-USD", "Ethereum ($)"),
+    ("SOL-USD", "Solana ($)"),
+    ("XRP-USD", "Ripple ($)"),
 ];
 
 /// Global hisselerin `index_memberships` grup etiketi. Frontend BIST'e özel
@@ -248,6 +268,48 @@ fn symbol(ticker: &str) -> String {
     }
 }
 
+/// Kullanıcı/görünüm adını sağlayıcının kanonik sembolüne çevirir.
+///
+/// Store ve canlı fiyat yönlendiricisi bu sembolü anahtar olarak kullanır;
+/// okunur adlar yalnız `EquityRow.name` alanında kalır.
+pub fn canonical_ticker(ticker: &str) -> String {
+    let upper = ticker.trim().to_uppercase();
+    match upper.as_str() {
+        "ALTIN ONS ($)" | "ALTIN (ONS)" | "XAU" => "GC=F".into(),
+        "GÜMÜŞ ONS ($)" | "GÜMÜŞ (ONS)" | "XAG" => "SI=F".into(),
+        "BRENT PETROL ($)" => "BZ=F".into(),
+        "WTI PETROL ($)" => "CL=F".into(),
+        "DOĞALGAZ ($)" => "NG=F".into(),
+        "BAKIR ($)" => "HG=F".into(),
+        "USD/TRY" | "USD/TL" => "USDTRY=X".into(),
+        "EUR/TRY" | "EUR/TL" => "EURTRY=X".into(),
+        "GBP/TRY" | "GBP/TL" => "GBPTRY=X".into(),
+        "BITCOIN ($)" => "BTC-USD".into(),
+        "ETHEREUM ($)" => "ETH-USD".into(),
+        "SOLANA ($)" => "SOL-USD".into(),
+        "RIPPLE ($)" => "XRP-USD".into(),
+        _ if upper.ends_with(".IS") => upper.trim_end_matches(".IS").into(),
+        _ => upper,
+    }
+}
+
+/// İş Yatırım canlı fiyatı yalnız BIST paylarında kullanılmalıdır.
+pub fn is_bist_equity_symbol(ticker: &str) -> bool {
+    let symbol = canonical_ticker(ticker);
+    if GLOBAL_TICKERS.iter().any(|(candidate, _)| *candidate == symbol)
+        || COMMODITY_TICKERS.iter().any(|(candidate, _)| *candidate == symbol)
+        || FX_TICKERS.iter().any(|(candidate, _)| *candidate == symbol)
+        || CRYPTO_TICKERS.iter().any(|(candidate, _)| *candidate == symbol)
+    {
+        return false;
+    }
+    !symbol.starts_with('^')
+        && !symbol.starts_with('X')
+        && !symbol.contains('=')
+        && !symbol.contains('-')
+        && !symbol.contains(' ')
+}
+
 async fn chart(client: &reqwest::Client, ticker: &str, range: &str) -> Result<YahooResult, String> {
     // Yahoo, range=max isteklerinde interval=1d'yi yok sayıp aylık bara düşürür;
     // tam günlük geçmiş yalnızca period1/period2 parametreleriyle alınabilir.
@@ -285,8 +347,8 @@ async fn chart(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Ya
 ///
 /// Yahoo'nun kısıtlaması ani eşzamanlılığa değil zaman içindeki toplam istek
 /// hacmine de bakar: yoğun kullanımda tek bir istek bile 429 dönebilir. Bu
-/// sayıyı büyütmeden önce `enrich_equity` dahil sembol başına düşen istek
-/// sayısını azaltmak daha etkilidir.
+/// sayıyı büyütmeden önce sembol başına düşen istek sayısını azaltmak daha
+/// etkilidir; tam senkron artık sembol başına tek grafik isteği yapıyor.
 const YAHOO_CONCURRENCY: usize = 8;
 
 /// Geçici hatada toplam deneme sayısı (ilk deneme dahil).
@@ -383,6 +445,7 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
         name: result.meta.long_name.unwrap_or_else(|| fallback_name.to_string()),
         price,
         change_pct: (change_pct * 100.0).round() / 100.0,
+        as_of_ts: result.meta.regular_market_time,
         change_1w,
         change_1m,
         change_6m,
@@ -416,8 +479,16 @@ fn get_ticker_memberships(ticker: &str) -> Vec<String> {
     let mut indices = Vec::new();
 
     if COMMODITY_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
-        indices.push("Emtialar".to_string());
-        return indices; // Early return for commodities as they are not BIST equities
+        indices.push(COMMODITY_GROUP.to_string());
+        return indices;
+    }
+    if FX_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+        indices.push(FX_GROUP.to_string());
+        return indices;
+    }
+    if CRYPTO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+        indices.push(CRYPTO_GROUP.to_string());
+        return indices;
     }
 
     // Global hisseler BIST evreninin parçası değildir; "Emtialar" gibi ayrı bir
@@ -493,7 +564,9 @@ fn select_previous_close(
 /// eşleşmelidir; canlı veri gelmediğinde `services::dashboard` aynı listeden
 /// yer tutucu üretir.
 pub const MARKET_INDICES: &[(&str, &str)] = &[
-    ("XU100.IS", "BIST 100"), ("XU030.IS", "BIST 30"), ("XBANK.IS", "BIST BANKA"), ("XUSIN.IS", "BIST SINAI"),
+    ("XU100.IS", "BIST 100"), ("XU050.IS", "BIST 50"), ("XU030.IS", "BIST 30"),
+    ("XBANK.IS", "BIST BANKA"), ("XUSIN.IS", "BIST SINAI"),
+    ("XUTEK.IS", "BIST TEKNOLOJI"), ("XHARZ.IS", "BIST HALKA ARZ"),
     ("USDTRY=X", "USD/TRY"), ("EURTRY=X", "EUR/TRY"),
     ("^GSPC", "S&P 500"), ("^IXIC", "NASDAQ"), ("^DJI", "DOW JONES"),
     ("^GDAXI", "DAX"), ("^FTSE", "FTSE 100"),
@@ -532,8 +605,23 @@ fn cached_metrics() -> Option<Vec<MarketMetric>> {
         .map(|(_, rows)| rows.clone())
 }
 
+/// Gösterge tazelemesini serileştirir (tek-uçuş). Bir tur `MARKET_INDICES`
+/// uzunluğunda (17) Yahoo isteği demek; şerit ve pano aynı anda süresi dolmuş
+/// önbelleğe rastlarsa kilitsiz kurulumda bu tur iki kez birden giderdi.
+static METRICS_REFRESH_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
+    std::sync::OnceLock::new();
+
 /// Piyasa göstergelerini döndürür; `METRICS_CACHE_TTL` içinde önbellekten verir.
 pub async fn fetch_market_metrics(client: &reqwest::Client) -> Vec<MarketMetric> {
+    if let Some(rows) = cached_metrics() {
+        return rows;
+    }
+
+    let _guard = METRICS_REFRESH_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    // Sırada beklerken başka bir çağıran önbelleği doldurmuş olabilir.
     if let Some(rows) = cached_metrics() {
         return rows;
     }
@@ -590,27 +678,49 @@ async fn fetch_market_metrics_uncached(client: &reqwest::Client) -> Vec<MarketMe
 }
 
 pub async fn fetch_equity(client: &reqwest::Client, ticker: &str, name: &str) -> Result<EquityRow, String> {
+    let ticker = canonical_ticker(ticker);
     // Üyelikler güncel CSV önbelleğinden okunur; koddaki statik liste yalnızca
     // önbellek hiç oluşmamışsa devreye giren son çaredir. Aksi halde endeks
     // güncellemeleri tek hisse görünümüne hiç yansımaz.
-    let index_cache = crate::bist_indices::fetch_and_update_indices(false).await;
-    let memberships = match index_cache.memberships.get(ticker) {
+    let index_cache = crate::bist_indices::fetch_and_update_indices(client, false).await;
+    let memberships = match index_cache.memberships.get(ticker.as_str()) {
         Some(rows) if !rows.is_empty() => rows.clone(),
-        _ => get_ticker_memberships(ticker),
+        _ => get_ticker_memberships(&ticker),
     };
-    let result = chart_with_retry(client, ticker, "1y").await?;
-    let row = equity_from_result(ticker, name, result, memberships);
-    let mut rows = vec![crate::fundamentals::enrich_equity(client, row).await];
+    let result = chart_with_retry(client, &ticker, "1y").await?;
+    let mut rows = vec![equity_from_result(&ticker, name, result, memberships)];
     crate::isyatirim::enrich_all(client, &mut rows).await;
     rows.pop().ok_or_else(|| format!("No enriched data for {ticker}"))
 }
 
-pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bool) -> Vec<EquityRow> {
+#[derive(Debug)]
+pub struct EquityFetchReport {
+    pub rows: Vec<EquityRow>,
+    pub requested: usize,
+    pub fetched: usize,
+}
+
+impl EquityFetchReport {
+    pub fn coverage(&self) -> f64 {
+        if self.requested == 0 { 0.0 } else { self.fetched as f64 / self.requested as f64 }
+    }
+}
+
+fn combined_change_pct(base_change_pct: f64, fx_change_pct: f64) -> f64 {
+    (((1.0 + base_change_pct / 100.0) * (1.0 + fx_change_pct / 100.0)) - 1.0) * 100.0
+}
+
+pub async fn fetch_all_equities_report(
+    client: &reqwest::Client,
+    force_bist_refresh: bool,
+) -> EquityFetchReport {
     let mut seen = HashSet::new();
     let mut universe: Vec<(String, String)> = GLOBAL_TICKERS.iter()
         .chain(BIST_TICKERS.iter())
         .chain(IPO_TICKERS.iter())
         .chain(COMMODITY_TICKERS.iter())
+        .chain(FX_TICKERS.iter())
+        .chain(CRYPTO_TICKERS.iter())
         .copied()
         .filter(|(ticker, _)| seen.insert(*ticker))
         .map(|(ticker, name)| (ticker.to_string(), name.to_string()))
@@ -632,8 +742,9 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
             universe.push((ticker, name));
         }
     }
+    let requested = universe.len();
 
-    let index_cache = crate::bist_indices::fetch_and_update_indices(force_bist_refresh).await;
+    let index_cache = crate::bist_indices::fetch_and_update_indices(client, force_bist_refresh).await;
 
     // Tüm evren tek seferde kuyruğa alınır; eşzamanlılığı semafor sınırlar.
     // Böylece istekler sürekli akar ve batch sınırında bekleme oluşmaz.
@@ -646,7 +757,11 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
         let index_changes = index_cache.changes.get(ticker.as_str()).cloned();
 
         if COMMODITY_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
-            memberships.push("Emtialar".to_string());
+            memberships.push(COMMODITY_GROUP.to_string());
+        } else if FX_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+            memberships.push(FX_GROUP.to_string());
+        } else if CRYPTO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
+            memberships.push(CRYPTO_GROUP.to_string());
         } else if GLOBAL_TICKERS.iter().any(|(symbol, _)| *symbol == ticker) {
             memberships.push(GLOBAL_GROUP.to_string());
         } else if IPO_TICKERS.iter().any(|(symbol, _)| *symbol == ticker)
@@ -656,13 +771,15 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
         }
 
         tasks.push(tokio::spawn(async move {
-            // İzin, temel veri zenginleştirmesi de dahil tüm görev boyunca tutulur;
-            // toplam dış istek trafiği bu sayıyla sınırlı kalır.
+            // İzin tüm görev boyunca tutulur; toplam dış istek trafiği bu
+            // sayıyla sınırlı kalır. Temel veriler sembol başına değil,
+            // tur sonunda tek toplu İş Yatırım isteğiyle bindirilir
+            // (`isyatirim::enrich_all`).
             let _permit = gate.acquire().await.map_err(|error| error.to_string())?;
             let result = chart_with_retry(&client, &ticker, "1y").await?;
             let mut row = equity_from_result(&ticker, &name, result, memberships);
             row.index_changes = index_changes;
-            Ok::<EquityRow, String>(crate::fundamentals::enrich_equity(&client, row).await)
+            Ok::<EquityRow, String>(row)
         }));
     }
 
@@ -671,77 +788,84 @@ pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bo
     for task in tasks {
         if let Ok(Ok(row)) = task.await { equities.push(row); }
     }
+    let fetched = equities.len();
     crate::isyatirim::enrich_all(client, &mut equities).await;
 
     // --- Synthetic Commodity Computation ---
     // Extract ONS prices and USD/TRY
     let gold_ons = equities.iter().find(|e| e.ticker == "GC=F").map(|e| e.price);
     let silver_ons = equities.iter().find(|e| e.ticker == "SI=F").map(|e| e.price);
-    let usdtry = equities.iter().find(|e| e.ticker == "USDTRY=X").map(|e| e.price);
+    let usdtry_row = equities.iter().find(|e| e.ticker == "USDTRY=X").cloned();
 
-    let create_synthetic = |base: &EquityRow, target_ticker: &str, name: &str, usd_price: f64, usdtry_price: f64| -> EquityRow {
-        let try_price = (usd_price / 31.1034768) * usdtry_price;
+    let create_synthetic = |base: &EquityRow, target_ticker: &str, name: &str, usd_price: f64, fx: &EquityRow| -> EquityRow {
+        let try_price = (usd_price / 31.1034768) * fx.price;
         let mut row = base.clone();
         row.ticker = target_ticker.to_string();
         row.name = name.to_string();
         row.price = (try_price * 100.0).round() / 100.0;
-        row.index_memberships = vec!["Emtialar".to_string()];
+        row.index_memberships = vec![COMMODITY_GROUP.to_string()];
+        row.change_pct = combined_change_pct(base.change_pct, fx.change_pct);
+        row.as_of_ts = [base.as_of_ts, fx.as_of_ts].into_iter().flatten().min();
         row
     };
 
-    if let (Some(gold), Some(try_rate)) = (gold_ons, usdtry) {
+    if let (Some(gold), Some(fx)) = (gold_ons, usdtry_row.as_ref()) {
         if let Some(base) = equities.iter().find(|e| e.ticker == "GC=F").cloned() {
-            equities.push(create_synthetic(&base, "GRAM ALTIN", "Gram Altın (TRY)", gold, try_rate));
+            equities.push(create_synthetic(&base, "GRAM ALTIN", "Gram Altın (TRY)", gold, fx));
         }
     }
     
-    if let (Some(silver), Some(try_rate)) = (silver_ons, usdtry) {
+    if let (Some(silver), Some(fx)) = (silver_ons, usdtry_row.as_ref()) {
         if let Some(base) = equities.iter().find(|e| e.ticker == "SI=F").cloned() {
-            equities.push(create_synthetic(&base, "GRAM GÜMÜŞ", "Gram Gümüş (TRY)", silver, try_rate));
+            equities.push(create_synthetic(&base, "GRAM GÜMÜŞ", "Gram Gümüş (TRY)", silver, fx));
         }
     }
 
-    // Arayüz için okunur adlar; harita `display_ticker` ile ortak, böylece
-    // yerel arama eşlemesiyle adlandırma birbirinden kopamaz.
-    for row in &mut equities {
-        if let Some(name) = display_ticker(&row.ticker) {
-            row.ticker = name.to_string();
-        }
-    }
-
-    equities
+    EquityFetchReport { rows: equities, requested, fetched }
 }
 
-/// Artımlı senkron için global/emtia/döviz sembollerinin güncel fiyatı ve
-/// önceki kapanışı: (sembol, fiyat, önceki kapanış). Sembol başına tek "5d"
-/// isteği atılır (~20 istek); BIST evrenine hiç gidilmez — o taraf İş Yatırım
-/// toplu screener'ından beslenir (`isyatirim::current_closes`).
-pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<(String, f64, f64)> {
-    let mut seen = HashSet::new();
-    let symbols: Vec<&'static str> = GLOBAL_TICKERS.iter()
-        .chain(COMMODITY_TICKERS.iter())
-        .map(|(symbol, _)| *symbol)
-        .filter(|symbol| seen.insert(*symbol))
-        .collect();
+pub async fn fetch_all_equities(client: &reqwest::Client, force_bist_refresh: bool) -> Vec<EquityRow> {
+    fetch_all_equities_report(client, force_bist_refresh).await.rows
+}
 
+#[derive(Clone, Debug)]
+pub struct MarketQuote {
+    pub symbol: String,
+    pub price: f64,
+    pub previous_close: f64,
+    pub as_of_ts: Option<i64>,
+}
+
+async fn fetch_market_quotes_direct(
+    client: &reqwest::Client,
+    symbols: Vec<String>,
+) -> Vec<MarketQuote> {
     let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(YAHOO_CONCURRENCY));
     let mut tasks = Vec::with_capacity(symbols.len());
-    for symbol in symbols {
+    for requested_symbol in symbols {
         let client = client.clone();
         let gate = gate.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = gate.acquire().await.ok()?;
-            let result = chart_with_retry(&client, symbol, "5d").await.ok()?;
+            // Store/API anahtarı kanonik kalır (örn. XU100); sağlayıcının
+            // borsa eki yalnız HTTP sınırında eklenir (XU100.IS).
+            let provider_symbol = symbol(&requested_symbol);
+            let result = chart_with_retry(&client, &provider_symbol, "5d").await.ok()?;
             let candles = quote_rows(&result);
             let price = result.meta.regular_market_price
                 .or_else(|| candles.last().map(|row| row.3))?;
-            let previous = select_previous_close(
+            let previous_close = select_previous_close(
                 &candles.iter().map(|row| row.3).collect::<Vec<_>>(),
                 result.meta.previous_close,
                 result.meta.chart_previous_close,
                 price,
             );
-            Some((symbol.to_string(), price, previous))
+            Some(MarketQuote {
+                symbol: requested_symbol,
+                price,
+                previous_close,
+                as_of_ts: result.meta.regular_market_time,
+            })
         }));
     }
 
@@ -754,6 +878,76 @@ pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<(String, f64, 
     quotes
 }
 
+/// Yahoo tarafından desteklenen herhangi bir sembol kümesinin canlı fiyatını
+/// getirir. Gram altın/gümüş istekleri bağımlı ons ve USD/TRY fiyatlarından
+/// aynı önceki-kapanış tabanıyla türetilir.
+pub async fn fetch_market_quotes(
+    client: &reqwest::Client,
+    tickers: &[String],
+) -> Vec<MarketQuote> {
+    let mut seen = HashSet::new();
+    let requested: Vec<String> = tickers.iter().map(|ticker| canonical_ticker(ticker)).collect();
+    let mut providers = Vec::new();
+    for ticker in &requested {
+        let dependencies: &[&str] = match ticker.as_str() {
+            "GRAM ALTIN" => &["GC=F", "USDTRY=X"],
+            "GRAM GÜMÜŞ" => &["SI=F", "USDTRY=X"],
+            _ => &[],
+        };
+        if dependencies.is_empty() {
+            if seen.insert(ticker.clone()) {
+                providers.push(ticker.clone());
+            }
+        } else {
+            for dependency in dependencies {
+                if seen.insert((*dependency).to_string()) {
+                    providers.push((*dependency).to_string());
+                }
+            }
+        }
+    }
+
+    let direct = fetch_market_quotes_direct(client, providers).await;
+    let by_symbol: HashMap<&str, &MarketQuote> =
+        direct.iter().map(|quote| (quote.symbol.as_str(), quote)).collect();
+    let mut output = Vec::new();
+    for ticker in requested {
+        let synthetic_base = match ticker.as_str() {
+            "GRAM ALTIN" => Some("GC=F"),
+            "GRAM GÜMÜŞ" => Some("SI=F"),
+            _ => None,
+        };
+        if let Some(base_symbol) = synthetic_base {
+            let (Some(base), Some(fx)) = (by_symbol.get(base_symbol), by_symbol.get("USDTRY=X")) else {
+                continue;
+            };
+            output.push(MarketQuote {
+                symbol: ticker,
+                price: base.price / 31.1034768 * fx.price,
+                previous_close: base.previous_close / 31.1034768 * fx.previous_close,
+                as_of_ts: [base.as_of_ts, fx.as_of_ts].into_iter().flatten().min(),
+            });
+        } else if let Some(quote) = by_symbol.get(ticker.as_str()) {
+            output.push((*quote).clone());
+        }
+    }
+    output
+}
+
+/// Artımlı senkronun BIST dışı evreni. Tüm global hisseler, katalog
+/// emtiaları, dövizler ve kriptolar aynı kanonik fiyat yolundan geçer.
+pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<MarketQuote> {
+    let mut seen = HashSet::new();
+    let symbols: Vec<String> = GLOBAL_TICKERS.iter()
+        .chain(COMMODITY_TICKERS.iter())
+        .chain(FX_TICKERS.iter())
+        .chain(CRYPTO_TICKERS.iter())
+        .map(|(symbol, _)| (*symbol).to_string())
+        .filter(|symbol| seen.insert(symbol.clone()))
+        .collect();
+    fetch_market_quotes(client, &symbols).await
+}
+
 /// Ucuz toplu fiyatları mevcut evrenin üzerine işler; güncellenen satır sayısını döndürür.
 ///
 /// BIST satırlarında önceki kapanış, satırın eldeki fiyat/değişim ikilisinden
@@ -764,22 +958,24 @@ pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<(String, f64, 
 pub fn apply_incremental_prices(
     equities: &mut [EquityRow],
     bist_closes: &HashMap<String, f64>,
-    global_quotes: &[(String, f64, f64)],
+    global_quotes: &[MarketQuote],
 ) -> usize {
     let mut updated = 0;
+    let fetched_at = chrono::Utc::now().timestamp();
 
     // Global/emtia satırları: Yahoo sembolü ya da store'daki görünen adla eşleşir.
-    for (symbol, price, previous) in global_quotes {
-        if *price <= 0.0 { continue; }
-        let display = display_ticker(symbol);
+    for quote in global_quotes {
+        if quote.price <= 0.0 { continue; }
+        let display = display_ticker(&quote.symbol);
         for row in equities.iter_mut() {
-            let matches = row.ticker == *symbol
+            let matches = row.ticker == quote.symbol
                 || display.map_or(false, |alias| row.ticker == alias);
             if !matches { continue; }
-            row.price = *price;
-            if *previous > 0.0 {
-                row.change_pct = (*price - *previous) / *previous * 100.0;
+            row.price = quote.price;
+            if quote.previous_close > 0.0 {
+                row.change_pct = (quote.price - quote.previous_close) / quote.previous_close * 100.0;
             }
+            row.as_of_ts = quote.as_of_ts;
             updated += 1;
         }
     }
@@ -793,20 +989,24 @@ pub fn apply_incremental_prices(
         if previous.is_finite() && previous > 0.0 {
             row.change_pct = (close - previous) / previous * 100.0;
         }
+        row.as_of_ts = Some(fetched_at);
         updated += 1;
     }
 
     // Sentetik gram satırları baz satırlardan yeniden türetilir; tam senkrondaki
-    // create_synthetic ile aynı yaklaşım (değişim yüzdesi baz emtiadan gelir).
-    fn base_of(equities: &[EquityRow], ticker: &str) -> Option<(f64, f64)> {
-        equities.iter().find(|row| row.ticker == ticker).map(|row| (row.price, row.change_pct))
+    // create_synthetic ile aynı fiyat/değişim tabanını kullanır.
+    fn base_of(equities: &[EquityRow], ticker: &str) -> Option<(f64, f64, Option<i64>)> {
+        equities.iter().find(|row| row.ticker == ticker)
+            .map(|row| (row.price, row.change_pct, row.as_of_ts))
     }
-    let fx = base_of(equities, "USD/TRY").map(|(price, _)| price);
-    for (gram_ticker, base_ticker) in [("GRAM ALTIN", "Altın Ons ($)"), ("GRAM GÜMÜŞ", "Gümüş Ons ($)")] {
-        let (Some((base_price, base_change)), Some(fx_rate)) = (base_of(equities, base_ticker), fx) else { continue };
+    let fx = base_of(equities, "USDTRY=X");
+    for (gram_ticker, base_ticker) in [("GRAM ALTIN", "GC=F"), ("GRAM GÜMÜŞ", "SI=F")] {
+        let (Some((base_price, base_change, base_ts)), Some((fx_rate, fx_change, fx_ts))) =
+            (base_of(equities, base_ticker), fx) else { continue };
         if let Some(row) = equities.iter_mut().find(|row| row.ticker == gram_ticker) {
             row.price = ((base_price / 31.1034768) * fx_rate * 100.0).round() / 100.0;
-            row.change_pct = base_change;
+            row.change_pct = combined_change_pct(base_change, fx_change);
+            row.as_of_ts = [base_ts, fx_ts].into_iter().flatten().min();
             updated += 1;
         }
     }
@@ -815,6 +1015,7 @@ pub fn apply_incremental_prices(
 }
 
 pub async fn fetch_price_history(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Vec<HistoricalQuote>, String> {
+    let ticker = canonical_ticker(ticker);
     if ticker == "GRAM ALTIN" || ticker == "GRAM GÜMÜŞ" {
         let base_ticker = if ticker == "GRAM ALTIN" { "GC=F" } else { "SI=F" };
         
@@ -830,31 +1031,31 @@ pub async fn fetch_price_history(client: &reqwest::Client, ticker: &str, range: 
             let day = row.time / 86400;
             try_map.insert(day, row.close);
         }
+        if try_map.is_empty() {
+            return Err("USD/TRY geçmişi boş; sentetik gram serisi güvenle üretilemedi.".into());
+        }
         
         for row in &mut base_hist {
             let day = row.time / 86400;
             let try_rate = try_map.range(..=day).next_back().map(|(_, v)| *v)
                 .or_else(|| try_map.values().next().copied())
-                .unwrap_or(33.0); // Fallback if no USDTRY data at all
-            
-            row.open = (row.open / 31.1034768) * try_rate;
-            row.high = (row.high / 31.1034768) * try_rate;
-            row.low = (row.low / 31.1034768) * try_rate;
-            row.close = (row.close / 31.1034768) * try_rate;
+                .ok_or("USD/TRY geçmişinde eşleşen gün bulunamadı.")?;
+
+            // Ons ve kur günlük barlarının gün içi yüksek/düşük anları aynı
+            // değildir. Bunları çarpmak sahte bir gram OHLC aralığı üretirdi;
+            // güvenilir ortak tane günlük kapanıştır, bu yüzden seri açıkça
+            // kapanış-only olarak taşınır.
+            let close = (row.close / 31.1034768) * try_rate;
+            row.open = close;
+            row.high = close;
+            row.low = close;
+            row.close = close;
+            row.volume = 0;
         }
         return Ok(base_hist);
     }
-    
-    let real_ticker = match ticker {
-        "Altın Ons ($)" | "ALTIN (ONS)" => "GC=F",
-        "Gümüş Ons ($)" | "GÜMÜŞ (ONS)" => "SI=F",
-        "USD/TRY" | "USD/TL" => "USDTRY=X",
-        "Brent Petrol ($)" => "BZ=F",
-        "Bitcoin ($)" => "BTC-USD",
-        _ => ticker
-    };
-    
-    fetch_price_history_direct(client, real_ticker, range).await
+
+    fetch_price_history_direct(client, &ticker, range).await
 }
 
 async fn fetch_price_history_direct(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Vec<HistoricalQuote>, String> {
@@ -895,9 +1096,8 @@ mod tests {
         assert_eq!(display_ticker("THYAO"), None);
     }
 
-    /// Artımlı fiyat işleme: BIST kapanışı türetilmiş önceki kapanışa göre
-    /// yüzde üretir, globaller görünen adla eşleşir, kapsam dışı satır eski
-    /// değerini korur, gram satırları bazdan yeniden hesaplanır.
+    /// Artımlı fiyat işleme: kanonik semboller yerinde güncellenir ve gram
+    /// değişimi ons ile kur hareketinin bileşkesinden hesaplanır.
     #[test]
     fn incremental_prices_update_rows_in_place() {
         fn row(ticker: &str, price: f64, change_pct: f64) -> EquityRow {
@@ -906,14 +1106,14 @@ mod tests {
         let mut equities = vec![
             row("ASELS", 100.0, 25.0),         // önceki kapanış 80'e denk gelir
             row("THYAO", 300.0, 0.0),          // kapanış gelmeyecek → aynı kalmalı
-            row("Altın Ons ($)", 2000.0, 1.0), // GC=F görünen adıyla eşleşmeli
-            row("USD/TRY", 40.0, 0.5),
+            row("GC=F", 2000.0, 1.0),
+            row("USDTRY=X", 40.0, 0.5),
             row("GRAM ALTIN", 2572.0, 1.0),
         ];
         let closes = HashMap::from([("ASELS".to_string(), 90.0)]);
         let globals = vec![
-            ("GC=F".to_string(), 2100.0, 2000.0),
-            ("USDTRY=X".to_string(), 41.0, 40.0),
+            MarketQuote { symbol: "GC=F".into(), price: 2100.0, previous_close: 2000.0, as_of_ts: Some(10) },
+            MarketQuote { symbol: "USDTRY=X".into(), price: 41.0, previous_close: 40.0, as_of_ts: Some(9) },
         ];
 
         let updated = apply_incremental_prices(&mut equities, &closes, &globals);
@@ -925,14 +1125,29 @@ mod tests {
         assert_eq!(equities[1].price, 300.0);
         assert_eq!(equities[1].change_pct, 0.0);
 
-        let gold = equities.iter().find(|r| r.ticker == "Altın Ons ($)").unwrap();
+        let gold = equities.iter().find(|r| r.ticker == "GC=F").unwrap();
         assert_eq!(gold.price, 2100.0);
         assert!((gold.change_pct - 5.0).abs() < 1e-9);
 
         let gram = equities.iter().find(|r| r.ticker == "GRAM ALTIN").unwrap();
         let expected = ((2100.0_f64 / 31.1034768) * 41.0 * 100.0).round() / 100.0;
         assert_eq!(gram.price, expected);
-        assert!((gram.change_pct - 5.0).abs() < 1e-9, "gram değişimi baz emtiayı izler");
+        let expected_change = combined_change_pct(5.0, 2.5);
+        assert!((gram.change_pct - expected_change).abs() < 1e-9);
+        assert_eq!(gram.as_of_ts, Some(9), "sentetik seri iki bileşenin daha eski zamanını taşır");
+    }
+
+    #[test]
+    fn canonical_symbols_and_provider_routes_are_consistent() {
+        assert_eq!(canonical_ticker("Altın Ons ($)"), "GC=F");
+        assert_eq!(canonical_ticker("BTC-USD"), "BTC-USD");
+        assert_eq!(canonical_ticker("thyao.is"), "THYAO");
+        assert_eq!(symbol(&canonical_ticker("XU100.IS")), "XU100.IS");
+        assert_eq!(symbol(&canonical_ticker("THYAO.IS")), "THYAO.IS");
+        assert!(is_bist_equity_symbol("THYAO.IS"));
+        assert!(!is_bist_equity_symbol("BTC-USD"));
+        assert!(!is_bist_equity_symbol("CL=F"));
+        assert!(!is_bist_equity_symbol("^GSPC"));
     }
 
     #[tokio::test]
@@ -962,7 +1177,7 @@ mod tests {
     async fn live_market_metrics_have_changes_and_timestamps() {
         let client = reqwest::Client::new();
         let metrics = fetch_market_metrics(&client).await;
-        assert_eq!(metrics.len(), 10, "10 kartın hepsi dolmalı: {:?}",
+        assert_eq!(metrics.len(), MARKET_INDICES.len(), "tüm piyasa kartları dolmalı: {:?}",
             metrics.iter().map(|m| m.symbol.clone()).collect::<Vec<_>>());
         let zero_changes: Vec<_> = metrics.iter()
             .filter(|m| m.change == "0.00%" || m.change == "+0.00%")
@@ -992,11 +1207,24 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires live Yahoo access"]
     async fn live_fundamentals_and_ipo_index_are_available() {
-        let client = reqwest::Client::new();
+        let client = crate::http_client();
         let asels = fetch_equity(&client, "ASELS", "Aselsan").await.unwrap();
-        assert!(asels.pe.is_some_and(|value| (47.0..48.0).contains(&value)));
-        assert!(asels.pb.is_some_and(|value| (5.0..7.0).contains(&value)));
-        assert!(asels.fundamentals_as_of.is_some());
+        // F/K ve PD/DD piyasa fiyatıyla her gün değişir; dar bir banda
+        // kilitlemek testi takvime bağlı olarak kırar (bkz. isyatirim.rs'teki
+        // aynı gerekçe). Doğrulanan şey oranların **geldiği** ve makul olduğu.
+        assert!(
+            asels.pe.is_some_and(|value| (1.0..500.0).contains(&value)),
+            "ASELS F/K makul aralıkta gelmeli: {:?}", asels.pe
+        );
+        assert!(
+            asels.pb.is_some_and(|value| (0.1..100.0).contains(&value)),
+            "ASELS PD/DD makul aralıkta gelmeli: {:?}", asels.pb
+        );
+        assert!(asels.fundamentals_available, "temel veri bayrağı dolmalı");
+        assert!(
+            asels.fundamentals_source.is_some_and(|source| source.contains("İş Yatırım")),
+            "oranların kaynağı etiketlenmeli"
+        );
 
         let xharz = chart(&client, "XHARZ.IS", "5d").await.unwrap();
         assert!(xharz.meta.regular_market_price.is_some_and(|value| value > 0.0));

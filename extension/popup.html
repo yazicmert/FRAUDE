@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hdr">
+      <strong>🔍 Fraude</strong>
+      <span id="status" class="dot" title="Bağlantı"></span>
+    </header>
+
+    <!-- Sunucu bildirimleri: köprüden bağımsız, uygulama kapalıyken de çalışır -->
+    <div id="notifsWrap" class="hidden">
+      <div class="sect-row">
+        <span class="sect-label">🔔 Son bildirimler</span>
+        <button id="notifSettings" class="link" type="button">ayarlar</button>
+      </div>
+      <div id="notifs"></div>
+    </div>
+
+    <div id="account" class="account muted"></div>
+
+    <div id="unpaired" class="hidden">
+      <p class="muted">Araştırma göndermek için eklentiyi masaüstü uygulamasıyla eşleştirin: Fraude → Ayarlar → AI Agents → Chrome Eklentisi Köprüsü.</p>
+      <button id="openOptions" class="primary">Ayarları Aç</button>
+    </div>
+
+    <div id="main" class="hidden">
+      <label>Görev / Soru</label>
+      <textarea id="prompt" rows="4" placeholder="Örn: Bu metni özetle ve BIST etkilerini çıkar…"></textarea>
+
+      <label>URL <button id="fillUrl" class="link" type="button">aktif sekmeyi kullan</button></label>
+      <input id="url" type="text" placeholder="https://…" />
+
+      <label>Görsel <span class="muted">(kopyalayıp yapıştır veya seç)</span></label>
+      <input id="image" type="file" accept="image/*" />
+      <div id="imgPreview"></div>
+
+      <label>Ajan</label>
+      <select id="agent"><option value="">Varsayılan AI</option></select>
+
+      <button id="submit" class="primary">Araştır</button>
+      <p id="msg" class="msg"></p>
+
+      <div id="recent"></div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

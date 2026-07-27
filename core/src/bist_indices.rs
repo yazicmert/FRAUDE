@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 
 const BIST_CSV_URL: &str = "https://borsaistanbul.com/datum/hisse_endeks_ds.csv";
@@ -27,7 +28,27 @@ fn cache_path() -> std::path::PathBuf {
     path
 }
 
+/// Diskteki önbelleğin bellek içi yansıması.
+///
+/// `fetch_and_update_indices` tek hisse görüntülemede de çağrılıyor; her çağrıda
+/// ~600 sembollük JSON'u diskten okuyup ayrıştırmak boşa iş. Diski yalnız ilk
+/// okuma ve yazımlar sonrası tazeleriz.
+static MEMO: OnceLock<Mutex<Option<BistIndicesCache>>> = OnceLock::new();
+
+fn memo() -> &'static Mutex<Option<BistIndicesCache>> {
+    MEMO.get_or_init(|| Mutex::new(None))
+}
+
 fn load_cache() -> BistIndicesCache {
+    if let Some(cache) = memo().lock().unwrap_or_else(|error| error.into_inner()).clone() {
+        return cache;
+    }
+    let cache = read_cache_from_disk();
+    *memo().lock().unwrap_or_else(|error| error.into_inner()) = Some(cache.clone());
+    cache
+}
+
+fn read_cache_from_disk() -> BistIndicesCache {
     if let Ok(data) = fs::read_to_string(cache_path()) {
         if let Ok(cache) = serde_json::from_str(&data) {
             return cache;
@@ -37,12 +58,18 @@ fn load_cache() -> BistIndicesCache {
 }
 
 fn save_cache(cache: &BistIndicesCache) {
+    *memo().lock().unwrap_or_else(|error| error.into_inner()) = Some(cache.clone());
     if let Ok(data) = serde_json::to_string(cache) {
         let _ = fs::write(cache_path(), data);
     }
 }
 
-pub async fn fetch_and_update_indices(force: bool) -> BistIndicesCache {
+/// Endeks üyelik önbelleğini döndürür; 30 günden eskiyse (ya da `force`) CSV'yi
+/// yeniden indirir.
+///
+/// İstemci dışarıdan verilir: modül kendi `Client::new()`ini kurduğunda paylaşılan
+/// bağlantı havuzunun dışında kalıyor ve her çağrıda yeniden TLS el sıkışıyordu.
+pub async fn fetch_and_update_indices(client: &reqwest::Client, force: bool) -> BistIndicesCache {
     let cache = load_cache();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
@@ -51,7 +78,6 @@ pub async fn fetch_and_update_indices(force: bool) -> BistIndicesCache {
         return cache;
     }
 
-    let client = reqwest::Client::new();
     let res = client.get(BIST_CSV_URL).header("User-Agent", "Mozilla/5.0").send().await;
 
     if let Ok(response) = res {

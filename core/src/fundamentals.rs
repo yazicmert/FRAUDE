@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use crate::domain::{EquityRow, FinancialPeriod, FinancialStatement};
+use crate::domain::{FinancialPeriod, FinancialStatement};
 
 const MALI_TABLO_URL: &str =
     "https://www.isyatirim.com.tr/_layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo";
@@ -39,10 +39,6 @@ struct CachedStatement {
 }
 
 static CACHE: OnceLock<Mutex<HashMap<String, CachedStatement>>> = OnceLock::new();
-
-pub async fn enrich_equity(_client: &Client, row: EquityRow) -> EquityRow {
-    row
-}
 
 /// Türkçe karakterleri ASCII'ye indirger ve büyük harfe çevirir; İş Yatırım
 /// kalem açıklamaları karışık büyük/küçük harf ve İ/ı içerdiğinden eşleştirme

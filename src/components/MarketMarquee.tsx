@@ -36,9 +36,12 @@ const MOVERS_PER_SIDE = 10;
 
 const LABEL_TO_TICKER: Record<string, string> = {
   'BIST 100': 'XU100.IS',
+  'BIST 50': 'XU050.IS',
   'BIST 30': 'XU030.IS',
   'BIST BANKA': 'XBANK.IS',
   'BIST SINAI': 'XUSIN.IS',
+  'BIST TEKNOLOJI': 'XUTEK.IS',
+  'BIST HALKA ARZ': 'XHARZ.IS',
   'USD/TRY': 'USDTRY=X',
   'EUR/TRY': 'EURTRY=X',
   'S&P 500': '^GSPC',

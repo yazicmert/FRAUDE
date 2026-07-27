@@ -171,9 +171,12 @@ export function getTickerFunds(ticker: string) {
   return invoke<TickerFundsPayload>('get_ticker_funds', { ticker });
 }
 
-/** ~15 dk gecikmeli canlı fiyat (İş Yatırım). */
+/** Enstrüman türüne göre doğru sağlayıcıdan alınmış canlı/güncel fiyat. */
 export interface LiveQuote {
   ticker: string;
+  source: string;
+  /** Sağlayıcının ilan edilen yaklaşık gecikmesi; bilinmiyorsa null. */
+  delay_seconds: number | null;
   price: number;
   previous_close: number;
   change_pct: number;
@@ -392,4 +395,57 @@ export function markMonitorAlertsRead() {
 
 export function clearMonitorAlerts() {
   return invoke<MonitorState>('clear_monitor_alerts');
+}
+
+// ── Araştırma işleri (agent takımı + Chrome eklentisi görevleri) ──────────────
+
+type ResearchJob = import('../types').ResearchJob;
+type TeamConfig = import('../types').TeamConfig;
+type SubmitResearchJobRequest = import('../types').SubmitResearchJobRequest;
+type BridgeInfo = import('../types').BridgeInfo;
+
+export function submitResearchJob(request: SubmitResearchJobRequest) {
+  return invoke<string>('submit_research_job', { request });
+}
+
+export function listResearchJobs() {
+  return invoke<ResearchJob[]>('list_research_jobs');
+}
+
+export function getResearchJob(id: string) {
+  return invoke<ResearchJob | null>('get_research_job', { id });
+}
+
+export function deleteResearchJob(id: string) {
+  return invoke<void>('delete_research_job', { id });
+}
+
+export function cancelResearchJob(id: string) {
+  return invoke<void>('cancel_research_job', { id });
+}
+
+export function getTeamConfig() {
+  return invoke<TeamConfig>('get_team_config');
+}
+
+export function saveTeamConfig(config: TeamConfig) {
+  return invoke<TeamConfig>('save_team_config', { config });
+}
+
+export function getBridgeInfo() {
+  return invoke<BridgeInfo>('get_bridge_info');
+}
+
+export function regenerateBridgeToken() {
+  return invoke<BridgeInfo>('regenerate_bridge_token');
+}
+
+export interface BridgeAccount {
+  email: string;
+  name: string;
+}
+
+/** Giriş yapmış üyeyi köprüye bildirir (çıkışta null). */
+export function setBridgeIdentity(account: BridgeAccount | null) {
+  return invoke<void>('set_bridge_identity', { account });
 }

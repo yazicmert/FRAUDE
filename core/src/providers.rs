@@ -13,6 +13,21 @@ pub trait DataProvider {
             records,
         }
     }
+    fn status_at(&self, records: usize, as_of_ts: Option<i64>) -> DataSourceStatus {
+        DataSourceStatus {
+            name: self.name().into(),
+            provider: self.provider().into(),
+            status: match (records, as_of_ts) {
+                (0, _) => "empty",
+                (_, Some(_)) => "ready",
+                _ => "partial",
+            }.into(),
+            last_sync: as_of_ts
+                .map(|timestamp| format!("unix:{timestamp}"))
+                .unwrap_or_else(|| "never".into()),
+            records,
+        }
+    }
 }
 
 pub struct BistProvider;
@@ -26,11 +41,11 @@ pub struct IpoIndexProvider;
 
 impl DataProvider for BistProvider {
     fn name(&self) -> &'static str {
-        "BIST OHLCV"
+        "Market OHLCV"
     }
 
     fn provider(&self) -> &'static str {
-        "Daily OHLCV adapter"
+        "Yahoo Finance / İş Yatırım routed adapter"
     }
 }
 

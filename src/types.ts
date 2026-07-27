@@ -39,6 +39,8 @@ export interface EquityRow {
   name: string;
   price: number;
   change_pct: number;
+  /** Fiyat sağlayıcısının bildirdiği son veri zamanı (unix saniye). */
+  as_of_ts: number | null;
   change_1w?: number | null;
   change_1m?: number | null;
   change_6m?: number | null;
@@ -256,6 +258,9 @@ export interface SyncResult {
   status: string;
   message: string;
   updated_records: number;
+  market_updated_records: number;
+  market_coverage: number | null;
+  market_as_of_ts: number | null;
 }
 
 export interface AiHistoryRecord {
@@ -307,6 +312,65 @@ export interface SaveArtifactRequest {
   id?: string;
   title: string;
   content: string;
+}
+
+// --- Araştırma işleri (agent takımı + Chrome eklentisi görevleri) ---
+
+export type JobSource = 'app' | 'extension';
+export type JobKind = 'ticker_team' | 'custom';
+export type JobStatus = 'queued' | 'running' | 'done' | 'error';
+export type RoleKind = 'fundamental' | 'kap_news' | 'technical' | 'ownership';
+
+export interface JobInput {
+  prompt?: string;
+  url?: string;
+  image_data_url?: string;
+  ticker?: string;
+}
+
+export interface TeamRole {
+  role: RoleKind;
+  agent_id: string | null;
+}
+
+export interface TeamConfig {
+  roles: TeamRole[];
+  lead_agent_id: string | null;
+}
+
+export interface ResearchJob {
+  id: string;
+  source: JobSource;
+  kind: JobKind;
+  input: JobInput;
+  agent_id?: string | null;
+  team?: TeamConfig | null;
+  title: string;
+  status: JobStatus;
+  report?: string | null;
+  artifact_id?: string | null;
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  updated_at_ms: number;
+  notified_app: boolean;
+  notified_ext: boolean;
+}
+
+export interface SubmitResearchJobRequest {
+  kind: JobKind;
+  ticker?: string;
+  prompt?: string;
+  url?: string;
+  image_data_url?: string;
+  agent_id?: string;
+}
+
+export interface BridgeInfo {
+  port: number;
+  token: string;
+  running: boolean;
 }
 
 export interface IndexConstituent {

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { executeFql, syncData, getMarketHolidays } from './api/tauriClient';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { executeFql, syncData, getMarketHolidays, submitResearchJob } from './api/tauriClient';
 import { isDataRuntimeConfigured } from './api/platformClient';
 import TabBar from './features/tabs/TabBar';
 import TerminalPanel from './features/terminal/TerminalPanel';
@@ -16,9 +16,12 @@ import {
   moduleIsTransient,
   workspaceModules,
 } from './modules/workspaceRegistry';
-import type { ModuleHost, WorkspaceModule, WorkspaceTab } from './modules/workspaceRegistry';
+import type { ModuleHost, WorkspaceTab } from './modules/workspaceRegistry';
+import NavTree from './components/NavTree';
+import NavMenu from './components/NavMenu';
 import { useModuleRegistry } from './modules/useModuleRegistry';
 import { useMonitor } from './hooks/useMonitor';
+import { useResearch } from './hooks/useResearch';
 import { useAlerts } from './features/alerts/useAlerts';
 import AlertsModal from './features/alerts/AlertsModal';
 import ShareModal from './features/share/ShareModal';
@@ -58,12 +61,17 @@ interface TerminalEntry {
 
 /** Build the initial set of open tabs from the enabled, default-tab modules. */
 function initialOpenTabs(installed: InstalledModule[]): WorkspaceTab[] {
-  const tabs = workspaceModules
-    .filter((module) => moduleIsDefaultTab(module) && isModuleEnabled(module, installed))
-    .map((module) => ({ id: module.kind, kind: module.kind }));
-  // Modül durumu ne olursa olsun çalışma alanı asla boş açılmaz; pano her
-  // zaman son çaredir.
-  return tabs.length > 0 ? tabs : [{ id: 'dashboard', kind: 'dashboard' }];
+  // Navigasyon artık üstteki gruplu menüden (NavMenu) yapılır; açılışta tüm
+  // modülleri sekme olarak açmak yerine yalnız Pano açılır. Pano kapalıysa
+  // (nadiren) ilk etkin varsayılan modüle düşülür ki çalışma alanı boş kalmasın.
+  const dashboard = workspaceModules.find((m) => m.kind === 'dashboard');
+  if (dashboard && isModuleEnabled(dashboard, installed)) {
+    return [{ id: 'dashboard', kind: 'dashboard' }];
+  }
+  const fallback = workspaceModules.find(
+    (module) => moduleIsDefaultTab(module) && isModuleEnabled(module, installed),
+  );
+  return [{ id: fallback?.kind ?? 'dashboard', kind: fallback?.kind ?? 'dashboard' }];
 }
 
 /** Static (non-dynamic) title used for context labels. */
@@ -77,6 +85,7 @@ export default function App() {
   const { t, lang, setLanguage } = useTranslation();
   const { modules, installedModules, toggleModule, replaceInstalledModules } = useModuleRegistry();
   const { state: monitorState, setState: setMonitorState } = useMonitor();
+  const research = useResearch();
   const { unread: alertUnread } = useAlerts({ engine: true });
   const { brief: morningBrief, dismiss: dismissBrief } = useMorningBrief();
 
@@ -111,9 +120,49 @@ export default function App() {
     return saved ? JSON.parse(saved) : true;
   });
 
-  const toggleSidebar = useCallback(() => setShowSidebar((v: boolean) => !v), []);
-  const toggleTerminal = useCallback(() => setShowTerminal((v: boolean) => !v), []);
-  const toggleRightPanel = useCallback(() => setShowRightPanel((v: boolean) => !v), []);
+  const [isCompactLayout, setIsCompactLayout] = useState(
+    () => window.matchMedia('(max-width: 980px)').matches,
+  );
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileAiOpen, setMobileAiOpen] = useState(false);
+  const [mobileTerminalOpen, setMobileTerminalOpen] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 980px)');
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsCompactLayout(event.matches);
+      setMobileSidebarOpen(false);
+      setMobileAiOpen(false);
+      setMobileTerminalOpen(false);
+    };
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  const sidebarVisible = isCompactLayout ? mobileSidebarOpen : showSidebar;
+  const rightPanelVisible = isCompactLayout ? mobileAiOpen : showRightPanel;
+  const terminalVisible = isCompactLayout ? mobileTerminalOpen : showTerminal;
+
+  const toggleSidebar = useCallback(() => {
+    if (isCompactLayout) {
+      setMobileAiOpen(false);
+      setMobileSidebarOpen((value) => !value);
+    } else {
+      setShowSidebar((value: boolean) => !value);
+    }
+  }, [isCompactLayout]);
+  const toggleTerminal = useCallback(() => {
+    if (isCompactLayout) setMobileTerminalOpen((value) => !value);
+    else setShowTerminal((value: boolean) => !value);
+  }, [isCompactLayout]);
+  const toggleRightPanel = useCallback(() => {
+    if (isCompactLayout) {
+      setMobileSidebarOpen(false);
+      setMobileAiOpen((value) => !value);
+    } else {
+      setShowRightPanel((value: boolean) => !value);
+    }
+  }, [isCompactLayout]);
 
   // Panel görünürlüğü tek noktadan kalıcılaştırılır; toggle'lar böylece
   // klavye kısayolu dinleyicisinde de güvenle (bayat kapanış olmadan) kullanılır.
@@ -252,12 +301,13 @@ export default function App() {
     openTicker: upsertTickerTab,
     openIndex: upsertIndexTab,
     monitor: { state: monitorState, setState: setMonitorState },
+    research: { jobs: research.jobs, unread: research.unread, refresh: research.refresh, markSeen: research.markSeen },
     moduleCenter: {
       modules,
       onToggle: handleModuleToggle,
       onInstalledModulesChange: replaceInstalledModules,
     },
-  }), [t, lang, activeContext, upsertTickerTab, upsertIndexTab, monitorState, setMonitorState, modules, handleModuleToggle, replaceInstalledModules]);
+  }), [t, lang, activeContext, upsertTickerTab, upsertIndexTab, monitorState, setMonitorState, research.jobs, research.unread, research.refresh, research.markSeen, modules, handleModuleToggle, replaceInstalledModules]);
 
   const getTabTitle = useCallback((tab: WorkspaceTab): string => {
     const module = getWorkspaceModule(tab.kind);
@@ -339,9 +389,16 @@ export default function App() {
     const refreshMarketData = async () => {
       try {
         setIsSyncing(true);
-        await syncData('all', 'incremental');
-        setLastSyncTime(new Date());
-        window.dispatchEvent(new CustomEvent('fraude-sync-completed'));
+        const result = await syncData('all', 'incremental');
+        if (result.market_updated_records > 0) {
+          const providerTime = result.market_as_of_ts
+            ? new Date(result.market_as_of_ts * 1000)
+            : new Date();
+          setLastSyncTime(providerTime);
+          window.dispatchEvent(new CustomEvent('fraude-sync-completed', { detail: result }));
+        } else {
+          console.warn('Market sync returned no fresh prices:', result.message);
+        }
       } catch (err) {
         console.error('Background sync failed:', err);
       } finally {
@@ -376,14 +433,30 @@ export default function App() {
       const prompt = (e as CustomEvent<{ prompt?: string }>).detail?.prompt;
       if (!prompt) return;
       setShowRightPanel(true);
+      setMobileSidebarOpen(false);
+      setMobileAiOpen(true);
       setAiQuickPrompt({ text: prompt, nonce: Date.now() });
     };
     const onOpenPalette = () => setPaletteOpen(true);
     const onOpenShare = () => setShareOpen(true);
+    const onOpenResearch = () => openModuleTab('research');
+    // Bir hisse için takım araştırması başlat: işi kuyruğa al, modülü aç, listeyi tazele.
+    const onResearchTicker = (e: Event) => {
+      const ticker = (e as CustomEvent<{ ticker?: string }>).detail?.ticker;
+      if (!ticker) return;
+      submitResearchJob({ kind: 'ticker_team', ticker })
+        .then(() => {
+          openModuleTab('research');
+          research.refresh();
+        })
+        .catch((err) => console.error('Araştırma başlatılamadı:', err));
+    };
     window.addEventListener('fraude-open-alerts', onOpenAlerts);
     window.addEventListener('fraude-ai-ask', onAiAsk);
     window.addEventListener('fraude-open-palette', onOpenPalette);
     window.addEventListener('fraude-open-share', onOpenShare);
+    window.addEventListener('fraude-open-research', onOpenResearch);
+    window.addEventListener('fraude-research-ticker', onResearchTicker);
     // Sağlam kaynaktan (Nager.Date, Rust get_market_holidays) resmi tatilleri
     // çek; yerleştir ve rozeti hemen güncelle. Çevrimdışıysa gömülü yedek takvim
     // (marketHolidays.ts) devrede kalır.
@@ -399,6 +472,8 @@ export default function App() {
       window.removeEventListener('fraude-ai-ask', onAiAsk);
       window.removeEventListener('fraude-open-palette', onOpenPalette);
       window.removeEventListener('fraude-open-share', onOpenShare);
+      window.removeEventListener('fraude-open-research', onOpenResearch);
+      window.removeEventListener('fraude-research-ticker', onResearchTicker);
       clearInterval(statusTimer);
     };
   }, []);
@@ -512,29 +587,26 @@ export default function App() {
   // ZORUNDA (topbar/marquee/workspace/terminal): eksik satır esnek alanı boş
   // şerit satırına kaydırır ve çalışma alanı pencere dışına itilir.
   const shellStyle = {
-    gridTemplateColumns: `${showSidebar ? '208px' : '0px'} minmax(0, 1fr) ${showRightPanel ? '300px' : '0px'}`,
-    gridTemplateRows: `52px auto minmax(0, 1fr) ${showTerminal ? 'auto' : '0px'}`,
-  };
+    '--sidebar-width': sidebarVisible ? '208px' : '0px',
+    '--ai-width': rightPanelVisible ? '300px' : '0px',
+    '--terminal-height': terminalVisible ? (isCompactLayout ? 'minmax(140px, 28vh)' : 'auto') : '0px',
+  } as CSSProperties;
 
   return (
     <div className="app-shell" style={shellStyle}>
-      {showSidebar && (
+      {sidebarVisible && (
         <aside className="sidebar">
           <div className="logo">FRAUDE</div>
-          <nav className="nav">
-            {navModules.map((module: WorkspaceModule) => (
-              <button
-                type="button"
-                key={module.kind}
-                className={`nav-item ${activeTabId === module.kind ? 'active' : ''}`}
-                onClick={() => openModuleTab(module.kind)}
-              >
-                {module.title
-                  ? module.title(host, { id: module.kind, kind: module.kind })
-                  : t(module.titleKey ?? module.kind)}
-              </button>
-            ))}
-          </nav>
+          <NavTree
+            activeTabId={activeTabId}
+            installedModules={installedModules}
+            host={host}
+            onOpen={(kind) => {
+              openModuleTab(kind);
+              if (isCompactLayout) setMobileSidebarOpen(false);
+            }}
+            t={t}
+          />
         </aside>
       )}
       <header className="topbar">
@@ -552,7 +624,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="topbar-group">
+        <div className="topbar-group topbar-actions">
           {/* BIST seans durumu */}
           <HotkeyTip label={`Borsa İstanbul · ${marketStatus.istanbulTime} (TR)`}>
             <div className="market-status" style={{ color: marketStatus.color }}>
@@ -650,7 +722,7 @@ export default function App() {
           <HotkeyTip label={t('sidebar')} keys={shortcutKeys('sidebar')}>
             <button
               type="button"
-              className={`topbar-icon-btn${showSidebar ? ' active' : ''}`}
+              className={`topbar-icon-btn${sidebarVisible ? ' active' : ''}`}
               onClick={toggleSidebar}
             >
               <PanelLeftIcon />
@@ -659,7 +731,7 @@ export default function App() {
           <HotkeyTip label={t('terminal')} keys={shortcutKeys('terminal')}>
             <button
               type="button"
-              className={`topbar-icon-btn${showTerminal ? ' active' : ''}`}
+              className={`topbar-icon-btn${terminalVisible ? ' active' : ''}`}
               onClick={toggleTerminal}
             >
               <PanelBottomIcon />
@@ -668,7 +740,7 @@ export default function App() {
           <HotkeyTip label={t('aiPanel')} keys={shortcutKeys('aiPanel')} align="right">
             <button
               type="button"
-              className={`topbar-icon-btn${showRightPanel ? ' active' : ''}`}
+              className={`topbar-icon-btn${rightPanelVisible ? ' active' : ''}`}
               onClick={toggleRightPanel}
             >
               <PanelRightIcon />
@@ -726,6 +798,13 @@ export default function App() {
       </header>
       <MarketMarquee mode={marqueeMode} onOpenTicker={openFromMarquee} />
       <main className="workspace">
+        <NavMenu
+          activeTabId={activeTabId}
+          installedModules={installedModules}
+          host={host}
+          onOpen={openModuleTab}
+          t={t}
+        />
         <TabBar
           tabs={openTabs.map((tab) => ({ ...tab, title: getTabTitle(tab) }))}
           activeTabId={activeTabId}
@@ -733,7 +812,7 @@ export default function App() {
           onClose={closeTab}
         />
         {morningBrief && (
-          <div style={{
+          <div className="morning-brief-banner" style={{
             display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 12px 0',
             padding: '10px 14px', background: 'linear-gradient(90deg, rgba(0,195,255,0.10), rgba(0,255,157,0.05))',
             border: '1px solid var(--border-color)', borderRadius: '8px',
@@ -773,6 +852,7 @@ export default function App() {
         {openTabs.filter((tab) => visitedTabIds.has(tab.id)).map((tab) => (
           <div
             key={tab.id}
+            className="workspace-tab-pane"
             style={{
               display: tab.id === activeTabId ? 'flex' : 'none',
               flexDirection: 'column',
@@ -787,15 +867,26 @@ export default function App() {
           </div>
         ))}
       </main>
-      {showRightPanel && (
+      {rightPanelVisible && (
         <aside className="right-panel">
           <Suspense fallback={<div className="module-loading-state">{t('loadingModule')}</div>}>
             <AiPanel mode="side" activeContext={activeContext} quickPrompt={aiQuickPrompt} />
           </Suspense>
         </aside>
       )}
-      {showTerminal && (
+      {terminalVisible && (
         <TerminalPanel history={terminalHistory} onCommand={handleCommand} />
+      )}
+      {isCompactLayout && (sidebarVisible || rightPanelVisible) && (
+        <button
+          type="button"
+          className="responsive-backdrop"
+          aria-label={t('close')}
+          onClick={() => {
+            setMobileSidebarOpen(false);
+            setMobileAiOpen(false);
+          }}
+        />
       )}
       <AlertsModal open={alertsOpen} onClose={() => setAlertsOpen(false)} initialTicker={alertsTicker} />
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />

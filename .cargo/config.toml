@@ -1,0 +1,4 @@
+[build]
+# Share artifacts between core, server and src-tauri. Keeping one cache avoids
+# compiling identical dependency graphs into three separate target directories.
+target-dir = "target"

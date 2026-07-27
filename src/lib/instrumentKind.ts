@@ -10,7 +10,7 @@
  * üç yol da burada yakalanır.
  */
 import { PRESET_SYMBOLS } from '../components/symbolCatalog';
-import { COMMODITY_GROUP, GLOBAL_GROUP } from './equityGroups';
+import { COMMODITY_GROUP, CRYPTO_GROUP, FX_GROUP, GLOBAL_GROUP } from './equityGroups';
 
 export type InstrumentKind =
   | 'bist-equity'
@@ -33,6 +33,8 @@ const GROUP_TO_KIND: Record<string, InstrumentKind> = {
 /** Backend index_memberships etiketi → tür (yahoo.rs ile aynı adlar). */
 const MEMBERSHIP_TO_KIND: Record<string, InstrumentKind> = {
   [COMMODITY_GROUP]: 'commodity',
+  [FX_GROUP]: 'fx',
+  [CRYPTO_GROUP]: 'crypto',
   [GLOBAL_GROUP]: 'global-equity',
 };
 

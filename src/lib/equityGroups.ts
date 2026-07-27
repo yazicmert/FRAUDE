@@ -8,7 +8,9 @@ import type { EquityRow } from '../types';
  */
 export const GLOBAL_GROUP = 'Global';
 export const COMMODITY_GROUP = 'Emtialar';
-export const NON_BIST_GROUPS = [GLOBAL_GROUP, COMMODITY_GROUP];
+export const FX_GROUP = 'Döviz';
+export const CRYPTO_GROUP = 'Kripto';
+export const NON_BIST_GROUPS = [GLOBAL_GROUP, COMMODITY_GROUP, FX_GROUP, CRYPTO_GROUP];
 
 /** Satır BIST evrenine mi ait? Etiketsiz satırlar BIST sayılır. */
 export function isBistEquity(row: Pick<EquityRow, 'index_memberships'>): boolean {

@@ -91,7 +91,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
             borderRadius: '6px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div className="news-article-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
             <strong style={{ fontSize: '1.05rem', color: '#fff', lineHeight: '1.4' }}>{item.title}</strong>
             <span
               style={{
@@ -151,7 +151,7 @@ export function NewsList({ news }: { news: NewsItem[] }) {
                   ?? previews[item.link]
                   ?? (previewLoading === item.link ? t('newsLoadingPreview') : t('newsNoSummary'))}
               </p>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="news-article-actions" style={{ display: 'flex', gap: '8px' }}>
                 <button
                   type="button"
                   className="primary-button"
@@ -311,7 +311,7 @@ export default function NewsFeedView() {
           <h1>{t('newsFeed')}{activeTicker ? ` · ${activeTicker}` : ''}</h1>
           <p>{t('newsHeaderDesc')}</p>
         </div>
-        <form onSubmit={submitTicker} style={{ display: 'flex', gap: '8px' }}>
+        <form className="news-search-form" onSubmit={submitTicker} style={{ display: 'flex', gap: '8px' }}>
           <input
             className="top-input"
             aria-label={t('tickerCodeLabel')}

@@ -225,6 +225,28 @@
   cursor: default;
 }
 
+.notif-feed-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+.notif-feed-row input {
+  flex: 1;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-main);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.notif-feed-row input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
 .notif-prio {
   display: flex;
   flex-wrap: wrap;

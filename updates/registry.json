@@ -2,6 +2,81 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-27-veri-cekme-optimizasyonu",
+      "date": "2026-07-27",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Veri çekme katmanı: sıkıştırma, evren önbelleği ve tek-uçuş tazeleme",
+        "en": "Data layer: compression, universe cache and single-flight refresh"
+      },
+      "summary": {
+        "tr": "Dış istekler ölçülerek elden geçirildi. (1) Sağlayıcıların hepsi gzip sunuyordu ama Accept-Encoding gönderilmediği için düz metin dönüyorlardı; paylaşılan HTTP istemcisinde sıkıştırma açıldı: KAP şirket listesi 1,52 MB → 206 KB, İş Yatırım günlük seri 160 KB → 59 KB, Yahoo 1 yıllık grafik 14,9 KB → 5,1 KB. (2) Hisse evreni artık diske yazılıyor: uygulama her açılışta ~650 Yahoo grafik isteğini tekrarlamak yerine son senkrondan devam ediyor; tam senkron damgası da kalıcı olduğu için yeniden başlatma artımlı modda kalabiliyor. (3) reqwest'in 90 sn'lik havuz zaman aşımı İş Yatırım'ın erken kapattığı bağlantıları ölü olarak tutuyordu — havuz ayarları sağlayıcı davranışına göre düzeltildi. (4) Önbellek süresi dolduğunda aynı pahalı tur birden çok kez gidiyordu; İş Yatırım oran turu (5 istek) ve Yahoo gösterge turu (17 istek) tek-uçuş kilidine alındı. (5) Çözülemeyen semboller her yoklamada yeniden isteniyordu; üstel geri çekilmeli negatif önbellek eklendi. Ayrıca senkron döngüsündeki işlevsiz enrich_equity çağrısı kaldırıldı ve endeks üyelik önbelleği her çağrıda diskten okunmak yerine belleğe alındı.",
+        "en": "The outbound request path was reworked against measurements. (1) Every provider served gzip but returned plain text because no Accept-Encoding was sent; compression is now on in the shared HTTP client: KAP company list 1.52 MB → 206 KB, İş Yatırım daily series 160 KB → 59 KB, Yahoo 1-year chart 14.9 KB → 5.1 KB. (2) The equity universe is persisted to disk, so a restart resumes from the last sync instead of repeating ~650 Yahoo chart requests; the full-sync timestamp is persisted too, so a restart can stay in incremental mode. (3) reqwest's 90 s pool idle timeout kept connections that İş Yatırım had already closed; pool settings now match provider behaviour. (4) When a cache expired, the same expensive round ran several times over; the İş Yatırım ratio round (5 requests) and the Yahoo metrics round (17 requests) are now single-flight. (5) Unresolvable symbols were re-requested on every poll; a negative cache with exponential backoff was added. Also removed a no-op enrich_equity call from the sync loop and memoized the index-membership cache instead of re-reading it from disk on every call."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
+      "touches": [
+        "core/Cargo.toml",
+        "core/src/lib.rs",
+        "core/src/market_cache.rs",
+        "core/src/yahoo.rs",
+        "core/src/isyatirim.rs",
+        "core/src/live_quotes.rs",
+        "core/src/bist_indices.rs",
+        "core/src/services.rs",
+        "core/src/api.rs",
+        "core/src/storage.rs"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda veri çekme katmanını sürümüne uyarlayarak optimize et:\n\n1. Ortak HTTP istemcisi: core/src/lib.rs'e http_client_builder() + http_client() ekle; reqwest'e gzip+deflate özelliklerini aç (Cargo.toml), .gzip(true).deflate(true) ver. pool_idle_timeout'u sağlayıcının keep-alive kapatma penceresinin altına çek (İş Yatırım reqwest'in 90 sn varsayılanından çok önce kapatıyor; 15 sn), pool_max_idle_per_host'u en yüksek eşzamanlılığın (Yahoo 8) üstünde tut. AppState::new bunu kullansın. Modüllerdeki bağımsız reqwest::Client::new() çağrılarını ayıkla — çerez oturumu gerçekten gerekiyorsa http_client_builder()'dan türet, yoksa istemciyi parametre olarak geçir.\n2. core/src/market_cache.rs oluştur: evreni ~/.fraude_market.json'a yaz/oku. Snapshot'ta written_at_unix (veri yaşı) ve full_sync_at_unix (MUTLAK zaman; yaş SAKLAMA — yaş saklarsan artımlı yazımlar damgayı süreç çalışma süresi kadar ileri taşır ve tam senkron hiç tetiklenmez) tut. EquityRow'a Deserialize + #[serde(default)] ekle ki alan eklendiğinde eski önbellek çöpe gitmesin. AppStore::seeded evreni buradan yüklesin; services::last_full_sync_age süreç içi Instant yoksa disk damgasına düşsün. Kısmi turlar yazılsın ama damgayı ilerletmesin. Yazım ayrı thread'de, tam senkron dışında en az 15 dk arayla.\n3. Tek-uçuş: isyatirim::load_ratios ve yahoo::fetch_market_metrics'te önbelleği kontrol et → tokio::sync::Mutex al → önbelleği TEKRAR kontrol et → ağa git.\n4. live_quotes'a negatif önbellek: başarısız sembolü (son deneme anı, ardışık hata sayısı) olarak tut, 60 sn'den başlayıp 10 dk tavanına kadar üstel geri çekil; başarı sayacı sıfırlasın. Süreyi kısa başlat — geçici kesintide fiyatın uzun süre donması kalıcı hatadan kötüdür.\n5. bist_indices::fetch_and_update_indices istemciyi parametre alsın ve disk önbelleği belleğe alınsın; fundamentals::enrich_equity işlevsizse (satırı olduğu gibi döndürüyorsa) senkron döngüsünden kaldır.\n\nKabul: 'npm run rust:check' ve 'cargo test --manifest-path core/Cargo.toml' geçmeli; sıkıştırmanın gerçekten müzakere edildiğini yerel bir prob sunucusuyla (ağa çıkmayan test) kanıtla; canlı testler ('-- --ignored') de geçmeli.",
+      "notes": {
+        "tr": "Davranış değişikliği yok, yalnız istek/bayt sayısı düştü. Evren önbelleği 24 saatten eski olursa yok sayılır ve normal tam senkron çalışır.",
+        "en": "No behavioural change, only fewer requests and bytes. A universe cache older than 24 hours is ignored and a normal full sync runs."
+      }
+    },
+    {
+      "id": "2026-07-19-arastirma-ajan-takimi-ve-chrome-eklentisi",
+      "date": "2026-07-19",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "AI ajan takımıyla hisse araştırması ve Chrome eklentisi",
+        "en": "AI agent-team stock research and a Chrome extension"
+      },
+      "summary": {
+        "tr": "Yeni 'Araştırma' modülü: bir hisseyi sabit rollere (temel analiz, KAP & haber, teknik, ortaklık) bölüp her rolü kullanıcının mevcut AI ajanlarından birine atar; roller paralel çalışır (her biri kendi API anahtarı/sağlayıcısı olabilir) ve lider ajan tek markdown rapora sentezler. İşler arka planda bir tokio worker döngüsünde işlenir; bitince OS bildirimi + uygulama içi toast gelir ve rapor Artifact olarak kaydedilir. Ayrıca yeni bir Chrome (MV3) eklentisi, uygulama açıkken 127.0.0.1'deki yerel köprüye (token korumalı) metin/URL/görsel görevi gönderir; iş bitince eklentiden de bildirim alınır. Tüm işler hem uygulamada hem eklentide görünür. Zamanlanmış/otomatik araştırma yoktur — her iş kullanıcının kendi anahtarını harcadığı için yalnız açık istekle çalışır.",
+        "en": "A new 'Research' module: it splits a stock into fixed roles (fundamental, KAP & news, technical, ownership) and assigns each role to one of the user's existing AI agents; roles run in parallel (each can use its own API key/provider) and a lead agent synthesizes a single markdown report. Jobs run in a background tokio worker loop; on completion an OS notification + in-app toast fire and the report is saved as an Artifact. A new Chrome (MV3) extension submits text/URL/image tasks to a token-protected local bridge on 127.0.0.1 while the app is open; the extension also notifies on completion. Every job is visible both in the app and the extension. There is no scheduled/automatic research — each job spends the user's own key, so it only runs on explicit request."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
+      "touches": [
+        "core/src/research.rs",
+        "core/src/services.rs",
+        "core/src/storage.rs",
+        "src-tauri/src/research_worker.rs",
+        "src-tauri/src/bridge.rs",
+        "src-tauri/src/commands.rs",
+        "src/features/research/ResearchView.tsx",
+        "src/hooks/useResearch.ts",
+        "extension/"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda 'AI ajan takımıyla araştırma + Chrome eklentisi' özelliğini sürümüne uyarlayarak uygula:\n\n1. core/src/research.rs oluştur: ResearchJob (source app|extension, kind ticker_team|custom, input {prompt,url,image_data_url,ticker}, status queued|running|done|error, report, artifact_id, updated_at_ms, notified bayrakları), TeamConfig (4 sabit rol → agent_id eşlemesi + lead_agent_id), enqueue_job, ve orkestrasyon: run_team_research (gather_agent_context + hisse kart verisi + ortaklık verisiyle rolleri futures::future::join_all ile paralel run_completion; lider sentez) ve run_custom_research (metin→completion, url→scraper ile okunur metin çıkar→completion, görsel→vision). services.rs'e run_vision_completion ekle (OpenAI-uyumlu image_url data-url). storage.rs'e research_jobs + team_config alanları ve write_json_atomic ile ~/.fraude_research_jobs.json + ~/.fraude_team_config.json load/save.\n2. src-tauri/src/research_worker.rs: monitor döngüsü desenli tokio worker; kuyruktaki işi kısa kilitle sahiplen (Running), ağ işlemlerini kilitsiz yap, sonucu yaz + Artifact kaydet, 'fraude-research-update' webview olayı + tauri-plugin-notification OS bildirimi. Açılışta yarıda kalmış Running işleri Error yap. ResearchSignal (tokio Notify) ile uyandır.\n3. src-tauri/src/bridge.rs: axum 0.8 ile 127.0.0.1'de (8799-8809 fallback) POST /ext/v1/jobs, GET /ext/v1/jobs?since, GET /ext/v1/state; Authorization: Bearer <token> (~/.fraude_bridge.json'da getrandom ile üretilen token, canlı okunur), tower-http permissive CORS. AppState + ResearchSignal + BridgeHandle Tauri state paylaşılır. lib.rs setup'ta worker + bridge spawn; komutlar: submit_research_job, list/get/delete/cancel_research_job, get/save_team_config, get_bridge_info, regenerate_bridge_token.\n4. Frontend: src/hooks/useResearch.ts (listResearchJobs + 'fraude-research-update' dinle + toast), src/features/research/ResearchView.tsx (iş listesi + durum çipleri, ReactMarkdown rapor, takım kurulumu rol→ajan dropdown'ları, yeni araştırma formu), workspaceRegistry'ye 'research' modülü (dinamik başlık rozeti), i18n her iki dilde, TickerView'e 'Takımla Araştır', SettingsView'e köprü bölümü (port+token+yenile). App.tsx: useResearch mount + host.research + 'fraude-open-research'/'fraude-research-ticker' dinleyicileri.\n5. extension/ (MV3, bağımlılıksız vanilla JS): manifest (permissions notifications/storage/alarms/activeTab, host_permissions http://127.0.0.1/*), popup (metin/URL/görsel + ajan seçimi → POST), options (port+token eşleştirme + test), background service worker (chrome.alarms ~45s ile /ext/v1/jobs yokla, biten işlere chrome.notifications + rozet).\n\nMaliyet: zamanlanmış/otomatik araştırma EKLEME; her iş kullanıcının anahtarını harcar. Kilit altında ağ çağrısı yapma. Kabul: core'da 'cargo build', src-tauri'de 'cargo build', kökte 'npx tsc --noEmit' geçmeli; eklenti chrome://extensions'tan paketlenmemiş yüklenebilmeli.",
+      "notes": {
+        "tr": "Araştırma, Ayarlar › AI Providers'ta en az bir etkin anahtar gerektirir; roller farklı ajanlara atanabilir. Chrome eklentisi yalnız uygulama açıkken çalışır; eşleştirme için Ayarlar › AI Agents › Chrome Eklentisi Köprüsü'ndeki port ve token kullanılır.",
+        "en": "Research needs at least one enabled key in Settings › AI Providers; roles can be assigned to different agents. The Chrome extension works only while the app is open; pair it using the port and token in Settings › AI Agents › Chrome Extension Bridge."
+      }
+    },
+    {
       "id": "2026-07-18-taranmis-pdr-ai-goruntu-analizi",
       "date": "2026-07-18",
       "author": "yazicmert",
@@ -17,7 +92,10 @@
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
       "includedIn": null,
-      "security": { "reviewed": true, "reviewer": "yazicmert" },
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
       "touches": [
         "core/src/kap_pdr.rs",
         "core/src/services.rs",

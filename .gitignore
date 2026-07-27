@@ -40,4 +40,5 @@ target/
 *.njsproj
 *.sln
 *.sw?
-supabase/.temp/
+# Supabase CLI çalışma dosyaları (kök ve alt projeler)
+**/supabase/.temp/
