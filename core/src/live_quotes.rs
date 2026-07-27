@@ -100,12 +100,10 @@ fn backoff(strikes: u32) -> Duration {
 
 /// Sembolün bekleme süresi dolmadıysa `true`; bu turda hiç istenmez.
 fn recently_failed(code: &str) -> bool {
-    let mut guard = failures().lock().unwrap_or_else(|error| error.into_inner());
-    match guard.get(code) {
-        Some((at, strikes)) if at.elapsed() < backoff(*strikes) => true,
-        Some(_) => false,
-        None => false,
-    }
+    let guard = failures().lock().unwrap_or_else(|error| error.into_inner());
+    guard
+        .get(code)
+        .is_some_and(|(at, strikes)| at.elapsed() < backoff(*strikes))
 }
 
 fn mark_failed(code: &str) {

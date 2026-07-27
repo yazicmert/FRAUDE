@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-27-kap-spk-mali-tablo-veri-dogrulugu",
+      "date": "2026-07-27",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "KAP, SPK ve mali tablolarda veri kayıpları giderildi",
+        "en": "Fixed data loss in KAP, SPK and financial statements"
+      },
+      "summary": {
+        "tr": "Üç resmi kaynak canlı ölçümle denetlendi ve dört veri kaybı bulundu. (1) KAP bildirimlerinin ~%22'si hisseye hiç bağlanmıyordu: Borsa İstanbul'un yayımladığı yapısal duyurularda (devre kesici, işlem sırası açılış/kapanış, tedbir) hisse kodu `stockCodes` yerine `relatedStocks` alanında geliyor ve bu alan hiç okunmuyordu — bu bildirimler hisse sayfasında görünmüyor, akışta 'KAP' rozetiyle sahipsiz duruyordu. Ölçüm: 5036 kayıtlık havuzda 1100 bildirim kurtarıldı. (2) KAP ucu tek yanıtta en fazla 2000 kayıt döndürüyor ve fazlasını tarih azalan sırada kesiyor, yani yoğun dönemlerde en eski günler sessizce düşüyordu; sınıra dayanan her pencere artık ikiye bölünüp yeniden isteniyor (30 günlük aralıkta 2000 → 5366 kayıt). (3) SPK bülten adresindeki yıl koda sabit yazılmıştı ('2026-yili-spk-bultenleri'); 1 Ocak 2027'de bülten akışı sessizce boşalacaktı. Yıl artık takvimden türetiliyor ve yeni yıl sayfası henüz açılmamışsa bir önceki yıla düşülüyor. (4) Mali tablolarda yalnız son 6 yıl çekiliyordu; İş Yatırım aynı uçtan 2008'e kadar tam tablo döndürüyor. Yıllık seri 18 döneme çıkarıldı (2008-2025), çeyrek kırılımı istek maliyeti için son 6 yılda tutuldu. Ayrıca 'DKB' bildirim sınıfı ham kod yerine 'Borsa İstanbul Duyurusu' olarak etiketleniyor.",
+        "en": "The three official sources were audited against live measurements and four data-loss bugs were found. (1) About 22% of KAP disclosures were never attributed to a stock: for the structural announcements Borsa İstanbul publishes (circuit breakers, trading-line open/close, restrictions) the ticker arrives in `relatedStocks` rather than `stockCodes`, and that field was never read — those disclosures never appeared on the stock page and sat unattributed with a 'KAP' badge in the feed. Measured: 1100 disclosures recovered out of a 5036-record pool. (2) The KAP endpoint returns at most 2000 records per response and truncates the rest in date-descending order, so the oldest days were silently dropped in busy periods; any window that hits the cap is now split in half and refetched (2000 → 5366 records over a 30-day range). (3) The year in the SPK bulletin URL was hardcoded ('2026-yili-spk-bultenleri'); the bulletin feed would have gone silently empty on 1 January 2027. The year is now derived from the calendar, falling back to the previous year when the new year's page does not exist yet. (4) Financial statements fetched only the last 6 years, while İş Yatırım serves full statements back to 2008 from the same endpoint. The annual series now spans 18 periods (2008-2025); quarterly breakdown stays at 6 years to bound request cost. The 'DKB' disclosure class is also labelled 'Borsa İstanbul Duyurusu' instead of showing the raw code."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
+      "touches": [
+        "core/src/kap.rs",
+        "core/src/spk.rs",
+        "core/src/fundamentals.rs"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda KAP/SPK/mali tablo veri kayıplarını sürümüne uyarlayarak düzelt. Her maddeyi ÖNCE canlı uçla ölç, sonra düzelt:\n\n1. core/src/kap.rs — `relatedStocks`: byCriteria yanıtında bildirimi yapan şirketin kodu `stockCodes`, Borsa İstanbul'un yayımladığı duyurularda ise ilgili pay `relatedStocks` alanında gelir. DisclosureRow'a bu alanı ekle ve `stock_code_list()` yardımcısıyla önce stockCodes (boş/whitespace değilse), yoksa relatedStocks kullan. Hem `to_announcement` rozetini hem `rows_for_ticker` süzmesini bu yardımcıya bağla. `class_label`'a DKB → 'Borsa İstanbul Duyurusu'.\n2. core/src/kap.rs — 2000 kayıt sınırı: uç sayfalama tanımıyor, sınırı aşan pencerede yanıtı tarih azalan sırada kesiyor. `fetch_window` özyinelemeli sarmalayıcı yaz: yanıt tam 2000 ise ve aralık 1 günden genişse aralığı ikiye bölüp iki yarıyı tokio::join! ile iste, birleştir. Bölme başarısız olursa kesik veriyle devam et (boş dönme). member_rows ve fund_rows bunu kullansın. Rust'ta async özyineleme için dönüş tipini Pin<Box<dyn Future>> yap.\n3. core/src/spk.rs — bülten yılı: URL'deki yılı chrono ile bugünden türet. Yıl sayfası yoksa (SPK yeni yıl sayfasını 1 Ocak'ta açmıyor, 302 döner) bir önceki yıla düş. Sayfa HTML'i Türkçe karakterleri düz UTF-8 gönderiyor; entity çözümü savunma amaçlı kalsın ama test fixture'ını GERÇEK sayfadan al.\n4. core/src/fundamentals.rs — geçmiş derinliği: MaliTablo ucu 2008'e kadar tam tablo döndürüyor (2008-2012 eski 108 kalemli format, 2014+ 147 kalemli; kalem KODLARI aynı, yalnız nakit akışı `4C` eski formatta yok — zaten Option). Yıllık seriyi ANNUAL_HISTORY_START=2008'den başlat, çeyrek kırılımını QUARTERLY_YEARS=6 ile sınırla (istek maliyeti). Çeyreğe indirmeyi yalnız dört dönemi de çekilen yıllara uygula; yoksa tek başına duran yıllık kayıt hasılatı boş, bilançosu dolu sahte bir 'çeyrek' üretir.\n\nKabul: 'npm run rust:check' ve 'cargo test --manifest-path core/Cargo.toml' geçmeli; canlı testler ('--lib -- --ignored') de geçmeli. Kurtarılan kayıt sayısını ve pencere bölmenin kazancını ÖLÇEN canlı testler yaz (assert'ler sabit sayıya değil, 'bölünmüş > tek istek' gibi ilişkilere baksın).",
+      "notes": {
+        "tr": "Mali tablo ilk açılışta biraz daha yavaş (yıllık geçmiş için ~3 ek istek), sonrası 6 saat önbellekli. KAP pencere bölme yalnız sınıra dayanan aralıklarda ek istek yapar; normal günlerde istek sayısı değişmez.",
+        "en": "Financial statements are slightly slower on first open (~3 extra requests for the annual history), then cached for 6 hours. KAP window splitting only issues extra requests for ranges that hit the cap; on ordinary days the request count is unchanged."
+      }
+    },
+    {
       "id": "2026-07-27-veri-cekme-optimizasyonu",
       "date": "2026-07-27",
       "author": "yazicmert",

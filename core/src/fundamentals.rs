@@ -9,8 +9,22 @@ use crate::domain::{FinancialPeriod, FinancialStatement};
 
 const MALI_TABLO_URL: &str =
     "https://www.isyatirim.com.tr/_layouts/15/IsYatirim.Website/Common/Data.aspx/MaliTablo";
-/// Kaç takvim yılı geriye gidileceği; son 5 tam yıl + içinde bulunulan yıl.
-const YEARS_BACK: i32 = 6;
+
+/// Çeyrek kırılımı çekilen yıl sayısı (içinde bulunulan yıl dahil).
+///
+/// Çeyrek serisi yalnız yakın dönem için anlamlı: ekranda son 12 çeyrek
+/// gösteriliyor ve her yıl dört (yıl, dönem) çifti = ek istek demek.
+const QUARTERLY_YEARS: i32 = 6;
+
+/// Yıllık serinin başladığı takvim yılı.
+///
+/// İş Yatırım bu uçtan 2008'e kadar tam tablo döndürüyor (ölçüldü: 2008-2012
+/// eski 108 kalemli format, 2014+ 147 kalemli format — kalem KODLARI aynı,
+/// yalnız nakit akışı kalemi `4C` eski formatta yok, o da Option olarak zaten
+/// modellendi). Yalnız son 6 yılı çekmek, sağlayıcıda hazır duran ~12 yıllık
+/// geçmişi görünmez kılıyordu.
+const ANNUAL_HISTORY_START: i32 = 2008;
+
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Debug, Deserialize)]
@@ -278,11 +292,18 @@ pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<F
     }
 
     let current_year = chrono::Utc::now().year();
+    let quarterly_from = current_year - QUARTERLY_YEARS + 1;
     let mut pairs: Vec<(i32, u8)> = Vec::new();
-    for year in (current_year - YEARS_BACK + 1)..=current_year {
+    // Yakın dönem: dört çeyrek birden.
+    for year in quarterly_from..=current_year {
         for period in [3u8, 6, 9, 12] {
             pairs.push((year, period));
         }
+    }
+    // Derin geçmiş: yalnız yıllık. Dört yıl tek istekte paketlendiği için
+    // ~12 yıllık ek geçmiş yalnızca ~3 istek maliyetinde.
+    for year in ANNUAL_HISTORY_START..quarterly_from {
+        pairs.push((year, 12));
     }
 
     // Önce sanayi formatı denenir; hiç veri gelmezse banka/sigorta (UFRS) formatına düşülür.
@@ -315,7 +336,15 @@ pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<F
         .filter_map(|year| cumulative.get(&(*year, 12)).cloned())
         .collect();
 
-    let mut quarter_keys: Vec<(i32, u8)> = cumulative.keys().copied().collect();
+    // Çeyreğe indirme yalnız dört dönemi de çekilen yıllar için yapılır.
+    // Derin geçmişte tek başına duran yıllık kayıt "Q4" gibi görünürdü: kümülatif
+    // yıl sonu değerinden çıkarılacak 9 aylık dönem elde olmadığı için hasılat
+    // boş, bilanço dolu bir sahte çeyrek üretirdi.
+    let mut quarter_keys: Vec<(i32, u8)> = cumulative
+        .keys()
+        .copied()
+        .filter(|(year, _)| *year >= quarterly_from)
+        .collect();
     quarter_keys.sort_unstable();
     let mut quarterlies: Vec<FinancialPeriod> = quarter_keys
         .iter()
@@ -353,6 +382,46 @@ mod tests {
     fn fold_tr_normalizes_turkish_characters() {
         assert_eq!(fold_tr("Aktİf Toplamı"), "AKTIF TOPLAMI");
         assert_eq!(fold_tr("İşletme Faaliyetlerinden"), "ISLETME FAALIYETLERINDEN");
+    }
+
+    /// Yıllık seri sağlayıcıda hazır duran derin geçmişi kapsamalı.
+    ///
+    /// Ölçüm: İş Yatırım MaliTablo ucu 2008'e kadar tam tablo döndürüyor
+    /// (2008-2012 eski 108 kalemli format, 2014+ 147 kalemli; kalem kodları
+    /// aynı). Önceden yalnız son 6 yıl çekiliyor ve ~12 yıllık geçmiş görünmez
+    /// kalıyordu.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_annual_history_reaches_back_over_a_decade() {
+        let client = crate::http_client();
+        let statement = get_financial_statements(&client, "ASELS").await.unwrap();
+
+        let years: Vec<&str> = statement.annuals.iter().map(|p| &p.period[..4]).collect();
+        println!("yıllık dönemler: {years:?}");
+        assert!(
+            statement.annuals.len() >= 12,
+            "en az 12 yıllık dönem gelmeli, gelen: {}",
+            statement.annuals.len()
+        );
+        let oldest = statement.annuals.first().expect("en eski dönem");
+        assert!(
+            oldest.period.starts_with("200") || oldest.period.starts_with("201"),
+            "seri 2010'lu yıllardan başlamalı: {}",
+            oldest.period
+        );
+        // Derin geçmişte de asıl kalemler dolu olmalı (kalem kodları eski
+        // formatta da aynı); nakit akışı `4C` eski yıllarda yok, o yüzden
+        // hasılat/aktif üzerinden doğrulanır.
+        assert!(oldest.revenue.is_some(), "en eski yılda hasılat dolu olmalı");
+        assert!(oldest.total_assets.is_some(), "en eski yılda aktif toplamı dolu olmalı");
+
+        // Çeyrek serisi yalnız yakın dönemden gelmeli: derin geçmişte tek başına
+        // duran yıllık kayıt sahte bir "çeyrek" üretmemeli.
+        let quarterly_from = chrono::Utc::now().year() - QUARTERLY_YEARS + 1;
+        for period in &statement.quarterlies {
+            let year: i32 = period.period[..4].parse().unwrap();
+            assert!(year >= quarterly_from, "çeyrek serisine eski yıl sızdı: {}", period.period);
+        }
     }
 
     #[tokio::test]

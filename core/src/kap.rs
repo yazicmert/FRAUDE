@@ -37,12 +37,36 @@ struct DisclosureRow {
     fund_code: Option<String>,
     #[serde(rename = "stockCodes")]
     stock_codes: Option<String>,
+    /// Bildirimi **yapan** şirket kendisi değilse ilgili paylar burada gelir.
+    ///
+    /// Borsa İstanbul'un yayımladığı yapısal duyurularda (devre kesici, işlem
+    /// sırası açılışı/kapanışı, tedbir) `stockCodes` boştur ve hissenin kodu
+    /// yalnız bu alanda bulunur — haftalık kayıtların ~%21'i bu durumda. Alan
+    /// okunmazsa bu bildirimler hisse sayfasında hiç görünmez.
+    #[serde(rename = "relatedStocks")]
+    related_stocks: Option<String>,
     #[serde(rename = "disclosureClass")]
     disclosure_class: Option<String>,
     subject: Option<String>,
     summary: Option<String>,
     #[serde(rename = "disclosureIndex")]
     disclosure_index: u64,
+}
+
+impl DisclosureRow {
+    /// Bildirimle ilişkili pay kodları ("AKBNK, GARAN" → ["AKBNK", "GARAN"]).
+    /// Önce bildirimi yapan şirketin kodu, yoksa ilgili paylar.
+    fn stock_code_list(&self) -> Vec<&str> {
+        self.stock_codes
+            .as_deref()
+            .filter(|codes| !codes.trim().is_empty())
+            .or(self.related_stocks.as_deref())
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|code| !code.is_empty() && *code != "-")
+            .collect()
+    }
 }
 
 /// Fon ekranında gösterilen KAP bildirimi.
@@ -59,6 +83,19 @@ pub(crate) fn istanbul_today() -> chrono::NaiveDate {
     let istanbul = chrono::FixedOffset::east_opt(3 * 3600).unwrap();
     chrono::Utc::now().with_timezone(&istanbul).date_naive()
 }
+
+/// Sunucunun tek yanıtta döndürdüğü en fazla kayıt.
+///
+/// Uç sayfalama tanımıyor: sınıra dayanan bir pencerede yanıt tarih azalan
+/// sırada kesilir, yani **en eski günler sessizce düşer**. Ölçüm: 7 günlük
+/// pencere ~1250, 14 günlük pencere tam 2000 döndürüyor — bilanço sezonunda
+/// 7 gün de sınıra dayanabilir. Bu yüzden sınıra değen her pencere ikiye
+/// bölünüp yeniden istenir (bkz. `fetch_window`).
+const MAX_ROWS_PER_RESPONSE: usize = 2000;
+
+/// Pencereyi bölerken inilecek en küçük genişlik. Tek gün de sınıra dayarsa
+/// bölünecek yer kalmaz; o günün kaydı kesik kabul edilir.
+const MIN_WINDOW_DAYS: i64 = 1;
 
 async fn fetch_by_criteria(
     client: &Client,
@@ -88,6 +125,43 @@ async fn fetch_by_criteria(
         .map_err(|error| format!("KAP {kind} yanıtı çözümlenemedi: {error}"))
 }
 
+/// Bir tarih aralığını **eksiksiz** getirir.
+///
+/// Yanıt sunucu sınırına dayanmışsa aralık ikiye bölünüp her yarı ayrı ayrı
+/// istenir; böylece yoğun günlerde kesilen eski kayıtlar da toplanır. Özyineleme
+/// `MIN_WINDOW_DAYS`'te durur.
+fn fetch_window<'a>(
+    client: &'a Client,
+    kind: &'a str,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<DisclosureRow>, String>> + Send + 'a>> {
+    Box::pin(async move {
+        let rows = fetch_by_criteria(client, kind, from, to).await?;
+        let span = (to - from).num_days();
+        if rows.len() < MAX_ROWS_PER_RESPONSE || span <= MIN_WINDOW_DAYS {
+            return Ok(rows);
+        }
+
+        // Sınıra dayandı: aralığı ikiye böl, iki yarıyı paralel iste.
+        let middle = from + chrono::Duration::days(span / 2);
+        let (older, newer) = tokio::join!(
+            fetch_window(client, kind, from, middle),
+            fetch_window(client, kind, middle + chrono::Duration::days(1), to),
+        );
+
+        // Bölünmüş istek başarısız olursa kesik de olsa eldeki veriyle devam
+        // edilir; boş dönmek kullanıcıya "hiç bildirim yok" demek olurdu.
+        match (older, newer) {
+            (Ok(mut a), Ok(b)) => {
+                a.extend(b);
+                Ok(a)
+            }
+            _ => Ok(rows),
+        }
+    })
+}
+
 /// "16.07.2026 15:50:23" → "16.07.2026 15:50". Beklenmedik biçim aynen kalır.
 fn short_date(raw: &str) -> String {
     match raw.rsplit_once(':') {
@@ -102,6 +176,9 @@ fn class_label(class: Option<&str>) -> String {
         Some("FR") => "Finansal Rapor".to_string(),
         Some("DUY") => "Duyuru".to_string(),
         Some("DG") => "Diğer".to_string(),
+        // Borsa İstanbul'un yapısal duyuruları: devre kesici, işlem sırası
+        // açılış/kapanış, tedbir kararları. Haftalık akışın ~%22'si.
+        Some("DKB") => "Borsa İstanbul Duyurusu".to_string(),
         Some(other) => other.to_string(),
         None => "KAP".to_string(),
     }
@@ -134,11 +211,9 @@ fn to_announcement(row: &DisclosureRow) -> Option<KapAnnouncement> {
     }
     // Birden çok kod "AKBNK, GARAN" biçiminde gelir; rozete ilki yazılır.
     let ticker = row
-        .stock_codes
-        .as_deref()
-        .and_then(|codes| codes.split(',').next())
-        .map(|code| code.trim().to_uppercase())
-        .filter(|code| !code.is_empty() && code != "-")
+        .stock_code_list()
+        .first()
+        .map(|code| code.to_uppercase())
         .unwrap_or_else(|| "KAP".to_string());
     let summary = row
         .summary
@@ -192,10 +267,10 @@ async fn member_rows(client: &Client) -> Result<Arc<Vec<DisclosureRow>>, String>
     let today = istanbul_today();
     let d = |n| today - chrono::Duration::days(n);
     let (w0, w1, w2, w3) = tokio::join!(
-        fetch_by_criteria(client, "members", d(6), today),
-        fetch_by_criteria(client, "members", d(13), d(7)),
-        fetch_by_criteria(client, "members", d(20), d(14)),
-        fetch_by_criteria(client, "members", d(27), d(21)),
+        fetch_window(client, "members", d(6), today),
+        fetch_window(client, "members", d(13), d(7)),
+        fetch_window(client, "members", d(20), d(14)),
+        fetch_window(client, "members", d(27), d(21)),
     );
     let mut rows = w0?;
     for window in [w1, w2, w3] {
@@ -221,11 +296,7 @@ pub async fn fetch_kap_announcements(
 /// "AKBNK, GARAN" satırı GARAN sorgusuna da çıkar, "AGARAN" çıkmaz.
 fn rows_for_ticker(rows: &[DisclosureRow], code: &str) -> Vec<KapAnnouncement> {
     rows.iter()
-        .filter(|row| {
-            row.stock_codes
-                .as_deref()
-                .is_some_and(|codes| codes.split(',').any(|c| c.trim() == code))
-        })
+        .filter(|row| row.stock_code_list().contains(&code))
         .filter_map(to_announcement)
         .map(|mut item| {
             // Çok kodlu bildirimde rozet sorgulanan hisseyi göstermeli.
@@ -255,8 +326,8 @@ async fn fund_rows(client: &Client) -> Result<Arc<Vec<DisclosureRow>>, String> {
     let today = istanbul_today();
     let day = chrono::Duration::days;
     let (recent, older) = tokio::join!(
-        fetch_by_criteria(client, "funds", today - day(13), today),
-        fetch_by_criteria(client, "funds", today - day(27), today - day(14)),
+        fetch_window(client, "funds", today - day(13), today),
+        fetch_window(client, "funds", today - day(27), today - day(14)),
     );
     // İlk pencere olmazsa olmaz; ikincisi gelmezse elde olan gösterilir.
     let mut rows = recent?;
@@ -372,6 +443,48 @@ mod tests {
         assert!(to_announcement(&row).is_none());
     }
 
+    /// Borsa İstanbul duyurusu: `stockCodes` boş, kod yalnız `relatedStocks`'ta.
+    /// Bu satırlar haftalık akışın ~%21'i; alan okunmazsa hisse sayfasında hiç
+    /// görünmezler ve rozetleri "KAP" kalır.
+    const SAMPLE_RELATED: &str = r#"{
+        "publishDate": "27.07.2026 10:12:00",
+        "kapTitle": "BORSA İSTANBUL BISTECH DEVRE KESİCİ UYGULAMASI",
+        "disclosureClass": "DKB",
+        "summary": "-",
+        "subject": "Pay Bazında Devre Kesici Bildirimi",
+        "stockCodes": null,
+        "relatedStocks": "AGHOL",
+        "disclosureIndex": 1636800
+    }"#;
+
+    #[test]
+    fn related_stocks_fill_in_when_stock_codes_are_empty() {
+        let row: DisclosureRow = serde_json::from_str(SAMPLE_RELATED).unwrap();
+        let item = to_announcement(&row).unwrap();
+        assert_eq!(item.ticker, "AGHOL", "ilgili pay rozete yazılmalı");
+        assert_eq!(item.category, "Borsa İstanbul Duyurusu");
+        // Hisse sayfasında da görünmeli.
+        assert_eq!(rows_for_ticker(std::slice::from_ref(&row), "AGHOL").len(), 1);
+    }
+
+    /// Boş string de "kod yok" sayılmalı; sağlayıcı null yerine "" gönderebiliyor.
+    #[test]
+    fn blank_stock_codes_fall_back_to_related() {
+        let row: DisclosureRow =
+            serde_json::from_str(&SAMPLE_RELATED.replace("\"stockCodes\": null", "\"stockCodes\": \"  \"")).unwrap();
+        assert_eq!(to_announcement(&row).unwrap().ticker, "AGHOL");
+    }
+
+    /// İki alan da boşsa davranış değişmemeli: rozet "KAP", süzmede çıkmaz.
+    #[test]
+    fn row_without_any_code_stays_unattributed() {
+        let row: DisclosureRow = serde_json::from_str(
+            &SAMPLE_RELATED.replace("\"relatedStocks\": \"AGHOL\"", "\"relatedStocks\": null"),
+        ).unwrap();
+        assert_eq!(to_announcement(&row).unwrap().ticker, "KAP");
+        assert!(rows_for_ticker(std::slice::from_ref(&row), "AGHOL").is_empty());
+    }
+
     #[test]
     fn short_date_trims_only_seconds() {
         assert_eq!(short_date("16.07.2026 15:50:23"), "16.07.2026 15:50");
@@ -408,6 +521,69 @@ mod tests {
     fn formats_rss_dates() {
         assert_eq!(format_rss_date("Thu, 09 Jul 2026 08:48:51 +0000"), "09.07.2026 11:48");
         assert_eq!(format_rss_date("09.07.2026 12:51:48"), "09.07.2026 12:51");
+    }
+
+    /// Canlı uç: `relatedStocks` okunduğunda bildirimlerin hisseye bağlanma
+    /// oranı ölçülebilir biçimde artmalı. Yalnız `stockCodes` okunsaydı Borsa
+    /// İstanbul duyuruları (devre kesici, işlem sırası, tedbir) sahipsiz kalırdı.
+    #[tokio::test]
+    #[ignore = "canlı ağ erişimi gerektirir"]
+    async fn live_related_stocks_recover_unattributed_disclosures() {
+        let client = crate::http_client();
+        let rows = member_rows(&client).await.expect("havuz gelmeli");
+
+        let with_stock_codes = rows
+            .iter()
+            .filter(|row| row.stock_codes.as_deref().is_some_and(|c| !c.trim().is_empty()))
+            .count();
+        let attributed = rows.iter().filter(|row| !row.stock_code_list().is_empty()).count();
+        let recovered = attributed - with_stock_codes;
+
+        println!(
+            "havuz {} kayıt · stockCodes {} · relatedStocks ile kurtarılan {} · toplam {}",
+            rows.len(), with_stock_codes, recovered, attributed
+        );
+        assert!(recovered > 0, "relatedStocks hiç kayıt kurtarmadı — alan adı değişmiş olabilir");
+        assert!(attributed > with_stock_codes);
+
+        // Kurtarılan bir kaydın hisse süzmesinde gerçekten göründüğünü doğrula.
+        let recovered_code = rows
+            .iter()
+            .find(|row| {
+                row.stock_codes.as_deref().is_none_or(|c| c.trim().is_empty())
+                    && !row.stock_code_list().is_empty()
+            })
+            .map(|row| row.stock_code_list()[0].to_string())
+            .expect("kurtarılan kayıt olmalı");
+        let items = rows_for_ticker(&rows, &recovered_code);
+        assert!(!items.is_empty(), "{recovered_code} süzmede görünmeli");
+        println!("örnek: {recovered_code} → {}", items[0].title);
+    }
+
+    /// Canlı uç: pencere bölme, sunucunun 2000 kayıt sınırını aşan aralıkta
+    /// tek istekten daha fazla kayıt toplamalı. Bölme çalışmazsa eski günler
+    /// sessizce düşerdi.
+    #[tokio::test]
+    #[ignore = "canlı ağ erişimi gerektirir"]
+    async fn live_window_splitting_beats_the_server_cap() {
+        let client = crate::http_client();
+        let today = istanbul_today();
+        let from = today - chrono::Duration::days(29);
+
+        let single = fetch_by_criteria(&client, "members", from, today).await.unwrap();
+        let split = fetch_window(&client, "members", from, today).await.unwrap();
+
+        println!("30 günlük aralık: tek istek {} · bölünmüş {}", single.len(), split.len());
+        assert_eq!(single.len(), MAX_ROWS_PER_RESPONSE, "aralık sınıra dayanmalı (test öncülü)");
+        assert!(
+            split.len() > single.len(),
+            "bölme daha fazla kayıt toplamalı: {} vs {}",
+            split.len(), single.len()
+        );
+        // Bölünmüş parçalar örtüşmediğinden mükerrer kayıt olmamalı.
+        let unique: std::collections::HashSet<u64> =
+            split.iter().map(|row| row.disclosure_index).collect();
+        assert_eq!(unique.len(), split.len(), "bölünmüş pencerelerde mükerrer kayıt var");
     }
 
     /// Canlı uç: şirket akışı dolu ve alanlar beklenen biçimde gelir.
