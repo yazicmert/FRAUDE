@@ -230,8 +230,15 @@ export async function getTickerSnapshot(ticker: string): Promise<TickerSnapshot>
   return invoke('get_ticker_snapshot', { ticker });
 }
 
-export async function getFinancialStatements(ticker: string): Promise<FinancialStatement> {
-  return invoke('get_financial_statements', { ticker });
+/** Mali tablo para birimi. Çeviriyi sağlayıcı yapar (gelir tablosu ortalama,
+ *  bilanço dönem sonu kuruyla — UMS 21). */
+export type StatementCurrency = 'TRY' | 'USD';
+
+export async function getFinancialStatements(
+  ticker: string,
+  currency: StatementCurrency = 'TRY',
+): Promise<FinancialStatement> {
+  return invoke('get_financial_statements', { ticker, currency });
 }
 
 export function runScreener(query: string, market = 'BIST100') {

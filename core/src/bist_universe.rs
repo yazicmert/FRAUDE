@@ -60,6 +60,11 @@ pub async fn load(client: &reqwest::Client) -> Vec<(String, String)> {
 }
 
 async fn fetch(client: &reqwest::Client) -> Result<Vec<(String, String)>, String> {
+    crate::retry::retry_transient(|| fetch_once(client)).await
+}
+
+async fn fetch_once(client: &reqwest::Client) -> Result<Vec<(String, String)>, String> {
+    let _permit = crate::retry::kap_permit().await;
     let html = client
         .get(KAP_LIST_URL)
         .timeout(std::time::Duration::from_secs(30))

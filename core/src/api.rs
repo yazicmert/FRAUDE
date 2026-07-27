@@ -201,11 +201,15 @@ pub async fn get_ticker_snapshot(state: &AppState, ticker: String) -> Result<Tic
     })
 }
 
+/// Mali tablolar. `currency` "TRY" (varsayılan) ya da "USD"; çeviriyi sağlayıcı
+/// UMS 21'e uygun yapar (gelir tablosu ortalama, bilanço dönem sonu kuruyla).
 pub async fn get_financial_statements(
     state: &AppState,
     ticker: String,
+    currency: Option<String>,
 ) -> Result<crate::domain::FinancialStatement, String> {
-    crate::fundamentals::get_financial_statements(&state.http, &ticker).await
+    let currency = crate::fundamentals::Currency::parse(currency.as_deref());
+    crate::fundamentals::get_financial_statements(&state.http, &ticker, currency).await
 }
 
 pub async fn run_screener(state: &AppState, request: ScreenerRequest) -> Result<ScreenerResult, String> {

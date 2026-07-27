@@ -58,6 +58,7 @@ fn issuer_name(fund_name: &str) -> Option<String> {
 /// KAP sayfası Next.js RSC yükü taşır; adres `kpy41_acc1_int_addres` anahtarının
 /// yanında düz metin olarak bulunur.
 async fn website(client: &reqwest::Client, perma_link: &str) -> Option<String> {
+    let _permit = crate::retry::kap_permit().await;
     let html = client
         .get(format!("{COMPANY_PAGE_URL}/{perma_link}"))
         .timeout(Duration::from_secs(15))
@@ -98,6 +99,7 @@ async fn resolve(client: &reqwest::Client, issuer: &str) -> Option<FundIssuer> {
     let mut url = reqwest::Url::parse(MEMBER_SEARCH_URL).ok()?;
     url.path_segments_mut().ok()?.push(issuer);
 
+    let _permit = crate::retry::kap_permit().await;
     let members = client
         .get(url)
         .timeout(Duration::from_secs(15))

@@ -2,6 +2,46 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-07-27-mali-tablo-usd-ve-saglayici-dayaniklilik",
+      "date": "2026-07-27",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "Mali tablolarda USD/TRY seçimi; sağlayıcı hız sınırı ve eksik dönem koruması",
+        "en": "USD/TRY toggle for financial statements; rate-limit and missing-period protection"
+      },
+      "summary": {
+        "tr": "Mali tablolar artık TRY ya da USD olarak görüntülenebiliyor. Çeviriyi sağlayıcı yapıyor (`exchange` parametresi) ve bu bilinçli bir tercih: İş Yatırım UMS 21'e uygun çeviriyor — gelir tablosu dönem ORTALAMA kuruyla, bilanço dönem SONU kuruyla. Ölçüm (ASELS 2025): hasılatta zımni kur 39,58 iken bilançoda 42,92. Tabloyu tek güncel kurla bölmek gelir tablosunda ~%8 sapma yaratırdı. Para birimi önbellek anahtarına dahil edildi ve seçim geçersiz değer kabul etmeyen bir enum üzerinden geçiyor. Bilançonun çeyreklik/yıllık görünümü zaten çalışıyordu ve doğruluğu doğrulandı: bilanço kalemleri stok değeri olduğundan çeyreğe indirirken çıkarılmıyor, olduğu gibi taşınıyor. Bu çalışma sırasında iki dayanıklılık sorunu ortaya çıktı ve giderildi. (1) Mali tablo parçaları sınırsız paralel isteniyordu; yük altında bir parça düşünce sessizce yutuluyor ve tablo eksik dönemle dönüyordu — aynı hissenin TRY tablosu 14, USD tablosu 18 dönem geliyordu. Eşzamanlılık sınırlandı ve parça başına yeniden deneme eklendi. (2) KAP'ın hız sınırı (429) kodda hiç tanınmıyordu: ne kap.rs ne kap_pdr.rs HTTP durumunu denetliyordu, 429 gövdesi doğrudan JSON çözücüye gidip gerçek sebebi gizleyen 'yanıtı çözümlenemedi' hatası üretiyordu. Artık durum denetleniyor, 429 ayrı bir mesajla bildiriliyor, KAP isteklerine host bazlı eşzamanlılık kapısı kondu ve hız sınırında YENİDEN DENENMİYOR — ısrar etmek sınırı uzatmaktan başka işe yaramıyor.",
+        "en": "Financial statements can now be viewed in TRY or USD. The provider performs the conversion (`exchange` parameter), which is deliberate: İş Yatırım translates per IAS 21 — the income statement at the period AVERAGE rate and the balance sheet at the CLOSING rate. Measured (ASELS 2025): the implied rate is 39.58 on revenue but 42.92 on the balance sheet. Dividing the statement by a single current rate would have skewed the income statement by ~8%. The currency is part of the cache key and theselection passes through an enum that rejects invalid values. The quarterly/annual balance-sheet view already worked and was verified correct: balance-sheet items are stocks, not flows, so they are carried through rather than subtracted when deriving quarters. Two robustness problems surfaced during this work and were fixed. (1) Statement chunks were requested with unbounded parallelism; under load a dropped chunk was silently swallowed and the statement came back with missing periods — the same stock returned 14 periods in TRY and 18 in USD. Concurrency is now bounded and each chunk retries. (2) KAP's rate limit (429) was not recognised at all: neither kap.rs nor kap_pdr.rs checked the HTTP status, so a 429 body went straight to the JSON decoder and produced a misleading 'could not parse response' error. The status is now checked, 429 is reported distinctly, KAP requests go through a host-level concurrency gate, and rate limits are NOT retried — insisting only extends the limit."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": true,
+        "reviewer": "yazicmert"
+      },
+      "touches": [
+        "core/src/fundamentals.rs",
+        "core/src/retry.rs",
+        "core/src/kap.rs",
+        "core/src/kap_pdr.rs",
+        "core/src/bist_universe.rs",
+        "core/src/tefas_issuer.rs",
+        "core/src/api.rs",
+        "src-tauri/src/commands.rs",
+        "server/src/rpc.rs",
+        "src/api/tauriClient.ts",
+        "src/features/ticker/FinancialsTab.tsx",
+        "src/api/i18n.ts"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda mali tablolara USD/TRY seçimi ekle ve sağlayıcı dayanıklılığını düzelt:\n\n1. USD: MaliTablo ucunun `exchange` parametresi USD kabul ediyor ve çeviriyi UMS 21'e uygun yapıyor (gelir tablosu dönem ortalama, bilanço dönem sonu kuruyla — zımni kurları hesaplayıp FARKLI olduklarını doğrula; aynı çıkarlarsa sağlayıcı naif bölme yapıyordur). core/src/fundamentals.rs'e `Currency` enum'u ekle (Try/Usd + parse; serbest metin URL'ye GİRMESİN), fetch_chunk/fetch_all_periods/get_financial_statements'a geçir, ÖNBELLEK ANAHTARINA para birimini kat. api.rs → commands.rs → server/rpc.rs → tauriClient.ts zincirini `currency: Option<String>` ile güncelle, FinancialsTab'a TRY/USD düğmesi koy (para birimi değişince yeniden çek, yarış koşulu için cancelled bayrağı).\n2. Eksik dönem: fetch_all_periods parçaları join_all ile SINIRSIZ paralel gönderiyorsa yük altında düşen parça sessizce yutulur ve tablo eksik dönem döner (belirti: aynı hissenin TRY ve USD tablosu farklı sayıda dönem). Semaforla eşzamanlılığı sınırla (3) ve parça başına yeniden deneme ekle. DİKKAT: boş sonuç HATA DEĞİLDİR — bankalar XI_29'da sıfır kalem döndürür ve banka tespiti tam olarak bu boşluğa dayanır; yalnız gerçek istek hatası varsa Err dön.\n3. KAP hız sınırı: kap.rs ve kap_pdr.rs HTTP durumunu hiç denetlemiyorsa 429 gövdesi JSON çözücüye gidip yanıltıcı hata üretir. core/src/retry.rs oluştur: with_retry (üstel geri çekilme + kalıcı hata sınıflandırıcısı), is_rate_limited, check_status, ve KAP için host bazlı semafor (kap_permit). Tüm kap.org.tr çağrılarını (kap.rs, kap_pdr.rs, bist_universe.rs, tefas_issuer.rs) izinden geçir ve durumu denetle. 429'u KALICI say — yeniden deneme sınırı uzatır (ölçüldü: deneme eklemek KAP hatalarını 2'den 11'e çıkardı).\n\nKabul: 'npm run rust:check', 'npx tsc --noEmit', birim testleri ve canlı testler ('--lib -- --ignored') geçmeli; canlı takım ARKA ARKAYA çalıştırıldığında da kararlı olmalı.",
+      "notes": {
+        "tr": "Banka nakit akış tablosu bu uçtan gelmiyor: hiçbir financialGroup değerinde '4' ile başlayan kalem yok ve Yahoo da Türk hisselerinde nakit akışı vermiyor. Bankalarda ilgili alanlar boş kalıyor; kaynak olarak yalnız KAP'ın XBRL finansal rapor ekleri kalıyor, o ayrı bir iş.",
+        "en": "Bank cash-flow statements are not served by this endpoint: no financialGroup value returns any '4'-prefixed item, and Yahoo has no cash-flow data for Turkish equities either. Those fields stay empty for banks; the only remaining source is KAP's XBRL financial-report attachments, which is separate work."
+      }
+    },
+    {
       "id": "2026-07-27-mali-tablo-kalem-eslemesi-denetimi",
       "date": "2026-07-27",
       "author": "yazicmert",

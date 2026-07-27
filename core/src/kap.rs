@@ -97,7 +97,28 @@ const MAX_ROWS_PER_RESPONSE: usize = 2000;
 /// bölünecek yer kalmaz; o günün kaydı kesik kabul edilir.
 const MIN_WINDOW_DAYS: i64 = 1;
 
+/// Tek bir pencereyi ister; geçici bağlantı hatalarında yeniden dener.
+/// Denemesiz kurulumda düşen tek istek o turun bildirimlerini tamamen
+/// boşaltıyordu (akış "hiç bildirim yok" gibi görünüyordu).
+///
+/// Hız sınırı (429) **yeniden denenmez**: KAP'ın sınırı dakikalar mertebesinde
+/// sıfırlanır, aynı çağrı içinde ısrar etmek yalnız sınırı daha da uzatır.
+/// Hata açıkça yüzeye çıkar ve bir sonraki önbellek turunda tekrar denenir.
 async fn fetch_by_criteria(
+    client: &Client,
+    kind: &str,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<DisclosureRow>, String> {
+    crate::retry::with_retry(
+        crate::retry::DEFAULT_ATTEMPTS,
+        crate::retry::is_rate_limited,
+        || fetch_by_criteria_once(client, kind, from, to),
+    )
+    .await
+}
+
+async fn fetch_by_criteria_once(
     client: &Client,
     kind: &str,
     from: chrono::NaiveDate,
@@ -107,6 +128,7 @@ async fn fetch_by_criteria(
         "fromDate": from.format("%Y-%m-%d").to_string(),
         "toDate": to.format("%Y-%m-%d").to_string(),
     });
+    let _permit = crate::retry::kap_permit().await;
     let response = client
         .post(format!("{BASE_URL}/api/disclosure/{kind}/byCriteria"))
         .timeout(REQUEST_TIMEOUT)
@@ -116,6 +138,11 @@ async fn fetch_by_criteria(
         .send()
         .await
         .map_err(|error| format!("KAP {kind} isteği: {error}"))?;
+
+    // Durum kodu ÖNCE denetlenir. Denetlenmediğinde 429/5xx gövdesi doğrudan
+    // JSON çözücüye gidiyor ve gerçek sebebi gizleyen "yanıtı çözümlenemedi"
+    // hatası üretiyordu — hız sınırına takıldığımızı görmek imkânsızdı.
+    let response = crate::retry::check_status(response, &format!("KAP {kind}"))?;
 
     // Hata durumunda dizi yerine {"success":false,...} zarfı döner; decode
     // hatası olarak yüzeye çıkar.

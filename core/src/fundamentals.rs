@@ -27,6 +27,44 @@ const ANNUAL_HISTORY_START: i32 = 2008;
 
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// Mali tabloların raporlama para birimi.
+///
+/// Çeviriyi **sağlayıcı** yapar (`exchange` parametresi). Bu bilinçli bir
+/// tercih: tabloyu tek bir güncel kurla bölmek yanlış olurdu. İş Yatırım
+/// UMS 21'e uygun çeviriyor — gelir tablosu dönem **ortalama** kuruyla,
+/// bilanço dönem **sonu** kuruyla. Ölçüm (ASELS 2025): hasılatta zımni kur
+/// 39,58 iken bilançoda 42,92. Tek kur kullansaydık gelir tablosu ~%8 sapardı.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Currency {
+    #[default]
+    Try,
+    Usd,
+}
+
+impl Currency {
+    /// Sağlayıcının `exchange` parametresi. Enum olması, kullanıcıdan gelen
+    /// serbest metnin URL'ye girmesini engeller.
+    fn exchange(self) -> &'static str {
+        match self {
+            Currency::Try => "TRY",
+            Currency::Usd => "USD",
+        }
+    }
+
+    /// `FinancialStatement.currency` alanında görünen etiket.
+    fn label(self) -> &'static str {
+        self.exchange()
+    }
+
+    /// İstemciden gelen değeri çözer; tanınmayan her şey TRY'ye düşer.
+    pub fn parse(value: Option<&str>) -> Currency {
+        match value.map(str::trim).unwrap_or("") {
+            v if v.eq_ignore_ascii_case("USD") => Currency::Usd,
+            _ => Currency::Try,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct MaliTabloEnvelope {
     value: Option<Vec<MaliTabloItem>>,
@@ -92,6 +130,7 @@ async fn fetch_chunk(
     client: &Client,
     company: &str,
     financial_group: &str,
+    currency: Currency,
     pairs: &[(i32, u8)],
 ) -> Result<PeriodMap, String> {
     if pairs.is_empty() {
@@ -105,7 +144,7 @@ async fn fetch_chunk(
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("companyCode", company);
-        query.append_pair("exchange", "TRY");
+        query.append_pair("exchange", currency.exchange());
         query.append_pair("financialGroup", financial_group);
         for (index, (year, period)) in padded.iter().enumerate() {
             query.append_pair(&format!("year{}", index + 1), &year.to_string());
@@ -256,16 +295,60 @@ fn to_quarterly(current: &FinancialPeriod, previous: Option<&FinancialPeriod>, p
     }
 }
 
+/// Aynı anda gönderilen en fazla mali tablo isteği.
+///
+/// Derin geçmiş bir tabloyu ~9 parçaya bölüyor. Parçalar sınırsız paralel
+/// gönderildiğinde — özellikle senkron ya da başka İş Yatırım çağrıları da
+/// akarken — bağlantılar "error sending request" ile düşüyor ve `join_all`
+/// bunu sessizce yutuyordu: tablo eksik dönemle dönüyor, kullanıcıya hata
+/// gösterilmiyordu. Ölçülen belirti: aynı hissenin TRY tablosu 14, USD tablosu
+/// 18 dönem.
+const CHUNK_CONCURRENCY: usize = 3;
+
+/// Geçici hatada bir parçanın toplam deneme sayısı.
+const CHUNK_MAX_ATTEMPTS: u32 = 3;
+
+/// Tek parçayı geçici ağ hatalarına karşı yeniden dener.
+async fn fetch_chunk_with_retry(
+    client: &Client,
+    company: &str,
+    financial_group: &str,
+    currency: Currency,
+    pairs: &[(i32, u8)],
+) -> Result<PeriodMap, String> {
+    let mut attempt = 1;
+    loop {
+        match fetch_chunk(client, company, financial_group, currency, pairs).await {
+            Ok(map) => return Ok(map),
+            Err(error) if attempt == CHUNK_MAX_ATTEMPTS => return Err(error),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(250 * 2u64.pow(attempt - 1)))
+                    .await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
 async fn fetch_all_periods(
     client: &Client,
     company: &str,
     financial_group: &str,
+    currency: Currency,
     pairs: &[(i32, u8)],
 ) -> Result<PeriodMap, String> {
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(CHUNK_CONCURRENCY));
     let futures: Vec<_> = pairs
         .chunks(4)
-        .map(|chunk| fetch_chunk(client, company, financial_group, chunk))
+        .map(|chunk| {
+            let gate = gate.clone();
+            async move {
+                let _permit = gate.acquire().await.map_err(|error| error.to_string())?;
+                fetch_chunk_with_retry(client, company, financial_group, currency, chunk).await
+            }
+        })
         .collect();
+
     let mut merged: PeriodMap = HashMap::new();
     let mut last_error = None;
     for result in futures::future::join_all(futures).await {
@@ -274,6 +357,11 @@ async fn fetch_all_periods(
             Err(error) => last_error = Some(error),
         }
     }
+    // Boş sonuç HATA DEĞİLDİR: bankalar XI_29 grubunda sıfır kalem döndürür ve
+    // `get_financial_statements` tam olarak bu boşluğu görüp UFRS'ye düşer.
+    // Yalnızca gerçekten istek hatası olduysa ve hiçbir parça gelmediyse hata
+    // yüzeye çıkar. Kısmi sonuç korunur: tek bir eski yılın düşmesi tüm tabloyu
+    // yok etmemeli.
     if merged.is_empty() {
         if let Some(error) = last_error {
             return Err(error);
@@ -282,14 +370,21 @@ async fn fetch_all_periods(
     Ok(merged)
 }
 
-pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<FinancialStatement, String> {
+pub async fn get_financial_statements(
+    client: &Client,
+    ticker: &str,
+    currency: Currency,
+) -> Result<FinancialStatement, String> {
     let company = ticker.trim().trim_end_matches(".IS").to_uppercase();
+    // Önbellek anahtarı para birimini içerir; aksi halde TRY tablosu USD
+    // isteğine (ya da tersi) servis edilirdi.
+    let cache_key = format!("{company}:{}", currency.exchange());
 
     if let Some(cached) = CACHE
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .get(&company)
+        .get(&cache_key)
     {
         if cached.fetched_at.elapsed() < CACHE_TTL {
             return Ok(cached.statement.clone());
@@ -313,12 +408,12 @@ pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<F
 
     // Önce sanayi formatı denenir; hiç veri gelmezse banka/sigorta (UFRS) formatına düşülür.
     let mut is_bank = false;
-    let mut period_map = fetch_all_periods(client, &company, "XI_29", &pairs).await?;
+    let mut period_map = fetch_all_periods(client, &company, "XI_29", currency, &pairs).await?;
     let industrial_has_data = period_map
         .values()
         .any(|items| by_code(items, "3C").is_some() || by_code(items, "1BL").is_some());
     if !industrial_has_data {
-        period_map = fetch_all_periods(client, &company, "UFRS", &pairs).await?;
+        period_map = fetch_all_periods(client, &company, "UFRS", currency, &pairs).await?;
         is_bank = true;
     }
 
@@ -365,7 +460,7 @@ pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<F
 
     let statement = FinancialStatement {
         ticker: company.clone(),
-        currency: "TRY".to_string(),
+        currency: currency.label().to_string(),
         annuals,
         quarterlies,
     };
@@ -374,7 +469,7 @@ pub async fn get_financial_statements(client: &Client, ticker: &str) -> Result<F
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .insert(company, CachedStatement { fetched_at: Instant::now(), statement: statement.clone() });
+        .insert(cache_key, CachedStatement { fetched_at: Instant::now(), statement: statement.clone() });
 
     Ok(statement)
 }
@@ -516,7 +611,7 @@ mod tests {
     #[ignore = "requires live İş Yatırım access"]
     async fn live_annual_history_reaches_back_over_a_decade() {
         let client = crate::http_client();
-        let statement = get_financial_statements(&client, "ASELS").await.unwrap();
+        let statement = get_financial_statements(&client, "ASELS", Currency::Try).await.unwrap();
 
         let years: Vec<&str> = statement.annuals.iter().map(|p| &p.period[..4]).collect();
         println!("yıllık dönemler: {years:?}");
@@ -550,7 +645,7 @@ mod tests {
     #[ignore = "requires live İş Yatırım access"]
     async fn live_asels_statements_cover_five_years() {
         let client = Client::new();
-        let statement = get_financial_statements(&client, "ASELS").await.unwrap();
+        let statement = get_financial_statements(&client, "ASELS", Currency::Try).await.unwrap();
         println!(
             "yıllık: {:?}",
             statement.annuals.iter().map(|p| (&p.period, p.revenue)).collect::<Vec<_>>()
@@ -576,7 +671,7 @@ mod tests {
         let client = crate::http_client();
         // Sanayi ve banka formatı birlikte denenir.
         for ticker in ["ASELS", "THYAO", "GARAN", "AKBNK"] {
-            let statement = get_financial_statements(&client, ticker).await.unwrap();
+            let statement = get_financial_statements(&client, ticker, Currency::Try).await.unwrap();
             // Tamamlanmış en son yıl: dört çeyreği de elde olan.
             let Some(year) = statement
                 .annuals
@@ -609,6 +704,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn currency_parse_defaults_to_try() {
+        assert_eq!(Currency::parse(Some("USD")), Currency::Usd);
+        assert_eq!(Currency::parse(Some("usd")), Currency::Usd);
+        assert_eq!(Currency::parse(Some(" Usd ")), Currency::Usd);
+        assert_eq!(Currency::parse(Some("TRY")), Currency::Try);
+        // Tanınmayan/boş değer sessizce TRY'ye düşer; sağlayıcıya serbest metin gitmez.
+        assert_eq!(Currency::parse(Some("EUR")), Currency::Try);
+        assert_eq!(Currency::parse(Some("../etc")), Currency::Try);
+        assert_eq!(Currency::parse(None), Currency::Try);
+    }
+
+    /// USD tablosu sağlayıcıdan gelmeli ve TRY ile tutarlı olmalı.
+    ///
+    /// Kritik nokta: çeviri **tek kurla** yapılmıyor. Gelir tablosu dönem
+    /// ortalama, bilanço dönem sonu kuruyla çevriliyor (UMS 21), dolayısıyla
+    /// iki zımni kur birbirinden farklı olmalı. Aynı çıksalardı sağlayıcının
+    /// naif bir bölme yaptığını anlardık.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_usd_statements_use_period_appropriate_rates() {
+        let client = crate::http_client();
+        let try_statement = get_financial_statements(&client, "ASELS", Currency::Try).await.unwrap();
+        let usd_statement = get_financial_statements(&client, "ASELS", Currency::Usd).await.unwrap();
+
+        assert_eq!(usd_statement.currency, "USD");
+        assert_eq!(try_statement.currency, "TRY");
+        assert_eq!(
+            usd_statement.annuals.len(), try_statement.annuals.len(),
+            "iki para biriminde de aynı dönemler gelmeli"
+        );
+
+        let usd = usd_statement.annuals.last().expect("dönem");
+        let try_ = try_statement.annuals.last().expect("dönem");
+        assert_eq!(usd.period, try_.period);
+
+        let income_rate = try_.revenue.unwrap() / usd.revenue.unwrap();
+        let balance_rate = try_.total_assets.unwrap() / usd.total_assets.unwrap();
+        println!(
+            "{}: gelir tablosu kuru {income_rate:.2}, bilanço kuru {balance_rate:.2}",
+            usd.period
+        );
+
+        // Kurlar makul TRY/USD aralığında olmalı.
+        for (label, rate) in [("gelir tablosu", income_rate), ("bilanço", balance_rate)] {
+            assert!((5.0..200.0).contains(&rate), "{label} kuru makul değil: {rate}");
+        }
+        // Ve birbirinden farklı olmalı — naif tek-kur bölmesi değil.
+        assert!(
+            (income_rate - balance_rate).abs() / balance_rate > 0.01,
+            "ortalama ve dönem sonu kuru aynı çıktı ({income_rate:.2} vs {balance_rate:.2}); \
+             sağlayıcı naif çeviri yapıyor olabilir"
+        );
+    }
+
     /// Sanayi şirketlerinde serbest nakit akımı gerçekten dolmalı.
     /// (Eski açıklama araması hiçbir şirkette eşleşmediği için alan her zaman
     /// boştu — sessiz bir özellik kaybıydı.)
@@ -617,7 +767,7 @@ mod tests {
     async fn live_free_cash_flow_is_populated_for_industrials() {
         let client = crate::http_client();
         for ticker in ["ASELS", "THYAO", "EREGL", "BIMAS"] {
-            let statement = get_financial_statements(&client, ticker).await.unwrap();
+            let statement = get_financial_statements(&client, ticker, Currency::Try).await.unwrap();
             let with_ocf = statement.annuals.iter().filter(|p| p.operating_cash_flow.is_some()).count();
             let with_fcf = statement.annuals.iter().filter(|p| p.free_cash_flow.is_some()).count();
             println!("{ticker}: işletme nakdi {with_ocf} dönem, serbest nakit {with_fcf} dönem");
@@ -631,7 +781,7 @@ mod tests {
     #[ignore = "requires live İş Yatırım access"]
     async fn live_garan_uses_bank_format() {
         let client = Client::new();
-        let statement = get_financial_statements(&client, "GARAN").await.unwrap();
+        let statement = get_financial_statements(&client, "GARAN", Currency::Try).await.unwrap();
         assert!(!statement.annuals.is_empty(), "banka yıllık dönemleri dolu olmalı");
         let last = statement.annuals.last().unwrap();
         assert!(last.total_assets.is_some(), "banka aktif toplamı dolu olmalı");

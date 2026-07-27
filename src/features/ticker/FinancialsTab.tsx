@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getFinancialStatements } from '../../api/tauriClient';
+import { getFinancialStatements, type StatementCurrency } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import { FinancialStatement, FinancialPeriod } from '../../types';
 import { ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -67,16 +67,20 @@ export default function FinancialsTab({ ticker }: { ticker: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [periodType, setPeriodType] = useState<'annual' | 'quarterly'>('annual');
+  const [currency, setCurrency] = useState<StatementCurrency>('TRY');
   const [selected, setSelected] = useState<string[]>(DEFAULT_SELECTION);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    getFinancialStatements(ticker)
-      .then(setData)
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
-  }, [ticker]);
+    let cancelled = false;
+    getFinancialStatements(ticker, currency)
+      .then((statement) => { if (!cancelled) setData(statement); })
+      .catch((err) => { if (!cancelled) setError(String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    // Para birimi hızlı değiştirilirse geç dönen yanıt yenisini ezmemeli.
+    return () => { cancelled = true; };
+  }, [ticker, currency]);
 
   const periods = periodType === 'annual' ? (data?.annuals ?? []) : (data?.quarterlies ?? []);
   const quarterly = periodType === 'quarterly';
@@ -155,25 +159,44 @@ export default function FinancialsTab({ ticker }: { ticker: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <h2>{t('finTitle', { currency: data.currency })}</h2>
-        <div className="tabs" style={{ display: 'flex', gap: '8px' }}>
-          <button
-            className={`small-button ${periodType === 'annual' ? 'active' : ''}`}
-            onClick={() => setPeriodType('annual')}
-            style={{
-              padding: '6px 12px', background: periodType === 'annual' ? 'var(--accent-primary)' : 'transparent',
-              color: periodType === 'annual' ? '#000' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer'
-            }}
-          >{t('periodYearly')}</button>
-          <button
-            className={`small-button ${periodType === 'quarterly' ? 'active' : ''}`}
-            onClick={() => setPeriodType('quarterly')}
-            style={{
-              padding: '6px 12px', background: periodType === 'quarterly' ? 'var(--accent-primary)' : 'transparent',
-              color: periodType === 'quarterly' ? '#000' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer'
-            }}
-          >{t('finQuarterly')}</button>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          {/* Para birimi: çeviriyi sağlayıcı yapar (gelir tablosu ortalama,
+              bilanço dönem sonu kuruyla), tek kurla bölme YOK. */}
+          <div className="tabs" style={{ display: 'flex', gap: '8px' }}>
+            {(['TRY', 'USD'] as StatementCurrency[]).map((code) => (
+              <button
+                key={code}
+                type="button"
+                className={`small-button ${currency === code ? 'active' : ''}`}
+                onClick={() => setCurrency(code)}
+                title={t('finCurrencyHint')}
+                style={{
+                  padding: '6px 12px', background: currency === code ? 'var(--accent-primary)' : 'transparent',
+                  color: currency === code ? '#000' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer'
+                }}
+              >{code}</button>
+            ))}
+          </div>
+          <div className="tabs" style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className={`small-button ${periodType === 'annual' ? 'active' : ''}`}
+              onClick={() => setPeriodType('annual')}
+              style={{
+                padding: '6px 12px', background: periodType === 'annual' ? 'var(--accent-primary)' : 'transparent',
+                color: periodType === 'annual' ? '#000' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer'
+              }}
+            >{t('periodYearly')}</button>
+            <button
+              className={`small-button ${periodType === 'quarterly' ? 'active' : ''}`}
+              onClick={() => setPeriodType('quarterly')}
+              style={{
+                padding: '6px 12px', background: periodType === 'quarterly' ? 'var(--accent-primary)' : 'transparent',
+                color: periodType === 'quarterly' ? '#000' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer'
+              }}
+            >{t('finQuarterly')}</button>
+          </div>
         </div>
       </div>
 

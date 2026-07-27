@@ -48,8 +48,9 @@ pub async fn get_ticker_snapshot(
 pub async fn get_financial_statements(
     state: State<'_, AppState>,
     ticker: String,
+    currency: Option<String>,
 ) -> Result<crate::domain::FinancialStatement, String> {
-    api::get_financial_statements(&state, ticker).await
+    api::get_financial_statements(&state, ticker, currency).await
 }
 
 #[tauri::command]

@@ -146,6 +146,15 @@ struct TickerArgs {
     ticker: String,
 }
 
+/// Mali tablo isteği: para birimi seçimli ("TRY" varsayılan, "USD").
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StatementArgs {
+    ticker: String,
+    #[serde(default)]
+    currency: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RefreshTickerArgs {
@@ -283,7 +292,7 @@ pub async fn dispatch(
             Err(error) => err_response(StatusCode::INTERNAL_SERVER_ERROR, error),
         },
         "get_financial_statements" => {
-            run!(args, TickerArgs, |p| api::get_financial_statements(s, p.ticker))
+            run!(args, StatementArgs, |p| api::get_financial_statements(s, p.ticker, p.currency))
         }
         "get_dividends" => run!(args, TickerArgs, |p| api::get_dividends(s, p.ticker)),
         "get_capital_increases" => {

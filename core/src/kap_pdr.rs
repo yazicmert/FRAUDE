@@ -81,6 +81,7 @@ async fn post_criteria(
         "toDate": to.format("%Y-%m-%d").to_string(),
         "period": period_month.to_string(),
     });
+    let _permit = crate::retry::kap_permit().await;
     client
         .post(format!("{BASE_URL}/api/disclosure/funds/byCriteria"))
         .timeout(REQUEST_TIMEOUT)
@@ -89,7 +90,8 @@ async fn post_criteria(
         .json(&body)
         .send()
         .await
-        .map_err(|error| format!("KAP PDR sorgusu: {error}"))?
+        .map_err(|error| format!("KAP PDR sorgusu: {error}"))
+        .and_then(|response| crate::retry::check_status(response, "KAP PDR sorgusu"))?
         .json::<Vec<PdrRow>>()
         .await
         .map_err(|error| format!("KAP PDR yanıtı çözümlenemedi: {error}"))
@@ -154,14 +156,49 @@ fn strip_java_wrapper(raw: &[u8]) -> Option<&[u8]> {
     Some(&raw[start..])
 }
 
+/// PDF indirmede toplam deneme sayısı.
+///
+/// İndirme iki ağ adımı (bildirim detayı + dosya) ve dosyalar megabaytlarca.
+/// Tarama 150 fonu gezdiğinden bağlantı dalgalanması kaçınılmaz; yeniden deneme
+/// olmadan her düşen istek o fonun portföyünü bir sonraki taramaya kadar
+/// dizinden dışarıda bırakıyordu — sessiz kayıp.
+const DOWNLOAD_MAX_ATTEMPTS: u32 = 3;
+
 async fn download_pdr_pdf(client: &reqwest::Client, disclosure_index: u64) -> Result<Vec<u8>, String> {
+    let mut attempt = 1;
+    loop {
+        match download_pdr_pdf_once(client, disclosure_index).await {
+            Ok(bytes) => return Ok(bytes),
+            // Kalıcı hatalar (ek yok, PDF imzası yok) yeniden denenmez.
+            // Kalıcı hatalar (ek yok, PDF imzası yok) ve hız sınırı yeniden denenmez.
+            Err(error)
+                if error.starts_with("PDR bildiriminde")
+                    || error.starts_with("İndirilen")
+                    || crate::retry::is_rate_limited(&error) =>
+            {
+                return Err(error)
+            }
+            Err(error) if attempt == DOWNLOAD_MAX_ATTEMPTS => return Err(error),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(400 * 2u64.pow(attempt - 1))).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
+async fn download_pdr_pdf_once(client: &reqwest::Client, disclosure_index: u64) -> Result<Vec<u8>, String> {
+    // İzin iki adım (detay + dosya) boyunca tutulur; PDF'ler megabaytlarca
+    // olduğundan yarı yolda bırakmak bağlantıyı iki kez açmak demek olurdu.
+    let _permit = crate::retry::kap_permit().await;
     let detail = client
         .get(format!("{BASE_URL}/api/notification/attachment-detail/{disclosure_index}"))
         .timeout(REQUEST_TIMEOUT)
         .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
         .send()
         .await
-        .map_err(|error| format!("KAP bildirim detayı: {error}"))?
+        .map_err(|error| format!("KAP bildirim detayı: {error}"))
+        .and_then(|response| crate::retry::check_status(response, "KAP bildirim detayı"))?
         .json::<Vec<AttachmentDetail>>()
         .await
         .map_err(|error| format!("KAP bildirim detayı çözümlenemedi: {error}"))?;
@@ -178,7 +215,8 @@ async fn download_pdr_pdf(client: &reqwest::Client, disclosure_index: u64) -> Re
         .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
         .send()
         .await
-        .map_err(|error| format!("KAP dosya indirme: {error}"))?
+        .map_err(|error| format!("KAP dosya indirme: {error}"))
+        .and_then(|response| crate::retry::check_status(response, "KAP dosya indirme"))?
         .bytes()
         .await
         .map_err(|error| format!("KAP dosya okunamadı: {error}"))?;

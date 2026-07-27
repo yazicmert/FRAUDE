@@ -435,6 +435,7 @@ export const translations = {
     // ── Mali tablolar ──
     finTitle: 'Mali Tablolar (Milyon {{currency}})',
     finQuarterly: 'Çeyreklik',
+    finCurrencyHint: 'Çeviriyi İş Yatırım yapar: gelir tablosu dönem ortalama, bilanço dönem sonu kuruyla (UMS 21).',
     finFreeChart: 'Serbest Grafik',
     finFreeChartHint: 'Tutarlar sol eksende (Milyon {{currency}}), oranlar sağ eksende (%). İstediğiniz metriğe tıklayın.',
     finPickMetric: 'Grafik için en az bir metrik seçin.',
@@ -1393,6 +1394,7 @@ export const translations = {
     // ── Financial statements ──
     finTitle: 'Financial Statements (Million {{currency}})',
     finQuarterly: 'Quarterly',
+    finCurrencyHint: 'Translated by İş Yatırım: income statement at the period average rate, balance sheet at the closing rate (IAS 21).',
     finFreeChart: 'Custom Chart',
     finFreeChartHint: 'Amounts on the left axis (Million {{currency}}), ratios on the right (%). Click any metric.',
     finPickMetric: 'Pick at least one metric for the chart.',
