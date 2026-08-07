@@ -16,7 +16,7 @@
         "en": "Financial statements can now be viewed in TRY or USD. The provider performs the conversion (`exchange` parameter), which is deliberate: İş Yatırım translates per IAS 21 — the income statement at the period AVERAGE rate and the balance sheet at the CLOSING rate. Measured (ASELS 2025): the implied rate is 39.58 on revenue but 42.92 on the balance sheet. Dividing the statement by a single current rate would have skewed the income statement by ~8%. The currency is part of the cache key and theselection passes through an enum that rejects invalid values. The quarterly/annual balance-sheet view already worked and was verified correct: balance-sheet items are stocks, not flows, so they are carried through rather than subtracted when deriving quarters. Two robustness problems surfaced during this work and were fixed. (1) Statement chunks were requested with unbounded parallelism; under load a dropped chunk was silently swallowed and the statement came back with missing periods — the same stock returned 14 periods in TRY and 18 in USD. Concurrency is now bounded and each chunk retries. (2) KAP's rate limit (429) was not recognised at all: neither kap.rs nor kap_pdr.rs checked the HTTP status, so a 429 body went straight to the JSON decoder and produced a misleading 'could not parse response' error. The status is now checked, 429 is reported distinctly, KAP requests go through a host-level concurrency gate, and rate limits are NOT retried — insisting only extends the limit."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
@@ -56,7 +56,7 @@
         "en": "Whether the numbers land on the right line items was audited against the provider's own item descriptions. Confirmed correct: the industrial mapping (revenue 3C, gross profit 3D, operating profit 3DF, assets 1BL), the balance-sheet identity (assets = liabilities + equity, 1 TRY rounding difference on 474.9 billion), the parent-share preference (net income 3Z paired with equity 2O — so ROE is consistent), total debt covering financial debt only (excluding trade payables), bank detection, and the cumulative-to-quarterly derivation (four quarters sum EXACTLY to the annual figure, for both industrials and banks). Two bugs were found. (1) Free cash flow was never populated for any company: the code searched for an item description that does not exist in the table ('purchases of tangible and intangible fixed assets'), matching zero rows across four companies. The provider computes free cash flow itself and serves it as item `4CB`; that is now used (= operating cash flow + investing cash flow, verified exactly). (2) Bank net income and pre-tax profit were read via description search, which matches two items — continuing (3CN/3CL) and discontinued (3CT/3CR) operations — with the winner decided by response order. Had the order changed, every bank's net income would have read as zero. They are now read by code and summed. Banks also get no cash-flow statement from this endpoint, so those fields are now explicitly left empty."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
@@ -85,7 +85,7 @@
         "en": "The three official sources were audited against live measurements and four data-loss bugs were found. (1) About 22% of KAP disclosures were never attributed to a stock: for the structural announcements Borsa İstanbul publishes (circuit breakers, trading-line open/close, restrictions) the ticker arrives in `relatedStocks` rather than `stockCodes`, and that field was never read — those disclosures never appeared on the stock page and sat unattributed with a 'KAP' badge in the feed. Measured: 1100 disclosures recovered out of a 5036-record pool. (2) The KAP endpoint returns at most 2000 records per response and truncates the rest in date-descending order, so the oldest days were silently dropped in busy periods; any window that hits the cap is now split in half and refetched (2000 → 5366 records over a 30-day range). (3) The year in the SPK bulletin URL was hardcoded ('2026-yili-spk-bultenleri'); the bulletin feed would have gone silently empty on 1 January 2027. The year is now derived from the calendar, falling back to the previous year when the new year's page does not exist yet. (4) Financial statements fetched only the last 6 years, while İş Yatırım serves full statements back to 2008 from the same endpoint. The annual series now spans 18 periods (2008-2025); quarterly breakdown stays at 6 years to bound request cost. The 'DKB' disclosure class is also labelled 'Borsa İstanbul Duyurusu' instead of showing the raw code."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
@@ -116,7 +116,7 @@
         "en": "The outbound request path was reworked against measurements. (1) Every provider served gzip but returned plain text because no Accept-Encoding was sent; compression is now on in the shared HTTP client: KAP company list 1.52 MB → 206 KB, İş Yatırım daily series 160 KB → 59 KB, Yahoo 1-year chart 14.9 KB → 5.1 KB. (2) The equity universe is persisted to disk, so a restart resumes from the last sync instead of repeating ~650 Yahoo chart requests; the full-sync timestamp is persisted too, so a restart can stay in incremental mode. (3) reqwest's 90 s pool idle timeout kept connections that İş Yatırım had already closed; pool settings now match provider behaviour. (4) When a cache expired, the same expensive round ran several times over; the İş Yatırım ratio round (5 requests) and the Yahoo metrics round (17 requests) are now single-flight. (5) Unresolvable symbols were re-requested on every poll; a negative cache with exponential backoff was added. Also removed a no-op enrich_equity call from the sync loop and memoized the index-membership cache instead of re-reading it from disk on every call."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
@@ -154,7 +154,7 @@
         "en": "A new 'Research' module: it splits a stock into fixed roles (fundamental, KAP & news, technical, ownership) and assigns each role to one of the user's existing AI agents; roles run in parallel (each can use its own API key/provider) and a lead agent synthesizes a single markdown report. Jobs run in a background tokio worker loop; on completion an OS notification + in-app toast fire and the report is saved as an Artifact. A new Chrome (MV3) extension submits text/URL/image tasks to a token-protected local bridge on 127.0.0.1 while the app is open; the extension also notifies on completion. Every job is visible both in the app and the extension. There is no scheduled/automatic research — each job spends the user's own key, so it only runs on explicit request."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
@@ -191,7 +191,7 @@
         "en": "For text-free (scanned) KAP PDR PDFs, the fund detail gained an 'Extract with AI vision' button: embedded page JPEGs are pulled without rasterization and sent to the vision-capable model on the user's own AI key (a cheap model suffices: gpt-4o-mini, gemini-flash); the table comes back as JSON and lands in the normal caches. Since costs bill to the user's account it only runs on explicit request; background crawling never calls AI."
       },
       "commit": "https://github.com/yazicmert/FRAUDE",
-      "includedIn": null,
+      "includedIn": "0.1.5",
       "security": {
         "reviewed": true,
         "reviewer": "yazicmert"
