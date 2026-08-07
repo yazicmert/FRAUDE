@@ -43,6 +43,14 @@ interface ModuleTour {
   steps: TourStep[];
 }
 
+interface OsPlatform {
+  os: 'macOS' | 'Windows';
+  icon: string;
+  title: string;
+  badge: string;
+  items: string[];
+}
+
 interface GuideContent {
   eyebrow: string;
   title: string;
@@ -73,6 +81,9 @@ interface GuideContent {
   shortcutsHeading: string;
   shortcutsLead: string;
   shortcuts: { id: ShortcutId; desc: string }[];
+  osHeading: string;
+  osLead: string;
+  osPlatforms: OsPlatform[];
   modalNext: string;
   modalPrev: string;
   modalOpenModule: string;
@@ -223,6 +234,36 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { id: 'sync', desc: 'Verileri şimdi eşitle' },
       { id: 'settings', desc: 'Ayarlar modülünü aç' },
       { id: 'close', desc: 'Açık pencereleri veya paleti kapat' },
+    ],
+    osHeading: ' macOS ve ⊞ Windows Platform Farklılıkları',
+    osLead: 'FRAUDE Terminal, kullandığınız işletim sistemine (macOS / Windows) göre klavye kısayollarını, yerel pencere kontrollerini ve WebView motorlarını otomatik entegre eder.',
+    osPlatforms: [
+      {
+        os: 'macOS',
+        icon: '',
+        title: 'macOS (Apple Silicon M1/M2/M3/M4 & Intel)',
+        badge: '.dmg Paketi',
+        items: [
+          'Kısayol Tuş Kombinasyonu: ⌘ (Command) tuşu kullanılır (ör. ⌘ + K, ⌘ + J, ⌘ + L, ⌘ + B).',
+          'Mali Tablo / Yıl Kıyaslama: Cmd + Tık (⌘ + Tık) ile iki bilançoyu yan yana karşılaştırabilirsiniz.',
+          'Pencere Kontrolleri: Sol üstte yer alan klasik macOS 🔴 🟡 🟢 trafik ışığı butonları.',
+          'Yerel Grafik / Render Motoru: macOS WebKit native grafik hızlandırması.',
+          'Gatekeeper İzni: İlk açılışta güvenlik uyarısı çıkarsa "Sağ Tık › Aç (Open)" ile izin verilebilir.',
+        ],
+      },
+      {
+        os: 'Windows',
+        icon: '⊞',
+        title: 'Windows (Windows 10 / 11 64-bit)',
+        badge: '.exe Kurulumu',
+        items: [
+          'Kısayol Tuş Kombinasyonu: Ctrl (Control) tuşu kullanılır (ör. Ctrl + K, Ctrl + J, Ctrl + L, Ctrl + B).',
+          'Mali Tablo / Yıl Kıyaslama: Ctrl + Tık ile iki bilançoyu yan yana karşılaştırabilirsiniz.',
+          'Pencere Kontrolleri: Sağ üstte yer alan klasik Windows pencere kumandaları (─ □ ✕).',
+          'Yerel Grafik / Render Motoru: Microsoft Edge WebView2 runtime motoru.',
+          'SmartScreen İzni: İlk kurulumda koruma uyarısı çıkarsa "Ek Bilgi › Yine de Çalıştır" tıklanır.',
+        ],
+      },
     ],
     modalNext: 'Sonraki Adım ▸',
     modalPrev: '◂ Önceki Adım',
@@ -492,6 +533,36 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       { id: 'sync', desc: 'Sync data now' },
       { id: 'settings', desc: 'Open Settings module' },
       { id: 'close', desc: 'Close modals or palette' },
+    ],
+    osHeading: ' macOS & ⊞ Windows Platform Differences',
+    osLead: 'FRAUDE Terminal automatically adapts keyboard shortcuts, native window controls, and display engines for your operating system.',
+    osPlatforms: [
+      {
+        os: 'macOS',
+        icon: '',
+        title: 'macOS (Apple Silicon M1/M2/M3/M4 & Intel)',
+        badge: '.dmg Package',
+        items: [
+          'Primary Modifier: ⌘ (Command) key is used (e.g. ⌘ + K, ⌘ + J, ⌘ + L, ⌘ + B).',
+          'Financial Comparison: Cmd + Click (⌘ + Click) to compare two financial statements side-by-side.',
+          'Window Controls: Native macOS 🔴 🟡 🟢 traffic light controls on top-left.',
+          'Display Engine: Native macOS WebKit GPU acceleration.',
+          'Gatekeeper Permission: If security prompt appears on first launch, use Right-Click › Open.',
+        ],
+      },
+      {
+        os: 'Windows',
+        icon: '⊞',
+        title: 'Windows (Windows 10 / 11 64-bit)',
+        badge: '.exe Installer',
+        items: [
+          'Primary Modifier: Ctrl (Control) key is used (e.g. Ctrl + K, Ctrl + J, Ctrl + L, Ctrl + B).',
+          'Financial Comparison: Ctrl + Click to compare two financial statements side-by-side.',
+          'Window Controls: Native Windows controls (─ □ ✕) on top-right.',
+          'Display Engine: Microsoft Edge WebView2 runtime engine.',
+          'SmartScreen Permission: If protection prompt appears on install, click More Info › Run Anyway.',
+        ],
+      },
     ],
     modalNext: 'Next Step ▸',
     modalPrev: '◂ Previous Step',
@@ -832,6 +903,52 @@ export default function GuideView({ onOpenModule }: GuideViewProps) {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* ── macOS vs Windows Platform Farklılıkları ── */}
+        <section className="guide-section">
+          <h2 className="guide-h2">{c.osHeading}</h2>
+          <p className="guide-lead">{c.osLead}</p>
+          <div className="guide-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', marginTop: '16px' }}>
+            {c.osPlatforms.map((plat, idx) => (
+              <div
+                key={idx}
+                className="guide-card"
+                style={{
+                  background: 'var(--bg-panel)',
+                  border: plat.os === 'macOS' ? '1px solid rgba(0, 255, 157, 0.3)' : '1px solid rgba(0, 195, 255, 0.3)',
+                  padding: '20px',
+                  borderRadius: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{plat.icon}</span> {plat.title}
+                  </h3>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      background: plat.os === 'macOS' ? 'rgba(0, 255, 157, 0.15)' : 'rgba(0, 195, 255, 0.15)',
+                      color: plat.os === 'macOS' ? '#00ff9d' : '#00c3ff',
+                      border: plat.os === 'macOS' ? '1px solid #00ff9d' : '1px solid #00c3ff',
+                    }}
+                  >
+                    {plat.badge}
+                  </span>
+                </div>
+                <ul className="guide-card-items" style={{ margin: 0, paddingLeft: '18px' }}>
+                  {plat.items.map((item, itemIdx) => (
+                    <li key={itemIdx} style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.45' }}>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </section>
 
