@@ -30,7 +30,7 @@ function renderVisualFundUsage(rawText?: string | null) {
       cleanDesc = part
         .replace(/%\s*\d+(?:[.,]\d+)?/, '')
         .replace(/\d+(?:[.,]\d+)?\s*%/, '')
-        .replace(/^[-:\s]+/, '')
+        .replace(/^[-:\s•\d]+/, '')
         .trim();
     }
     return { percent, desc: cleanDesc || part };
@@ -41,17 +41,17 @@ function renderVisualFundUsage(rawText?: string | null) {
       {items.map((item, idx) => {
         const hasPercent = item.percent !== null && !isNaN(item.percent);
         return (
-          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.8rem', gap: '8px' }}>
-              <span style={{ color: '#c9d1d9', fontWeight: 500, lineHeight: '1.4' }}>
-                <span style={{ color: '#58a6ff', marginRight: '6px' }}>•</span>
+          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', gap: '8px' }}>
+              <span style={{ color: '#f0f6fc', fontWeight: 500, lineHeight: '1.4' }}>
+                <span style={{ color: '#00ff9d', marginRight: '6px' }}>•</span>
                 {item.desc}
               </span>
               {hasPercent && (
                 <span style={{
-                  background: 'rgba(88, 166, 255, 0.15)', color: '#58a6ff', padding: '1px 8px',
+                  background: 'rgba(0, 255, 157, 0.15)', color: '#00ff9d', padding: '2px 8px',
                   borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
-                  border: '1px solid rgba(88, 166, 255, 0.3)', flexShrink: 0,
+                  border: '1px solid rgba(0, 255, 157, 0.3)', flexShrink: 0,
                 }}>
                   %{item.percent}
                 </span>
@@ -62,7 +62,7 @@ function renderVisualFundUsage(rawText?: string | null) {
                 <div style={{
                   width: `${Math.min(100, Math.max(0, item.percent!))}%`,
                   height: '100%',
-                  background: 'linear-gradient(90deg, #388bfd, #58a6ff)',
+                  background: 'linear-gradient(90deg, #00c3ff, #00ff9d)',
                   borderRadius: '3px',
                   transition: 'width 0.4s ease-in-out',
                 }} />
@@ -96,18 +96,26 @@ function renderVisualShareStructure(rawText?: string | null) {
         if (isSermaye) label = '🌱 Sermaye Artırımı';
         else if (isOrtak) label = '🤝 Ortak Satışı';
 
-        const cleanVal = part
+        let cleanVal = part
           .replace(/^Sermaye Artırımı\s*:\s*/i, '')
           .replace(/^Ortak Satışı\s*:\s*/i, '')
           .replace(/^Halka Arz Şekli\s*:\s*/i, '')
           .trim();
+
+        if (cleanVal.length > 45 && cleanVal.includes('(')) {
+          cleanVal = cleanVal.replace(/\(([^)]+)\)/g, (_m, p1) => {
+            const words = p1.trim().split(/\s+/);
+            const shortName = words.slice(0, 2).join(' ') + (words.length > 2 ? '...' : '');
+            return `(${shortName})`;
+          });
+        }
 
         return (
           <div key={idx} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             background: isSermaye ? 'rgba(63, 185, 80, 0.08)' : isOrtak ? 'rgba(163, 113, 247, 0.08)' : 'rgba(255, 255, 255, 0.04)',
             border: `1px solid ${isSermaye ? 'rgba(63, 185, 80, 0.25)' : isOrtak ? 'rgba(163, 113, 247, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
-            padding: '7px 12px', borderRadius: '8px', gap: '10px'
+            padding: '8px 12px', borderRadius: '8px', gap: '10px'
           }}>
             <span style={{
               fontSize: '0.74rem', fontWeight: 700,
@@ -116,7 +124,7 @@ function renderVisualShareStructure(rawText?: string | null) {
             }}>
               {label}
             </span>
-            <span style={{ fontSize: '0.8rem', color: '#f0f6fc', textAlign: 'right', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+            <span style={{ fontSize: '0.8rem', color: '#f0f6fc', textAlign: 'right', fontWeight: 600, fontFamily: 'var(--font-mono)' }} title={part}>
               {cleanVal}
             </span>
           </div>
@@ -135,22 +143,18 @@ function renderVisualDistributionRatios(rawText?: string | null) {
     );
   }
 
-  // Separate footnotes (* Payların %5'inden...) from main content
   let mainText = rawText;
-  let footnote = '';
-
   const footnoteIdx = rawText.search(/[*•]\s*Payların|\*|\bNot\b/i);
   if (footnoteIdx !== -1) {
     mainText = rawText.substring(0, footnoteIdx).trim();
-    footnote = rawText.substring(footnoteIdx).trim();
   }
 
   const groupPatterns = [
-    { regex: /Yurt\s*İçi\s*Bireysel[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '👨‍💼 Yurt İçi Bireysel', color: '#388bfd' },
-    { regex: /Yüksek\s*Başvurulu[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '💎 Yüksek Başvurulu', color: '#a371f7' },
-    { regex: /Yurt\s*İçi\s*Kurumsal[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏛️ Yurt İçi Kurumsal', color: '#58a6ff' },
-    { regex: /Yurt\s*Dışı\s*Kurumsal[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🌍 Yurt Dışı Kurumsal', color: '#3fb950' },
-    { regex: /Çalışan[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏢 Şirket Çalışanları', color: '#d29922' },
+    { regex: /(?:Yurt\s*İçi\s*Bireysel|Bireysel)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '👨‍💼 Yurt İçi Bireysel', color: '#388bfd' },
+    { regex: /(?:Yüksek\s*Başvurulu|Nitelikli)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '💎 Yüksek Başvurulu', color: '#a371f7' },
+    { regex: /(?:Yurt\s*İçi\s*Kurumsal|Kurumsal)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏛️ Yurt İçi Kurumsal', color: '#58a6ff' },
+    { regex: /(?:Yurt\s*Dışı\s*Kurumsal|Yurt\s*Dışı)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🌍 Yurt Dışı Kurumsal', color: '#3fb950' },
+    { regex: /(?:Şirket\s*Çalışanları|Çalışan)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏢 Şirket Çalışanları', color: '#d29922' },
   ];
 
   const parsedItems: Array<{ group: string; percent: number; color: string }> = [];
@@ -170,13 +174,21 @@ function renderVisualDistributionRatios(rawText?: string | null) {
 
   if (parsedItems.length === 0) {
     const parts = mainText.split(/[-;\n]\s*/).map(s => s.trim()).filter(Boolean);
-    for (const part of parts) {
+    const colors = ['#388bfd', '#a371f7', '#58a6ff', '#3fb950', '#d29922'];
+    parts.forEach((part, idx) => {
       const numMatch = part.match(/%\s*(\d+(?:[.,]\d+)?)/) || part.match(/(\d+(?:[.,]\d+)?)\s*%/);
       const percent = numMatch ? parseFloat(numMatch[1].replace(',', '.')) : null;
-      if (percent !== null) {
-        parsedItems.push({ group: '👥 Tahsisat Grubu', percent, color: '#58a6ff' });
+      let label = part.replace(/%\s*\d+(?:[.,]\d+)?/, '').replace(/\d+(?:[.,]\d+)?\s*%/, '').trim();
+      if (!label || label === 'Tahsisat Grubu') {
+        const defaultNames = ['👨‍💼 Yurt İçi Bireysel', '🏛️ Yurt İçi Kurumsal', '🌍 Yurt Dışı Kurumsal', '🏢 Şirket Çalışanları'];
+        label = defaultNames[idx] || `Tahsisat Grubu ${idx + 1}`;
+      } else {
+        label = `👥 ${label}`;
       }
-    }
+      if (percent !== null) {
+        parsedItems.push({ group: label, percent, color: colors[idx % colors.length] });
+      }
+    });
   }
 
   const finalItems = parsedItems.length > 0 ? parsedItems : [
@@ -186,32 +198,29 @@ function renderVisualDistributionRatios(rawText?: string | null) {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
       {finalItems.map((item, idx) => (
         <div key={idx} style={{
           background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '8px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px'
+          borderRadius: '8px', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '4px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
             <span style={{ fontWeight: 700, color: item.color }}>{item.group}</span>
             <span style={{
               background: `${item.color}22`, color: item.color, border: `1px solid ${item.color}44`,
-              borderRadius: '12px', padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-mono)'
+              borderRadius: '12px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: 700, fontFamily: 'var(--font-mono)'
             }}>
               %{item.percent}
             </span>
           </div>
-          <div style={{ width: '100%', height: '6px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(100, Math.max(0, item.percent))}%`, height: '100%', background: item.color, borderRadius: '3px' }} />
+          <div style={{ width: '100%', height: '5px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(100, Math.max(0, item.percent))}%`, height: '100%',
+              background: item.color, borderRadius: '3px', transition: 'width 0.4s ease-in-out'
+            }} />
           </div>
         </div>
       ))}
-
-      {footnote && (
-        <div style={{ fontSize: '0.72rem', color: '#8b949e', fontStyle: 'italic', background: 'rgba(255, 255, 255, 0.02)', padding: '6px 10px', borderRadius: '6px', marginTop: '4px', lineHeight: '1.4' }}>
-          {footnote}
-        </div>
-      )}
     </div>
   );
 }
@@ -1329,117 +1338,131 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                   </span>
                                 </div>
                                 <button
-                                   type="button"
-                                   onClick={() => setExpandedIpoIndex(null)}
-                                   style={{
-                                     background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)',
-                                     color: '#8b949e', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer',
-                                     fontSize: '0.78rem', transition: 'all 0.15s',
-                                   }}
-                                   onMouseEnter={(e) => { e.currentTarget.style.color = '#f0f6fc'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'; }}
-                                   onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
-                                 >
-                                   ✕ Kapat
-                                 </button>
-                               </div>
+                                  type="button"
+                                  onClick={() => setExpandedIpoIndex(null)}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: '#8b949e', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer',
+                                    fontSize: '0.78rem', transition: 'all 0.15s',
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.color = '#f0f6fc'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+                                >
+                                  ✕ Kapat
+                                </button>
+                              </div>
 
-                              {/* Grid Layout */}
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
-                                {/* Fon Kullanım Yeri */}
-                                <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                                  <div style={{ fontSize: '0.75rem', color: '#58a6ff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    🎯 Fon Kullanım Amacı (Gelir Nereye Gidecek?)
+                              {/* Executive Summary Metric Bar (4 Top Cards) */}
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', width: '100%', boxSizing: 'border-box' }}>
+                                {/* Arz Fiyatı */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>💰 Arz Fiyatı</div>
+                                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#00ff9d', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                                    {typeof ipo.price === 'number' && ipo.price > 0 ? `₺${ipo.price.toFixed(2)}` : 'Açıklanmadı'}
                                   </div>
+                                </div>
+
+                                {/* Halka Arz Büyüklüğü */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📊 Toplam Büyüklük</div>
+                                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#f0f6fc', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                                    {ipo.ipo_size || 'İzahnamede Belirtilecek'}
+                                  </div>
+                                </div>
+
+                                {/* Dağıtım Türü */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>🤝 Dağıtım Türü</div>
+                                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#58a6ff', marginTop: '4px' }}>
+                                    {ipo.distribution_type || 'Eşit Dağıtım'}
+                                  </div>
+                                </div>
+
+                                {/* Katılım Endeksi */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                  <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>☪️ Katılım Endeksi</div>
+                                  <div style={{ marginTop: '4px' }}>
+                                    {ipo.katilim_index ? (
+                                      <span style={{
+                                        padding: '3px 10px', borderRadius: '12px', fontSize: '0.76rem', fontWeight: 700,
+                                        background: ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)',
+                                        color: ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? '#3fb950' : '#f85149',
+                                        border: `1px solid ${ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
+                                      }}>
+                                        {ipo.katilim_index}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#8b949e', fontSize: '0.85rem' }}>İzahnamede Belirtilecek</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Clean 2-Column Grid Layout */}
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
+                                {/* Left Side Column: Pay Yapısı & Tahsisat & Konsorsiyum */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                  {/* Pay Yapısı */}
+                                  <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#3fb950', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      📊 Pay Yapısı (Sermaye Artırımı / Ortak Satışı)
+                                    </div>
+                                    {renderVisualShareStructure(ipo.share_structure)}
+                                  </div>
+
+                                  {/* Tahsisat Oranları */}
+                                  <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#388bfd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      👥 Tahsisat Oranları (Gruplara Dağıtım)
+                                    </div>
+                                    {renderVisualDistributionRatios(ipo.distribution_ratios)}
+                                  </div>
+
+                                  {/* İşlem & Konsorsiyum Kuralları */}
+                                  <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#a371f7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      🏛️ Konsorsiyum & İşlem Şartları
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.84rem' }}>
+                                      {ipo.t1_t2_available && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ color: '#8b949e' }}>T1-T2 Bakiyesi:</span>
+                                          <span style={{ color: '#c9d1d9', fontWeight: 500 }}>{ipo.t1_t2_available}</span>
+                                        </div>
+                                      )}
+                                      {ipo.consortium_lead && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: '6px' }}>
+                                          <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>Konsorsiyum Liderleri:</span>
+                                          <span style={{ color: '#f0f6fc', fontWeight: 600, wordBreak: 'break-word', lineHeight: '1.4' }}>{ipo.consortium_lead}</span>
+                                        </div>
+                                      )}
+                                      {!ipo.t1_t2_available && !ipo.consortium_lead && (
+                                        <span style={{ color: '#8b949e', fontStyle: 'italic' }}>Bireysel eşit dağıtım kuralları geçerlidir.</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Right Side Column: Fon Kullanım Amacı & Sonuçlar */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                  {/* Fon Kullanım Yeri */}
+                                  <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#58a6ff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      🎯 Fon Kullanım Amacı (Gelir Nereye Gidecek?)
+                                    </div>
                                   {renderVisualFundUsage(ipo.fund_usage)}
-                                </div>
-
-                                {/* Pay Yapısı & Halka Arz Şekli */}
-                                <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                                  <div style={{ fontSize: '0.75rem', color: '#3fb950', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    📊 Pay Yapısı (Sermaye Artırımı / Ortak Satışı)
                                   </div>
-                                  {renderVisualShareStructure(ipo.share_structure)}
-                                </div>
 
-                                {/* Tahsisat Oranları (Dağıtım Grupları) */}
-                                <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                                  <div style={{ fontSize: '0.75rem', color: '#388bfd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    👥 Tahsisat Oranları (Gruplara Dağıtım)
-                                  </div>
-                                  {renderVisualDistributionRatios(ipo.distribution_ratios)}
-                                </div>
-
-                                {/* Arz Büyüklüğü & Fiyatlandırma */}
-                                <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                                  <div style={{ fontSize: '0.75rem', color: '#d29922', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    💰 Halka Arz Büyüklüğü & Fiyat
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.84rem' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 10px', borderRadius: '6px' }}>
-                                      <span style={{ color: '#8b949e' }}>Arz Fiyatı:</span>
-                                      <strong style={{ color: '#f0f6fc', fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>{typeof ipo.price === 'number' && ipo.price > 0 ? `₺${ipo.price.toFixed(2)}` : 'Açıklanmadı'}</strong>
+                                  {/* Gerçekleşen Dağıtım Sonuçları (Tamamlandıysa) */}
+                                  {(ipo.status === 'TAMAMLANDI' || ipo.status === 'SONUÇLANDI' || ipo.participant_count) && (
+                                    <div style={{ background: 'rgba(35, 134, 54, 0.08)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(63, 185, 80, 0.3)' }}>
+                                      <div style={{ fontSize: '0.75rem', color: '#3fb950', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        🎉 Resmi Halka Arz Sonuçları (Gerçekleşen Dağıtım)
+                                      </div>
+                                      {renderVisualIpoResults(ipo)}
                                     </div>
-                                    {ipo.ipo_size && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 10px', borderRadius: '6px' }}>
-                                        <span style={{ color: '#8b949e' }}>Toplam Büyüklük:</span>
-                                        <strong style={{ color: '#f0f6fc', fontFamily: 'var(--font-mono)' }}>{ipo.ipo_size}</strong>
-                                      </div>
-                                    )}
-                                    {ipo.distribution_type && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 10px', borderRadius: '6px' }}>
-                                        <span style={{ color: '#8b949e' }}>Dağıtım Türü:</span>
-                                        <span style={{ color: '#c9d1d9', fontWeight: 500 }}>{ipo.distribution_type}</span>
-                                      </div>
-                                    )}
-                                  </div>
+                                  )}
                                 </div>
-
-                                {/* Katılım Endeksi & Kurallar */}
-                                <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                                  <div style={{ fontSize: '0.75rem', color: '#a371f7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    ☪️ Katılım Endeksi & İşlem Kuralları
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.84rem' }}>
-                                    {ipo.katilim_index && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ color: '#8b949e' }}>Katılım Endeksi:</span>
-                                        <span style={{
-                                          padding: '3px 10px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: 700,
-                                          background: ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)',
-                                          color: ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? '#3fb950' : '#f85149',
-                                          border: `1px solid ${ipo.katilim_index.toLowerCase().includes('uygun') && !ipo.katilim_index.toLowerCase().includes('değil') ? 'rgba(63, 185, 80, 0.3)' : 'rgba(248, 81, 73, 0.3)'}`,
-                                        }}>
-                                          {ipo.katilim_index}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {ipo.t1_t2_available && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ color: '#8b949e' }}>T1-T2 Bakiyesi:</span>
-                                        <span style={{ color: '#c9d1d9', fontWeight: 500 }}>{ipo.t1_t2_available}</span>
-                                      </div>
-                                    )}
-                                    {ipo.consortium_lead && (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px', background: 'rgba(255, 255, 255, 0.03)', padding: '6px 10px', borderRadius: '6px' }}>
-                                        <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>Konsorsiyum Lideri:</span>
-                                        <span style={{ color: '#f0f6fc', fontWeight: 600, wordBreak: 'break-word', lineHeight: '1.4' }}>{ipo.consortium_lead}</span>
-                                      </div>
-                                    )}
-                                    {!ipo.katilim_index && !ipo.t1_t2_available && !ipo.consortium_lead && (
-                                      <span style={{ color: '#8b949e', fontStyle: 'italic' }}>Bireysel eşit dağıtım kuralları geçerlidir.</span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* 6th Card: Halka Arz Sonuçları & Gerçekleşen Dağıtım (Tamamlanan Arzlar İçin) */}
-                                {(ipo.status === 'TAMAMLANDI' || ipo.status === 'SONUÇLANDI' || ipo.participant_count) && (
-                                  <div style={{ background: 'rgba(35, 134, 54, 0.08)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(63, 185, 80, 0.3)' }}>
-                                    <div style={{ fontSize: '0.75rem', color: '#3fb950', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      🎉 Resmi Halka Arz Sonuçları (Gerçekleşen Dağıtım)
-                                    </div>
-                                    {renderVisualIpoResults(ipo)}
-                                  </div>
-                                )}
                               </div>
 
                                {/* If IPO is completed, render TradingView Stock Performance Chart. If active/upcoming, render Simulator */}
