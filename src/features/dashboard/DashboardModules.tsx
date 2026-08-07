@@ -3,11 +3,12 @@ import type React from 'react';
 import { useTranslation } from '../../api/i18n';
 import { syncData, updateBistIndices, getBistIndices } from '../../api/tauriClient';
 import { useEffect } from 'react';
-import type { DashboardSnapshot, IndexConstituent } from '../../types';
+import type { DashboardSnapshot, IndexConstituent, KapAnnouncement } from '../../types';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import { isBistEquity } from '../../lib/equityGroups';
 import MarketHeatmap from './MarketHeatmap';
 import FlashValue from '../../components/FlashValue';
+import KapDocumentViewerModal from '../kap/KapDocumentViewerModal';
 
 interface ModuleProps {
   snapshot: DashboardSnapshot;
@@ -584,6 +585,7 @@ export function CustomAnalysis({ snapshot, onSelectTicker, isEditing, onClose }:
 export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onClose }: ModuleProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<'news' | 'spk'>('news');
+  const [selectedKapModal, setSelectedKapModal] = useState<KapAnnouncement | null>(null);
 
   const categoryColor = (cat: string) => {
     if (cat.includes('Finans')) return '#00ff9d';
@@ -592,175 +594,207 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
   };
 
   return (
-    <ModuleFrame
-      title={t('marketNewsSpk')}
-      subtitle={t('marketNewsSubtitle')}
-      isEditing={isEditing}
-      onClose={onClose}
-    >
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <button 
-          type="button"
-          className={tab === 'news' ? 'primary-button' : 'secondary-button'} 
-          onClick={() => setTab('news')}
-          style={{ fontSize: '0.8rem', padding: '6px 14px' }}
-        >
-          {t('financeNews')}
-        </button>
-        <button 
-          type="button"
-          className={tab === 'spk' ? 'primary-button' : 'secondary-button'} 
-          onClick={() => setTab('spk')}
-          style={{ fontSize: '0.8rem', padding: '6px 14px' }}
-        >
-          {t('spkBulletins')}
-        </button>
-      </div>
+    <>
+      <ModuleFrame
+        title={t('marketNewsSpk')}
+        subtitle={t('marketNewsSubtitle')}
+        isEditing={isEditing}
+        onClose={onClose}
+      >
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <button 
+            type="button"
+            className={tab === 'news' ? 'primary-button' : 'secondary-button'} 
+            onClick={() => setTab('news')}
+            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+          >
+            {t('financeNews')}
+          </button>
+          <button 
+            type="button"
+            className={tab === 'spk' ? 'primary-button' : 'secondary-button'} 
+            onClick={() => setTab('spk')}
+            style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+          >
+            {t('spkBulletins')}
+          </button>
+        </div>
 
-      <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-        {tab === 'news' ? (
-          snapshot.kap_announcements && snapshot.kap_announcements.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {snapshot.kap_announcements.map((item) => (
-                <div 
-                  key={item.id} 
-                  style={{ 
-                    padding: '14px 16px', 
-                    background: 'var(--bg-secondary)', 
-                    borderRadius: '8px', 
-                    border: '1px solid var(--border-color)',
-                    transition: 'border-color 0.2s ease',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      {item.ticker !== 'BIST' && (
-                        <span 
-                          style={{ 
-                            fontWeight: 'bold', 
-                            color: 'var(--accent-primary)', 
-                            cursor: 'pointer',
-                            background: 'rgba(0, 255, 157, 0.1)',
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                          }} 
-                          onClick={() => onSelectTicker(item.ticker)}
-                        >
-                          {item.ticker}
+        <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+          {tab === 'news' ? (
+            snapshot.kap_announcements && snapshot.kap_announcements.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {snapshot.kap_announcements.map((item) => (
+                  <div 
+                    key={item.id} 
+                    style={{ 
+                      padding: '14px 16px', 
+                      background: 'var(--bg-secondary)', 
+                      borderRadius: '8px', 
+                      border: '1px solid var(--border-color)',
+                      transition: 'border-color 0.2s ease',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {item.ticker !== 'BIST' && (
+                          <span 
+                            style={{ 
+                              fontWeight: 'bold', 
+                              color: 'var(--accent-primary)', 
+                              cursor: 'pointer',
+                              background: 'rgba(0, 255, 157, 0.1)',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                            }} 
+                            onClick={() => onSelectTicker(item.ticker)}
+                          >
+                            {item.ticker}
+                          </span>
+                        )}
+                        <span style={{ 
+                          fontSize: '0.7rem', 
+                          color: categoryColor(item.category),
+                          background: `${categoryColor(item.category)}15`,
+                          padding: '2px 6px',
+                          borderRadius: '3px',
+                          fontWeight: 500,
+                        }}>
+                          {item.category}
                         </span>
-                      )}
-                      <span style={{ 
-                        fontSize: '0.7rem', 
-                        color: categoryColor(item.category),
-                        background: `${categoryColor(item.category)}15`,
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        fontWeight: 500,
-                      }}>
-                        {item.category}
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {item.date}
                       </span>
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      {item.date}
-                    </span>
-                  </div>
-                  <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.9rem', lineHeight: 1.4 }}>
-                    {item.title}
-                  </div>
-                  {item.summary && (
-                    <div style={{ 
-                      fontSize: '0.82rem', 
-                      color: 'var(--text-muted)', 
-                      marginBottom: '8px',
-                      lineHeight: 1.5,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical' as const,
-                      overflow: 'hidden',
-                    }}>
-                      {item.summary}
+                    <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.9rem', lineHeight: 1.4 }}>
+                      {item.title}
                     </div>
-                  )}
-                  <a 
-                    href={item.url} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    style={{ 
-                      fontSize: '0.78rem', 
-                      color: 'var(--accent-secondary)',
-                      textDecoration: 'none',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {t('readNews')}
-                  </a>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-              {t('newsSyncPrompt')}
-            </div>
-          )
-        ) : (
-          snapshot.spk_bulletins && snapshot.spk_bulletins.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {snapshot.spk_bulletins.map((spk) => (
-                <div 
-                  key={spk.url} 
-                  style={{ 
-                    padding: '14px 16px', 
-                    background: 'var(--bg-secondary)', 
-                    borderRadius: '8px', 
-                    border: '1px solid var(--border-color)',
-                    transition: 'border-color 0.2s ease',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = '#f59e0b')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ 
-                      fontSize: '0.7rem', 
-                      color: '#f59e0b',
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      padding: '2px 8px',
-                      borderRadius: '3px',
-                      fontWeight: 600,
-                    }}>
-                      {t('spkOfficial')}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{spk.date}</span>
+                    {item.summary && (
+                      <div style={{ 
+                        fontSize: '0.82rem', 
+                        color: 'var(--text-muted)', 
+                        marginBottom: '8px',
+                        lineHeight: 1.5,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical' as const,
+                        overflow: 'hidden',
+                      }}>
+                        {item.summary}
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedKapModal(item)}
+                      style={{ 
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '5px 12px',
+                        fontSize: '0.78rem', 
+                        fontWeight: 600,
+                        background: 'rgba(0, 255, 157, 0.12)',
+                        color: '#00ff9d',
+                        border: '1px solid rgba(0, 255, 157, 0.35)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📄 Doküman / PDF Oku (İncele) ➔
+                    </button>
                   </div>
-                  <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem' }}>
-                    {spk.title}
-                  </div>
-                  <a 
-                    href={spk.url} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    style={{ 
-                      fontSize: '0.78rem', 
-                      color: '#f59e0b',
-                      textDecoration: 'none',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {t('downloadPdf')}
-                  </a>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
+                {t('newsSyncPrompt')}
+              </div>
+            )
           ) : (
-            <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
-              {t('spkSyncPrompt')}
-            </div>
-          )
-        )}
-      </div>
-    </ModuleFrame>
+            snapshot.spk_bulletins && snapshot.spk_bulletins.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {snapshot.spk_bulletins.map((spk) => (
+                  <div 
+                    key={spk.url} 
+                    style={{ 
+                      padding: '14px 16px', 
+                      background: 'var(--bg-secondary)', 
+                      borderRadius: '8px', 
+                      border: '1px solid var(--border-color)',
+                      transition: 'border-color 0.2s ease',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = '#f59e0b')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ 
+                        fontSize: '0.7rem', 
+                        color: '#f59e0b',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        padding: '2px 8px',
+                        borderRadius: '3px',
+                        fontWeight: 600,
+                      }}>
+                        {t('spkOfficial')}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{spk.date}</span>
+                    </div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem' }}>
+                      {spk.title}
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedKapModal({
+                        id: spk.url || `SPK-${Date.now()}`,
+                        ticker: 'SPK',
+                        title: spk.title,
+                        category: 'SPK Bülteni',
+                        date: spk.date,
+                        summary: spk.title,
+                        url: spk.url,
+                        attachment_count: 1,
+                        ai_importance_score: 50,
+                      })}
+                      style={{ 
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '5px 12px',
+                        fontSize: '0.78rem', 
+                        fontWeight: 600,
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📜 Bülteni / PDF İncele ➔
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state" style={{ padding: '24px 0', textAlign: 'center', opacity: 0.7 }}>
+                {t('spkSyncPrompt')}
+              </div>
+            )
+          )}
+        </div>
+      </ModuleFrame>
+
+      {/* Doküman / PDF Okuyucu Modalı */}
+      {selectedKapModal && (
+        <KapDocumentViewerModal
+          announcement={selectedKapModal}
+          onClose={() => setSelectedKapModal(null)}
+        />
+      )}
+    </>
   );
 }
 
