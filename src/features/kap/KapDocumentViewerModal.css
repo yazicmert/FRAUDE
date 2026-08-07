@@ -84,6 +84,34 @@ body.kap-docked-open .workspace {
   transition: width 0.22s ease, max-width 0.22s ease !important;
 }
 
+/* Docked modda üst bar elemanlarının çakışmasını ve karmaşasını önleme */
+body.kap-docked-open .topbar {
+  gap: 6px !important;
+  padding-inline: 6px !important;
+}
+
+body.kap-docked-open .topbar-search {
+  flex: 1 1 auto !important;
+  min-width: 110px !important;
+  gap: 4px !important;
+}
+
+body.kap-docked-open .context-chip,
+body.kap-docked-open .market-status,
+body.kap-docked-open .sync-chip,
+body.kap-docked-open .topbar-sep {
+  display: none !important;
+}
+
+body.kap-docked-open .topbar-actions {
+  flex: 0 0 auto !important;
+  gap: 3px !important;
+}
+
+body.kap-docked-open .topbar-icon-btn {
+  padding: 3px 5px !important;
+}
+
 /* Toolbar Header */
 .kap-pdf-toolbar {
   padding: 10px 16px;
