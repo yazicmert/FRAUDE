@@ -34,6 +34,12 @@ export default function KapDocumentViewerModal({
   const [pdfRenderEngine, setPdfRenderEngine] = useState<'gview' | 'native'>('gview');
   const [isDockedRight, setIsDockedRight] = useState(false);
 
+  const handleClose = () => {
+    document.body.classList.remove('kap-docked-open');
+    setIsDockedRight(false);
+    onClose();
+  };
+
   // Sağ panele sabitlendiğinde sol uygulamanın daralıp ekrana %100 fit olmasını sağla
   useEffect(() => {
     if (isDockedRight) {
@@ -45,6 +51,13 @@ export default function KapDocumentViewerModal({
       document.body.classList.remove('kap-docked-open');
     };
   }, [isDockedRight]);
+
+  // Bileşen kapandığında veya unmount olduğunda kap-docked-open sınıfını kaldır
+  useEffect(() => {
+    return () => {
+      document.body.classList.remove('kap-docked-open');
+    };
+  }, []);
 
   // KAP Bildirim ID'sinden temiz sayısal indeks çıkarımı ("KAP-1643242" → "1643242")
   const rawId = announcement ? announcement.id.replace(/[^0-9]/g, '') : '';
@@ -158,7 +171,7 @@ export default function KapDocumentViewerModal({
   const googleDocsViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentUrl)}&embedded=true`;
 
   return (
-    <div className={`kap-pdf-modal-overlay ${isDockedRight ? 'docked' : ''}`} onClick={isDockedRight ? undefined : onClose}>
+    <div className={`kap-pdf-modal-overlay ${isDockedRight ? 'docked' : ''}`} onClick={isDockedRight ? undefined : handleClose}>
       <div className={`kap-pdf-modal-window ${isDockedRight ? 'docked' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* ── Üst Araç Çubuğu ── */}
         <div className="kap-pdf-toolbar">
@@ -254,7 +267,7 @@ export default function KapDocumentViewerModal({
             </button>
 
             {/* Kapat */}
-            <button type="button" className="kap-pdf-close-btn" onClick={onClose} title="Kapat">
+            <button type="button" className="kap-pdf-close-btn" onClick={handleClose} title="Kapat">
               ✕
             </button>
           </div>
