@@ -38,6 +38,20 @@ function useTypewriterPlaceholder(context: GlobalUserContext, attachedImage: str
       ];
     }
 
+    if (payload?.type === 'KAP_BILDIRIM_VIEWER') {
+      const kapTicker = payload.ticker || 'Hisse';
+      const kapTitle = String(payload.title || 'KAP Bildirimi').slice(0, 35);
+      return isEn ? [
+        `✨ Summarize open KAP disclosure: ${kapTicker} - ${kapTitle}...`,
+        `⚡ Ask about key financial numbers & risks in this document...`,
+        `🔍 Analyze impact on ${kapTicker} profitability & stock price...`,
+      ] : [
+        `✨ Açık KAP haberini özetletin: ${kapTicker} - ${kapTitle}...`,
+        `⚡ Bu KAP belgesindeki önemli rakamları ve riskleri sorun...`,
+        `🔍 ${kapTicker} şirketine ve hisse fiyatına etkisini yorumlatın...`,
+      ];
+    }
+
     const mod = (context.activeModule || '').toLowerCase();
     const actionList = context.recentActions || [];
     const lastAction = actionList[0]?.action || '';

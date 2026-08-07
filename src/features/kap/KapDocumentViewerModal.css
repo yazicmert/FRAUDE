@@ -34,6 +34,38 @@
   overflow: hidden;
 }
 
+.kap-pdf-modal-overlay.docked {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+}
+
+.kap-pdf-modal-window.docked {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: auto !important;
+  width: 50vw !important;
+  min-width: 460px !important;
+  max-width: 900px !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+  border-left: 2px solid #00ff9d !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: none !important;
+  box-shadow: -15px 0 50px rgba(0, 0, 0, 0.88), 0 0 30px rgba(0, 255, 157, 0.25) !important;
+  pointer-events: auto !important;
+  z-index: 9995 !important;
+  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
 /* Toolbar Header */
 .kap-pdf-toolbar {
   padding: 10px 16px;

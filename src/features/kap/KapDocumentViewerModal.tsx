@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import type { KapAnnouncement, KapAttachment } from '../../types';
 import { openUrl } from '../../lib/openExternal';
 import { recordCopilotAction, setCopilotActivePayload } from '../ai/userContext';
-import { askAi, getKapDisclosureDetail } from '../../api/tauriClient';
+import { getKapDisclosureDetail } from '../../api/tauriClient';
 import type { KapDisclosureDetail } from '../../api/tauriClient';
 import './KapDocumentViewerModal.css';
 
@@ -24,16 +24,15 @@ interface KapDocumentViewerModalProps {
 export default function KapDocumentViewerModal({
   announcement,
   onClose,
-  onAskAi,
+  onAskAi: _onAskAi,
   targetFocusRow,
 }: KapDocumentViewerModalProps) {
   const [viewMode, setViewMode] = useState<'web' | 'paper'>(targetFocusRow ? 'paper' : 'web');
   const [zoom, setZoom] = useState(targetFocusRow ? 135 : 100);
-  const [aiAnalyzing, setAiAnalyzing] = useState(false);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [detail, setDetail] = useState<KapDisclosureDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [pdfRenderEngine, setPdfRenderEngine] = useState<'gview' | 'native'>('gview');
+  const [isDockedRight, setIsDockedRight] = useState(false);
 
   // KAP Bildirim ID'sinden temiz sayısal indeks çıkarımı ("KAP-1643242" → "1643242")
   const rawId = announcement ? announcement.id.replace(/[^0-9]/g, '') : '';
@@ -82,18 +81,13 @@ export default function KapDocumentViewerModal({
   const fallbackTab: KapAttachment = { name: '', url: '' };
   const [activeTab, setActiveTab] = useState<KapAttachment>(allTabs[0] || fallbackTab);
 
-  // Bildirim değiştiğinde detay sayfasını scrape et
+  // Bildirim veya sekme değiştiğinde canlı AI bağlamını ve detayları güncelle
   useEffect(() => {
     if (announcement) {
       const cleanId = announcement.id.replace(/[^0-9]/g, '');
       const mainUrl = announcement.url || (cleanId
         ? `https://www.kap.org.tr/tr/Bildirim/${cleanId}`
         : 'https://www.kap.org.tr');
-
-      setActiveTab({ name: `🌐 KAP Bildirim Sayfası (${announcement.ticker})`, url: mainUrl });
-      setViewMode('web');
-      setAiSummary(null);
-      setDetail(null);
 
       recordCopilotAction(`KAP Bildirim İncelemesi: [${announcement.ticker}] ${announcement.title}`);
       setCopilotActivePayload({
@@ -106,9 +100,12 @@ export default function KapDocumentViewerModal({
         summary: announcement.summary,
         attachmentCount: announcement.attachment_count,
         bildirimUrl: mainUrl,
+        activeTabUrl: activeTab?.url || mainUrl,
+        activeTabName: activeTab?.name || 'KAP Bildirim Sayfası',
+        detailAttachments: detail?.attachments?.map((a) => a.name).join(', ') || '',
       });
 
-      if (cleanId) {
+      if (cleanId && !detail) {
         setDetailLoading(true);
         getKapDisclosureDetail(cleanId)
           .then((d) => {
@@ -122,31 +119,9 @@ export default function KapDocumentViewerModal({
     } else {
       setCopilotActivePayload(null);
     }
-  }, [announcement]);
+  }, [announcement, activeTab, detail]);
 
   if (!announcement) return null;
-
-  const handleAiAnalyze = async () => {
-    setAiAnalyzing(true);
-    setAiSummary(null);
-    const attachNames = detail?.attachments?.map((a) => a.name).join(', ') || 'ek yok';
-    const prompt = `${announcement.ticker} şirketinin "${announcement.title}" KAP bildirimini analiz et. Bildirim ekleri: ${attachNames}. 3 maddede yatırımcı özetini çıkar: "${announcement.summary || ''}"`;
-
-    if (onAskAi) {
-      onAskAi(prompt);
-    }
-
-    try {
-      const res = await askAi(prompt);
-      if (res && res.summary) {
-        setAiSummary(res.summary);
-      }
-    } catch {
-      setAiSummary('AI analizi tamamlanamadı.');
-    } finally {
-      setAiAnalyzing(false);
-    }
-  };
 
   // Sekmenin dosya tipi tespiti
   const isPdf = (url: string, name: string) => {
@@ -171,8 +146,8 @@ export default function KapDocumentViewerModal({
   const googleDocsViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentUrl)}&embedded=true`;
 
   return (
-    <div className="kap-pdf-modal-overlay" onClick={onClose}>
-      <div className="kap-pdf-modal-window" onClick={(e) => e.stopPropagation()}>
+    <div className={`kap-pdf-modal-overlay ${isDockedRight ? 'docked' : ''}`} onClick={isDockedRight ? undefined : onClose}>
+      <div className={`kap-pdf-modal-window ${isDockedRight ? 'docked' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* ── Üst Araç Çubuğu ── */}
         <div className="kap-pdf-toolbar">
           <div className="kap-pdf-doc-info">
@@ -237,14 +212,24 @@ export default function KapDocumentViewerModal({
               <button type="button" onClick={() => setZoom((z) => Math.min(200, z + 15))}>+</button>
             </div>
 
-            {/* AI Analiz */}
+            {/* Yan Panele Sabitle / Split View Button */}
             <button
               type="button"
-              className="kap-pdf-ai-btn"
-              disabled={aiAnalyzing}
-              onClick={() => void handleAiAnalyze()}
+              className={`mode-btn ${isDockedRight ? 'active' : ''}`}
+              onClick={() => setIsDockedRight((d) => !d)}
+              title={isDockedRight ? 'Tam Ekran Moduna Dön' : 'Sağ Panele Sabitle (Sol Tarafta Grafiğe / Uygulamaya Bak)'}
+              style={{
+                background: isDockedRight ? 'rgba(0, 255, 157, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                border: isDockedRight ? '1px solid #00ff9d' : '1px solid rgba(255, 255, 255, 0.2)',
+                color: isDockedRight ? '#00ff9d' : '#e6f7ff',
+                fontWeight: 'bold',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.78rem'
+              }}
             >
-              ⚡ {aiAnalyzing ? 'Analiz…' : 'AI Analiz'}
+              {isDockedRight ? '📑 Tam Ekran' : '📌 Sağ Panele Sabitle'}
             </button>
 
             {/* Harici Tarayıcıda Aç */}
@@ -314,14 +299,6 @@ export default function KapDocumentViewerModal({
           </div>
         )}
 
-        {/* ── AI Özet Bandı ── */}
-        {aiSummary && (
-          <div className="kap-pdf-ai-summary-bar">
-            <div className="summary-title">⚡ FRAUDE AI Analiz:</div>
-            <div className="summary-body">{aiSummary}</div>
-          </div>
-        )}
-
         {/* ── Görüntüleme Alanı ── */}
         <div className="kap-pdf-viewport">
           {viewMode === 'web' ? (
@@ -364,13 +341,6 @@ export default function KapDocumentViewerModal({
                         onClick={() => void openUrl(currentUrl)}
                       >
                         {currentUrl.includes('excel') ? '📊 Excel Dosyasını İndir & Aç ↗' : '📝 Word Dosyasını İndir & Aç ↗'}
-                      </button>
-                      <button
-                        type="button"
-                        className="binary-dl-btn secondary"
-                        onClick={() => void handleAiAnalyze()}
-                      >
-                        ⚡ AI İle Dosya İçeriğini Analiz Et
                       </button>
                     </div>
                   </div>
