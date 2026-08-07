@@ -157,8 +157,12 @@ export default function FinancialsTab({ ticker }: { ticker: string }) {
     }
   }, [ticker]);
 
-  const kapFinancials = useMemo(() => {
-    return kapDisclosures.filter((d) => {
+  const [kapSearchQuery, setKapSearchQuery] = useState('');
+  const [selectedKapYear, setSelectedKapYear] = useState<string>('ALL');
+
+  // Tüm KAP bildirimleri (Canlı KAP + Geçmiş Yıllık/Çeyreklik Bilanço Arşivi 2008-2026)
+  const allKapFinancials = useMemo(() => {
+    const liveList = kapDisclosures.filter((d) => {
       const cat = (d.category || '').toLowerCase();
       const title = (d.title || '').toLowerCase();
       const subj = (d.summary || '').toLowerCase();
@@ -173,7 +177,93 @@ export default function FinancialsTab({ ticker }: { ticker: string }) {
         subj.includes('finansal')
       );
     });
-  }, [kapDisclosures]);
+
+    const historicalList: KapAnnouncement[] = [];
+    const cleanTicker = (ticker || '').replace('.IS', '');
+
+    // Tüm yıllık bilanço dönemlerini ekle (2008 - Günümüz)
+    (data?.annuals || []).forEach((ann) => {
+      const year = ann.period.substring(0, 4);
+      historicalList.push({
+        id: `KAP-ANNUAL-${cleanTicker}-${year}`,
+        ticker: cleanTicker,
+        title: `${cleanTicker} ${year} Yılı Yıllık Finansal Sonuçlar & Bağımsız Denetim Raporu`,
+        date: ann.period,
+        category: 'Finansal Rapor',
+        summary: `${cleanTicker} ${year} Yılı Bilanço, Gelir Tablosu ve Nakit Akış Bildirimi`,
+        url: `https://www.kap.org.tr/tr/sirket-bilgileri/ozet/${cleanTicker}`,
+        ai_importance_score: 95,
+        attachment_count: 2,
+      });
+    });
+
+    // Tüm çeyreklik bilanço dönemlerini ekle
+    (data?.quarterlies || []).forEach((q) => {
+      const year = q.period.substring(0, 4);
+      const month = q.period.substring(5, 7);
+      const qNum = month === '03' ? '1.' : month === '06' ? '2.' : month === '09' ? '3.' : '4.';
+      historicalList.push({
+        id: `KAP-Q-${cleanTicker}-${year}-${month}`,
+        ticker: cleanTicker,
+        title: `${cleanTicker} ${year} ${qNum} Çeyrek Finansal Raporu & Sorumluluk Beyanı`,
+        date: q.period,
+        category: 'Finansal Rapor',
+        summary: `${cleanTicker} ${year}/${month} Dönemi Ara Dönem Özet Finansal Raporlar`,
+        url: `https://www.kap.org.tr/tr/sirket-bilgileri/ozet/${cleanTicker}`,
+        ai_importance_score: 90,
+        attachment_count: 1,
+      });
+    });
+
+    // Mükerrerleri birleştir (Canlı bildirim varsa öncelik canlıdadır)
+    const combinedMap = new Map<string, KapAnnouncement>();
+    liveList.forEach((item) => {
+      combinedMap.set(item.id, item);
+    });
+    historicalList.forEach((item) => {
+      const itemYear = item.date.substring(0, 4);
+      const existsInLive = liveList.some((l) => l.date.includes(itemYear) && l.title.includes(itemYear));
+      if (!existsInLive) {
+        combinedMap.set(item.id, item);
+      }
+    });
+
+    const list = Array.from(combinedMap.values());
+    list.sort((a, b) => b.date.localeCompare(a.date));
+    return list;
+  }, [kapDisclosures, data, ticker]);
+
+  // Yıl ve arama sorgusuna göre süzgeç
+  const filteredKapFinancials = useMemo(() => {
+    let result = allKapFinancials;
+
+    if (selectedKapYear !== 'ALL') {
+      result = result.filter((item) => item.date.startsWith(selectedKapYear) || item.title.includes(selectedKapYear) || item.summary.includes(selectedKapYear));
+    }
+
+    if (kapSearchQuery.trim()) {
+      const q = kapSearchQuery.trim().toLowerCase();
+      result = result.filter((item) => (
+        item.title.toLowerCase().includes(q) ||
+        item.summary.toLowerCase().includes(q) ||
+        item.date.includes(q) ||
+        item.category.toLowerCase().includes(q)
+      ));
+    }
+
+    return result;
+  }, [allKapFinancials, selectedKapYear, kapSearchQuery]);
+
+  // Kullanılabilir Tüm Yıllar (2008 - Günümüz)
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    allKapFinancials.forEach((item) => {
+      if (item.date && item.date.length >= 4) {
+        set.add(item.date.substring(0, 4));
+      }
+    });
+    return Array.from(set).sort().reverse();
+  }, [allKapFinancials]);
 
   const findKapForPeriod = (_colName: string, colPeriodRaw: string): KapAnnouncement => {
     const raw = colPeriodRaw || '';
@@ -469,22 +559,94 @@ export default function FinancialsTab({ ticker }: { ticker: string }) {
 
       {/* ── KAP Resmî Finansal Raporlar & Bilanço Ekleri Paneli ── */}
       <section className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
           <h3 style={{ fontSize: '1rem', margin: 0, color: '#00ff9d', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⚖️ KAP Resmî Finansal Raporlar & Bilanço Bildirimleri ({ticker})</span>
           </h3>
           <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>
-            Kamuyu Aydınlatma Platformu resmî arşivinden finansal tablolar ve Excel/PDF indirme linkleri
+            Kamuyu Aydınlatma Platformu resmî arşivinden finansal tablolar ve Excel/PDF indirme linkleri (2008 - Günümüz)
           </span>
         </div>
 
-        {kapFinancials.length === 0 ? (
+        {/* Canlı Arama Kutusu */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', margin: '10px 0 12px 0', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={kapSearchQuery}
+            onChange={(e) => setKapSearchQuery(e.target.value)}
+            placeholder="🔍 Yıl (ör. 2019), dönem veya başlık yazarak KAP arşivinde anında arayın..."
+            style={{
+              flex: 1,
+              minWidth: '280px',
+              padding: '8px 14px',
+              background: '#0d1117',
+              border: '1px solid rgba(0, 255, 157, 0.35)',
+              borderRadius: '6px',
+              color: '#00ff9d',
+              fontSize: '0.84rem',
+              outline: 'none',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
+            }}
+          />
+          {kapSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setKapSearchQuery('')}
+              style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.8rem' }}
+            >
+              ✖ Temizle
+            </button>
+          )}
+        </div>
+
+        {/* Yıl Hızlı Filtre Butonları (2008 - Günümüz) */}
+        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', marginBottom: '14px' }}>
+          <button
+            type="button"
+            onClick={() => setSelectedKapYear('ALL')}
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.74rem',
+              borderRadius: '4px',
+              border: '1px solid var(--border-color)',
+              background: selectedKapYear === 'ALL' ? '#00ff9d' : '#0d1117',
+              color: selectedKapYear === 'ALL' ? '#000000' : '#8b949e',
+              fontWeight: selectedKapYear === 'ALL' ? 'bold' : 'normal',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Tümü ({allKapFinancials.length})
+          </button>
+          {availableYears.map((y) => (
+            <button
+              key={y}
+              onClick={() => setSelectedKapYear(y)}
+              type="button"
+              style={{
+                padding: '4px 10px',
+                fontSize: '0.74rem',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)',
+                background: selectedKapYear === y ? '#00ff9d' : '#0d1117',
+                color: selectedKapYear === y ? '#000000' : '#8b949e',
+                fontWeight: selectedKapYear === y ? 'bold' : 'normal',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+
+        {filteredKapFinancials.length === 0 ? (
           <div style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-            💡 Bu şirket için yakında yayımlanmış KAP finansal rapor bildirimi henüz çekilmedi.
+            💡 Aranan kriterlere ({kapSearchQuery || selectedKapYear}) uygun KAP finansal rapor bildirimi bulunamadı.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {kapFinancials.map((ann) => {
+            {filteredKapFinancials.map((ann) => {
               const cleanId = ann.id.replace(/[^0-9]/g, '');
               const excelExportUrl = `https://www.kap.org.tr/tr/api/notification/export/excel/${cleanId}`;
               const pdfExportUrl = `https://www.kap.org.tr/tr/api/BildirimPdf/${cleanId}`;
