@@ -34,6 +34,18 @@ export default function KapDocumentViewerModal({
   const [pdfRenderEngine, setPdfRenderEngine] = useState<'gview' | 'native'>('gview');
   const [isDockedRight, setIsDockedRight] = useState(false);
 
+  // Sağ panele sabitlendiğinde sol uygulamanın daralıp ekrana %100 fit olmasını sağla
+  useEffect(() => {
+    if (isDockedRight) {
+      document.body.classList.add('kap-docked-open');
+    } else {
+      document.body.classList.remove('kap-docked-open');
+    }
+    return () => {
+      document.body.classList.remove('kap-docked-open');
+    };
+  }, [isDockedRight]);
+
   // KAP Bildirim ID'sinden temiz sayısal indeks çıkarımı ("KAP-1643242" → "1643242")
   const rawId = announcement ? announcement.id.replace(/[^0-9]/g, '') : '';
 

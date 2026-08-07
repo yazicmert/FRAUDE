@@ -66,6 +66,24 @@
   to { transform: translateX(0); }
 }
 
+/* Sol taraf uygulamasını sağ panele gömüldüğünde 50vw'ye tam fit etme kuralı */
+body.kap-docked-open {
+  width: 50vw !important;
+  max-width: 50vw !important;
+  overflow-x: hidden !important;
+  transition: width 0.22s ease, max-width 0.22s ease !important;
+}
+
+body.kap-docked-open #root,
+body.kap-docked-open .topbar,
+body.kap-docked-open .market-marquee,
+body.kap-docked-open .workspace {
+  width: 50vw !important;
+  max-width: 50vw !important;
+  box-sizing: border-box !important;
+  transition: width 0.22s ease, max-width 0.22s ease !important;
+}
+
 /* Toolbar Header */
 .kap-pdf-toolbar {
   padding: 10px 16px;
