@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { askAi, listAiKeys } from '../../api/tauriClient';
+import { useTranslation } from '../../api/i18n';
 import { getCopilotContext, setCopilotActivePayload, subscribeCopilot, type GlobalUserContext } from './userContext';
 import './GlobalAiCopilot.css';
 
@@ -12,38 +13,28 @@ interface ChatMsg {
 
 // Canlı Daktilo (Typewriter) İpucu Engine
 function useTypewriterPlaceholder(context: GlobalUserContext, attachedImage: string | null) {
+  const { lang } = useTranslation();
+  const isEn = lang === 'en';
   const [displayText, setDisplayText] = useState('');
-  const [hasAiKey, setHasAiKey] = useState(false);
-
-  useEffect(() => {
-    listAiKeys()
-      .then((keys) => {
-        if (Array.isArray(keys) && keys.length > 0) {
-          setHasAiKey(true);
-        }
-      })
-      .catch(() => setHasAiKey(false));
-  }, []);
 
   const prompts = useMemo(() => {
     if (attachedImage) {
-      return ['🖼️ Görsel eklendi. Sorunuzu yazıp Enter\'a basın...'];
+      return isEn
+        ? ['🖼️ Image attached. Type your question and press Enter...']
+        : ['🖼️ Görsel eklendi. Sorunuzu yazıp Enter\'a basın...'];
     }
 
     const payload = context.activePayload;
     if (payload?.type === 'AI_VARIABLE_COMPARISON') {
-      const summary = payload.comparisonSummary || 'Seçili 2 mali kalem';
-      if (hasAiKey) {
-        return [
-          `✨ [AI BAĞLI] ${summary} değişiminin nedenini sorun...`,
-          `⚡ KAP haberlerini ve SPK duyurularını bu 2 dönem için araştırtın...`,
-          `🔍 Net Kâr ve Hasılat farkını FRAUDE AI ile yorumlatın...`,
-        ];
-      }
-      return [
-        `🤖 ${summary}. Değişimin nedenlerini sorun...`,
+      const summary = payload.comparisonSummary || (isEn ? 'Selected 2 financial items' : 'Seçili 2 mali kalem');
+      return isEn ? [
+        `✨ Ask why ${summary} changed...`,
+        `⚡ Research disclosures for these 2 periods...`,
+        `🔍 Analyze Net Income and Sales gap with AI...`,
+      ] : [
+        `✨ ${summary} değişiminin nedenini sorun...`,
         `⚡ KAP haberlerini ve SPK duyurularını bu 2 dönem için araştırtın...`,
-        `🔍 Kâr marjları ve Hasılat farkını yorumlatın...`,
+        `🔍 Net Kâr ve Hasılat farkını FRAUDE AI ile yorumlatın...`,
       ];
     }
 
@@ -51,57 +42,47 @@ function useTypewriterPlaceholder(context: GlobalUserContext, attachedImage: str
     const actionList = context.recentActions || [];
     const lastAction = actionList[0]?.action || '';
 
-    if (mod.includes('bilanço') || mod.includes('finansal') || mod.includes('ticker')) {
+    if (mod.includes('bilanço') || mod.includes('finansal') || mod.includes('ticker') || mod.includes('financial')) {
       const tickerMatch = lastAction.match(/\b([A-Z]{4,5})\b/) || lastAction.match(/\b([A-Z]{3,5}\.IS)\b/);
-      const activeTicker = tickerMatch ? tickerMatch[0].replace('.IS', '') : 'Hisse';
+      const activeTicker = tickerMatch ? tickerMatch[0].replace('.IS', '') : (isEn ? 'Stock' : 'Hisse');
 
-      if (hasAiKey) {
-        return [
-          `✨ [AI BAĞLI] ${activeTicker} net kâr artış nedenini sorun...`,
-          `⚡ Cmd+F+Tık ile 2 dönemi KAP analiz ettirin...`,
-          `📊 ${activeTicker} brüt kâr marjı sapmasını sorun...`,
-          `💡 Serbest nakit akışını AI ile analiz ettirin...`,
-        ];
-      }
-      return [
-        `Cmd+F+Tık ile 2 dönemi seçip KAP inceletin...`,
-        `Net Kâr ve Hasılat büyüme nedenini sorun...`,
-        `Brüt Kâr Marjı ile Faaliyet sapmasını sorun...`,
-        `Serbest Nakit Akışını AI ile analiz ettirin...`,
+      return isEn ? [
+        `✨ Ask why ${activeTicker} net profit changed...`,
+        `⚡ Cmd+Click 2 periods to analyze disclosures...`,
+        `📊 Ask about ${activeTicker} gross margin variance...`,
+        `💡 Analyze Free Cash Flow with FRAUDE AI...`,
+      ] : [
+        `✨ ${activeTicker} net kâr artış nedenini sorun...`,
+        `⚡ Cmd+F+Tık ile 2 dönemi KAP analiz ettirin...`,
+        `📊 ${activeTicker} brüt kâr marjı sapmasını sorun...`,
+        `💡 Serbest nakit akışını AI ile analiz ettirin...`,
       ];
     }
 
     if (mod.includes('tarama') || mod.includes('screener')) {
-      if (hasAiKey) {
-        return [
-          `✨ [AI BAĞLI] Düşük F/K ve yüksek ROE hisseleri sorun...`,
-          `⚡ Nakit zengini ve borçsuz şirketleri bulun...`,
-          `📊 Sektörünün üstünde büyüyen hisseleri sorun...`,
-        ];
-      }
-      return [
-        `Düşük F/K ve yüksek ROE hisseleri bulun...`,
-        `Nakit zengini ve borçsuz şirketleri bulun...`,
-        `Sektörünün üstünde büyüyen hisseleri sorun...`,
+      return isEn ? [
+        `✨ Ask for low P/E and high ROE stocks...`,
+        `⚡ Find cash-rich companies with low debt...`,
+        `📊 Ask for stocks outperforming their sector...`,
+      ] : [
+        `✨ Düşük F/K ve yüksek ROE hisseleri sorun...`,
+        `⚡ Nakit zengini ve borçsuz şirketleri bulun...`,
+        `📊 Sektörünün üstünde büyüyen hisseleri sorun...`,
       ];
     }
 
-    if (hasAiKey) {
-      return [
-        `✨ [AI BAĞLI] BIST100 ve öne çıkan sektörleri sorun...`,
-        `⚡ USD/TRY, Altın ve Borsa korelasyonunu sorun...`,
-        `🖼️ Ekran görüntüsü yapıştırın (Cmd+V)...`,
-        `💡 İstenen hissenin bilançosunu analiz ettirin...`,
-      ];
-    }
-
-    return [
-      `BIST100 ve öne çıkan sektörleri sorun...`,
-      `USD/TRY, Altın ve Borsa korelasyonunu sorun...`,
-      `Ekran görüntüsü yapıştırın (Cmd+V)...`,
-      `İstenen hissenin bilançosunu analiz ettirin...`,
+    return isEn ? [
+      `✨ Ask about market trends and top sectors...`,
+      `⚡ Ask about USD/TRY, Gold, and Market correlation...`,
+      `🖼️ Paste a screenshot (Cmd+V)...`,
+      `💡 Ask AI to analyze any stock's balance sheet...`,
+    ] : [
+      `✨ BIST100 ve öne çıkan sektörleri sorun...`,
+      `⚡ USD/TRY, Altın ve Borsa korelasyonunu sorun...`,
+      `🖼️ Ekran görüntüsü yapıştırın (Cmd+V)...`,
+      `💡 İstenen hissenin bilançosunu analiz ettirin...`,
     ];
-  }, [context.activeModule, context.activePayload, context.recentActions, attachedImage, hasAiKey]);
+  }, [context.activeModule, context.activePayload, context.recentActions, attachedImage, isEn]);
 
   useEffect(() => {
     let isMounted = true;
@@ -145,10 +126,12 @@ function useTypewriterPlaceholder(context: GlobalUserContext, attachedImage: str
     };
   }, [prompts]);
 
-  return { displayText, allPrompts: prompts, hasAiKey };
+  return { displayText, allPrompts: prompts };
 }
 
 export default function GlobalAiCopilot() {
+  const { lang } = useTranslation();
+  const isEn = lang === 'en';
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [context, setContext] = useState<GlobalUserContext>(() => getCopilotContext());
@@ -165,7 +148,7 @@ export default function GlobalAiCopilot() {
   const [selectedAgent, setSelectedAgent] = useState<string>('kap_inspector');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const { displayText: typewriterText, allPrompts, hasAiKey } = useTypewriterPlaceholder(context, attachedImage);
+  const { displayText: typewriterText, allPrompts } = useTypewriterPlaceholder(context, attachedImage);
 
   // Backend'den Gerçek Bağlı AI Anahtarlarını Yükle
   useEffect(() => {
@@ -447,16 +430,16 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
       {isExpanded && (
         <div className="copilot-terminal-body">
           <div className="copilot-terminal-header">
-            <span className="copilot-brand">⚡ FRAUDE TERMINAL AI {hasAiKey ? '• [CANLI AI BAĞLI]' : ''}</span>
+            <span className="copilot-brand">⚡ FRAUDE TERMINAL AI</span>
             <button
               type="button"
               className="copilot-minimize-btn"
               onClick={() => {
                 setIsExpanded(false);
               }}
-              title="Küçült"
+              title={isEn ? 'Minimize' : 'Küçült'}
             >
-              ▾ Küçült
+              {isEn ? '▾ Minimize' : '▾ Küçült'}
             </button>
           </div>
 
@@ -465,36 +448,36 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
             <div className="config-group">
               <span className="config-label">🤖 Agent:</span>
               <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-                <option value="kap_inspector">⚖️ Bilanço & KAP Dedektifi</option>
-                <option value="sector_analyst">📊 Borsa & Sektör Analisti</option>
-                <option value="macro_analyst">🌍 Makroekonomi Araştırmacısı</option>
+                <option value="kap_inspector">{isEn ? '⚖️ Financial & Disclosure Auditor' : '⚖️ Bilanço & KAP Dedektifi'}</option>
+                <option value="sector_analyst">{isEn ? '📊 Equity & Sector Analyst' : '📊 Borsa & Sektör Analisti'}</option>
+                <option value="macro_analyst">{isEn ? '🌍 Macroeconomy Researcher' : '🌍 Makroekonomi Araştırmacısı'}</option>
               </select>
             </div>
 
             <div className="config-group">
               <span className="config-label">🧠 Model:</span>
               <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Hızlı)</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Derin)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash ({isEn ? 'Fast' : 'Hızlı'})</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro ({isEn ? 'Deep' : 'Derin'})</option>
                 <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
                 <option value="gpt-4o">GPT-4o (Omni)</option>
-                <option value="deepseek-r1">DeepSeek R1 (Mantık)</option>
+                <option value="deepseek-r1">DeepSeek R1 ({isEn ? 'Reasoning' : 'Mantık'})</option>
               </select>
             </div>
 
             <div className="config-group">
-              <span className="config-label">🔥 Efor:</span>
+              <span className="config-label">🔥 {isEn ? 'Effort:' : 'Efor:'}</span>
               <select value={effortLevel} onChange={(e) => setEffortLevel(e.target.value as any)}>
-                <option value="low">⚡ Düşük</option>
-                <option value="medium">⚖️ Orta</option>
-                <option value="high">🧠 Yüksek (Derin)</option>
+                <option value="low">⚡ {isEn ? 'Low' : 'Düşük'}</option>
+                <option value="medium">⚖️ {isEn ? 'Medium' : 'Orta'}</option>
+                <option value="high">🧠 {isEn ? 'High (Reasoning)' : 'Yüksek (Derin)'}</option>
               </select>
             </div>
           </div>
 
           {/* 💡 CANLI DAKTİLO İPUÇLARI ÇİP LİSTESİ */}
           <div className="typewriter-prompts-bar">
-            <span className="prompts-title">💡 Canlı İpucu Önerileri (Tıkla ve Sor):</span>
+            <span className="prompts-title">{isEn ? '💡 Live Prompt Suggestions (Click to Ask):' : '💡 Canlı İpucu Önerileri (Tıkla ve Sor):'}</span>
             <div className="prompts-chips-wrapper">
               {allPrompts.map((pText, pIdx) => (
                 <button
@@ -505,7 +488,7 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
                     const cleanText = pText.replace(/^[\s\S]*?\]\s*/, '').replace(/\.+$|\:+$/, '');
                     setInput(cleanText);
                   }}
-                  title="Bu ipucunu soru kutusuna ekle"
+                  title={isEn ? 'Add prompt to input box' : 'Bu ipucunu soru kutusuna ekle'}
                 >
                   {pText}
                 </button>
@@ -516,12 +499,15 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
           <div className="copilot-messages">
             {messages.length === 0 ? (
               <div className="copilot-empty-hint">
-                ⚡ FRAUDE AI Terminali hazır. Yukarıdaki canlı ipuçlarına tıklayın, yazıp <b>Enter</b>'a basın veya görsel yapıştırın (Cmd+V).
+                {isEn
+                  ? '⚡ FRAUDE AI Terminal ready. Click live prompts above, type & press Enter, or paste an image (Cmd+V).'
+                  : '⚡ FRAUDE AI Terminali hazır. Yukarıdaki canlı ipuçlarına tıklayın, yazıp Enter\'a basın veya görsel yapıştırın (Cmd+V).'
+                }
               </div>
             ) : (
               messages.map((m) => (
                 <div key={m.id} className={`copilot-msg-bubble ${m.sender}`}>
-                  <span className="msg-prefix">{m.sender === 'user' ? '► SİZ:' : '⚡ FRAUDE:'}</span>
+                  <span className="msg-prefix">{m.sender === 'user' ? (isEn ? '► YOU:' : '► SİZ:') : '⚡ FRAUDE:'}</span>
                   <span className="msg-content">{m.text}</span>
                   <span className="msg-time">{m.timestamp}</span>
                 </div>
@@ -529,7 +515,7 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
             )}
             {loading && (
               <div className="copilot-msg-bubble assistant loading">
-                <span>⚡ FRAUDE işliyor ({selectedModel} - {effortLevel.toUpperCase()})...</span>
+                <span>⚡ FRAUDE {isEn ? 'processing' : 'işliyor'} ({selectedModel} - {effortLevel.toUpperCase()})...</span>
               </div>
             )}
             <div ref={chatEndRef} />
@@ -540,23 +526,23 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
             <button
               type="button"
               className="chip"
-              onClick={() => void handleSend('Şu anki ekran için uygun bir AI agent promptu üret.')}
+              onClick={() => void handleSend(isEn ? 'Generate an AI prompt for the current screen.' : 'Şu anki ekran için uygun bir AI agent promptu üret.')}
             >
-              ✨ Prompt Üret
+              ✨ {isEn ? 'Generate Prompt' : 'Prompt Üret'}
             </button>
             <button
               type="button"
               className="chip"
-              onClick={() => void handleSend('Ekranda açık olan veriyi ve bilgileri özetle.')}
+              onClick={() => void handleSend(isEn ? 'Summarize the data and information on screen.' : 'Ekranda açık olan veriyi ve bilgileri özetle.')}
             >
-              📊 Özetle
+              📊 {isEn ? 'Summarize' : 'Özetle'}
             </button>
             <button
               type="button"
               className="chip"
-              onClick={() => void handleSend('Son işlemimi ve mevcut görünümü finansal olarak analiz et.')}
+              onClick={() => void handleSend(isEn ? 'Analyze my current view and recent actions.' : 'Son işlemimi ve mevcut görünümü finansal olarak analiz et.')}
             >
-              ⚡ Analiz Et
+              ⚡ {isEn ? 'Analyze' : 'Analiz Et'}
             </button>
           </div>
         </div>
@@ -567,8 +553,8 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
         <span className="copilot-bar-brand">⚡ FRAUDE &gt;</span>
 
         {attachedImage && (
-          <span className="copilot-img-tag" onClick={() => setAttachedImage(null)} title="Görseli Kaldır">
-            🖼️ Görsel ✕
+          <span className="copilot-img-tag" onClick={() => setAttachedImage(null)} title={isEn ? 'Remove Image' : 'Görseli Kaldır'}>
+            🖼️ {isEn ? 'Image' : 'Görsel'} ✕
           </span>
         )}
 
@@ -585,7 +571,7 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
           onFocus={() => {
             if (messages.length > 0) setIsExpanded(true);
           }}
-          placeholder={attachedImage ? 'Görsel eklendi! Sorunuzu yazıp Enter\'a basın...' : typewriterText}
+          placeholder={attachedImage ? (isEn ? 'Image attached! Type your question & press Enter...' : 'Görsel eklendi! Sorunuzu yazıp Enter\'a basın...') : typewriterText}
           disabled={loading}
         />
 
