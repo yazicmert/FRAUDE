@@ -1,0 +1,510 @@
+/* Single-Line Floating Terminal Bar with Image Paste Support & No Send Button */
+
+.copilot-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  width: 440px;
+  max-width: calc(100vw - 40px);
+  font-family: var(--font-mono, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s ease;
+  transform-origin: bottom right;
+}
+
+.copilot-container.hover-wide,
+.copilot-container:hover {
+  width: clamp(650px, 85vw, 1080px);
+  max-width: calc(100vw - 32px);
+}
+
+.copilot-container.expanded {
+  width: 780px;
+  max-width: calc(100vw - 60px);
+}
+
+/* Single Line Capsule Bar (Hem En Hem Boy Büyümesi) */
+.copilot-single-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  min-height: 42px;
+  background: #06090e;
+  border: 1px solid rgba(0, 255, 157, 0.4);
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75), 0 0 14px rgba(0, 255, 157, 0.2);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Fare Gelince Hem EN Hem BOY Büyümesi */
+.copilot-container:hover .copilot-single-bar,
+.copilot-container.hover-wide .copilot-single-bar,
+.copilot-single-bar:focus-within {
+  padding: 14px 22px;
+  min-height: 60px;
+  border-radius: 32px;
+  border-color: #00ff9d;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.9), 0 0 28px rgba(0, 255, 157, 0.4);
+  background: #090e18;
+}
+
+.copilot-container:hover .copilot-bar-brand,
+.copilot-container.hover-wide .copilot-bar-brand {
+  font-size: 0.92rem;
+}
+
+.copilot-container:hover .copilot-single-bar input,
+.copilot-container.hover-wide .copilot-single-bar input {
+  font-size: 0.92rem;
+}
+
+.copilot-bar-brand {
+  color: #00ff9d;
+  font-weight: 700;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+  transition: font-size 0.3s ease;
+}
+
+/* Pano Yapıştırması İle Eklenecek Görsel Rozeti */
+.copilot-img-tag {
+  background: rgba(0, 255, 157, 0.15);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.copilot-img-tag:hover {
+  background: rgba(255, 77, 77, 0.2);
+  border-color: #ff4d4d;
+  color: #ff4d4d;
+}
+
+.copilot-single-bar input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-family: var(--font-mono, monospace);
+  transition: font-size 0.3s ease;
+  padding-right: 12px;
+  text-overflow: ellipsis;
+}
+
+.copilot-single-bar input::placeholder {
+  color: #7ee787;
+  opacity: 0.85;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.2px;
+}
+
+.copilot-single-bar input:focus {
+  outline: none;
+}
+
+/* Genişletilmiş Terminal Gövdesi (Yukarı Uzar) */
+.copilot-terminal-body {
+  background: #06090e;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
+  animation: copilotExpandUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes copilotExpandUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.copilot-terminal-header {
+  padding: 8px 12px;
+  background: #0d131a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.copilot-brand {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #00ff9d;
+  letter-spacing: 0.6px;
+}
+
+.copilot-minimize-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #8b949e;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.copilot-minimize-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* Chat Messages */
+.copilot-messages {
+  flex: 1;
+  padding: 10px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #030508;
+}
+
+.copilot-empty-hint {
+  font-size: 0.76rem;
+  color: #484f58;
+  font-style: italic;
+  padding: 12px 0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.copilot-msg-bubble {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.copilot-msg-bubble.user {
+  color: #79c0ff;
+}
+
+.copilot-msg-bubble.assistant {
+  color: #d0d7de;
+}
+
+.copilot-msg-bubble.loading {
+  color: #00ff9d;
+  font-style: italic;
+}
+
+.msg-prefix {
+  font-weight: 700;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.copilot-msg-bubble.user .msg-prefix {
+  color: #388bfd;
+}
+
+.copilot-msg-bubble.assistant .msg-prefix {
+  color: #00ff9d;
+}
+
+.msg-content {
+  color: inherit;
+}
+
+.msg-time {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.3);
+  align-self: flex-end;
+}
+
+/* Quick Action Chips */
+.copilot-chips {
+  padding: 6px 10px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  background: #0d131a;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.copilot-chips::-webkit-scrollbar {
+  height: 2px;
+}
+
+.copilot-chips::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 157, 0.3);
+}
+
+.chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #8b949e;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.chip:hover {
+  background: rgba(0, 255, 157, 0.12);
+  border-color: #00ff9d;
+  color: #00ff9d;
+}
+
+.copilot-payload-tag {
+  background: rgba(0, 255, 157, 0.18);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* AI Agent, Model & Effort Config Bar */
+.copilot-config-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #090e15;
+  border-bottom: 1px solid rgba(0, 255, 157, 0.15);
+  overflow-x: auto;
+}
+
+.copilot-config-bar::-webkit-scrollbar {
+  height: 2px;
+}
+
+.config-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+.config-group select {
+  background: #111822;
+  color: #00ff9d;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  outline: none;
+  cursor: pointer;
+}
+
+.config-group select:focus {
+  border-color: #00ff9d;
+  box-shadow: 0 0 6px rgba(0, 255, 157, 0.3);
+}
+
+/* Canlı Daktilo İpuçları Çip Listesi */
+.typewriter-prompts-bar {
+  padding: 6px 12px;
+  background: rgba(0, 255, 157, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prompts-title {
+  font-size: 0.68rem;
+  color: #7ee787;
+  font-weight: 600;
+}
+
+.prompts-chips-wrapper {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.prompts-chips-wrapper::-webkit-scrollbar {
+  height: 2px;
+}
+
+.typewriter-chip {
+  background: rgba(0, 255, 157, 0.08);
+  border: 1px solid rgba(0, 255, 157, 0.25);
+  color: #c9d1d9;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.inline-capsule-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  animation: fadeIn 0.2s ease-in;
+}
+
+.capsule-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: #0f1722 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%2300ff9d' d='M0 0l5 6 5-6z'/></svg>") no-repeat right 10px center;
+  border: 1px solid rgba(0, 255, 157, 0.4);
+  color: #00ff9d;
+  font-size: 0.74rem;
+  font-family: var(--font-mono, monospace);
+  padding: 5px 26px 5px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  outline: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.capsule-select:hover {
+  background-color: #142030;
+  border-color: #00ff9d;
+  box-shadow: 0 0 14px rgba(0, 255, 157, 0.35);
+  transform: translateY(-1px);
+}
+
+.capsule-select option {
+  background: #090e18;
+  color: #00ff9d;
+  padding: 8px;
+}
+
+/* Body Blur when Chatbot is Expanded & Cmd+F is NOT pressed */
+body.copilot-blurred-body #root > div:not(.copilot-container):not(.copilot-backdrop) {
+  filter: blur(8px) brightness(0.75) contrast(105%);
+  transition: filter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+/* Glassmorphic Cyber Matrix Backdrop Overlay - Şeffaf, Kod Akışlı & Premium */
+.copilot-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at 80% 90%, rgba(0, 255, 157, 0.08) 0%, rgba(3, 7, 14, 0.62) 75%);
+  backdrop-filter: blur(12px) saturate(180%) contrast(105%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%) contrast(105%);
+  z-index: 9990;
+  pointer-events: auto;
+  animation: backdropFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+/* Cyber Matrix Scanline & Code Flow Texture Overlay */
+.copilot-backdrop::before {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0;
+  width: 100%;
+  height: 200%;
+  background: 
+    linear-gradient(rgba(0, 255, 157, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 157, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  animation: cyberCodeFlow 25s linear infinite;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+/* Subtle Animated Cyber Glow Beam */
+.copilot-backdrop::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, #00ff9d 50%, transparent 100%);
+  box-shadow: 0 0 15px #00ff9d;
+  animation: scanlineMove 4s ease-in-out infinite alternate;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+@keyframes cyberCodeFlow {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(50%);
+  }
+}
+
+@keyframes scanlineMove {
+  0% {
+    top: 0%;
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    top: 100%;
+    opacity: 0.15;
+  }
+}
+
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px) saturate(100%);
+    -webkit-backdrop-filter: blur(0px) saturate(100%);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+  }
+}
+
+/* Evrensel Cmd + F Seçili Öge Glow Efekti */
+.fraude-cmd-f-selected {
+  outline: 2px solid #00ff9d !important;
+  outline-offset: -2px !important;
+  box-shadow: 0 0 18px rgba(0, 255, 157, 0.5) !important;
+  border-color: #00ff9d !important;
+  transition: all 0.2s ease !important;
+}

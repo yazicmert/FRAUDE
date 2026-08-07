@@ -4,6 +4,7 @@ import { listKapAnnouncements } from '../../api/tauriClient';
 import type { KapAnnouncement } from '../../types';
 import { useTranslation } from '../../api/i18n';
 import { dispatchAiAsk } from '../../lib/actions';
+import KapDocumentViewerModal from './KapDocumentViewerModal';
 
 function scoreClass(score: number): string {
   if (score >= 70) return 'high';
@@ -17,6 +18,7 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
   const [loading, setLoading] = useState(!initialRows);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterTicker, setFilterTicker] = useState('');
+  const [selectedDoc, setSelectedDoc] = useState<KapAnnouncement | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -154,10 +156,19 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
                   <button
                     type="button"
                     className="primary-button"
+                    style={{ fontSize: '0.72rem', padding: '5px 12px', background: '#00ff9d', color: '#04140d', fontWeight: 600 }}
+                    onClick={() => setSelectedDoc(item)}
+                  >
+                    📄 Doküman / PDF Oku (FRAUDE Reader)
+                  </button>
+                  <button
+                    type="button"
+                    className="small-button"
                     style={{ fontSize: '0.72rem', padding: '5px 10px' }}
                     onClick={() => void openUrl(item.url)}
+                    title="Resmî KAP web sayfasında aç"
                   >
-                    {t('kapReadMore')}
+                    🌐 Bağlantı ↗
                   </button>
                 </div>
               )}
@@ -165,6 +176,12 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
           );
         })}
       </div>
+
+      <KapDocumentViewerModal
+        announcement={selectedDoc}
+        onClose={() => setSelectedDoc(null)}
+        onAskAi={(prompt) => dispatchAiAsk(prompt)}
+      />
     </div>
   );
 }

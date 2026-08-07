@@ -39,6 +39,8 @@ import { useMorningBrief } from './hooks/useMorningBrief';
 import type { FqlResponse } from './types';
 import type { InstalledModule, ModuleManifest } from './modules/types';
 import './App.css';
+import GlobalAiCopilot from './features/ai/GlobalAiCopilot';
+import { setCopilotModule } from './features/ai/userContext';
 
 // The right-hand AI panel is always available regardless of the AI Research
 // workspace module, so it is imported directly rather than through the registry.
@@ -104,6 +106,10 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState('dashboard');
   const [visitedTabIds, setVisitedTabIds] = useState<Set<string>>(() => new Set(['dashboard']));
   const [terminalHistory, setTerminalHistory] = useState<TerminalEntry[]>([]);
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    const saved = localStorage.getItem('fraude-terminal-height');
+    return saved ? Math.max(80, Math.min(600, parseInt(saved, 10))) : 176;
+  });
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -230,6 +236,12 @@ export default function App() {
     ? (activeTab.kind === 'ticker' ? String(activeTab.data?.ticker ?? activeTab.title ?? '') : staticTitle(activeTab, t))
     : '';
 
+  useEffect(() => {
+    if (activeContext) {
+      setCopilotModule(activeContext);
+    }
+  }, [activeContext]);
+
   // Şerit panoda endeksleri, diğer sayfalarda BIST gün içi hareketlerini akıtır.
   const marqueeMode: MarqueeMode = activeTab?.kind === 'dashboard' ? 'indices' : 'movers';
 
@@ -300,6 +312,7 @@ export default function App() {
     activeContext,
     openTicker: upsertTickerTab,
     openIndex: upsertIndexTab,
+    openModule: openModuleTab,
     monitor: { state: monitorState, setState: setMonitorState },
     research: { jobs: research.jobs, unread: research.unread, refresh: research.refresh, markSeen: research.markSeen },
     moduleCenter: {
@@ -307,7 +320,7 @@ export default function App() {
       onToggle: handleModuleToggle,
       onInstalledModulesChange: replaceInstalledModules,
     },
-  }), [t, lang, activeContext, upsertTickerTab, upsertIndexTab, monitorState, setMonitorState, research.jobs, research.unread, research.refresh, research.markSeen, modules, handleModuleToggle, replaceInstalledModules]);
+  }), [t, lang, activeContext, upsertTickerTab, upsertIndexTab, openModuleTab, monitorState, setMonitorState, research.jobs, research.unread, research.refresh, research.markSeen, modules, handleModuleToggle, replaceInstalledModules]);
 
   const getTabTitle = useCallback((tab: WorkspaceTab): string => {
     const module = getWorkspaceModule(tab.kind);
@@ -589,7 +602,7 @@ export default function App() {
   const shellStyle = {
     '--sidebar-width': sidebarVisible ? '208px' : '0px',
     '--ai-width': rightPanelVisible ? '300px' : '0px',
-    '--terminal-height': terminalVisible ? (isCompactLayout ? 'minmax(140px, 28vh)' : 'auto') : '0px',
+    '--terminal-height': terminalVisible ? (isCompactLayout ? 'minmax(140px, 28vh)' : `${terminalHeight}px`) : '0px',
   } as CSSProperties;
 
   return (
@@ -805,12 +818,14 @@ export default function App() {
           onOpen={openModuleTab}
           t={t}
         />
-        <TabBar
-          tabs={openTabs.map((tab) => ({ ...tab, title: getTabTitle(tab) }))}
-          activeTabId={activeTabId}
-          onSelect={setActiveTabId}
-          onClose={closeTab}
-        />
+        {openTabs.filter((t) => t.kind === 'ticker' || t.kind === 'index').length > 0 && (
+          <TabBar
+            tabs={openTabs.map((tab) => ({ ...tab, title: getTabTitle(tab) }))}
+            activeTabId={activeTabId}
+            onSelect={setActiveTabId}
+            onClose={closeTab}
+          />
+        )}
         {morningBrief && (
           <div className="morning-brief-banner" style={{
             display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 12px 0',
@@ -875,7 +890,13 @@ export default function App() {
         </aside>
       )}
       {terminalVisible && (
-        <TerminalPanel history={terminalHistory} onCommand={handleCommand} />
+        <TerminalPanel
+          history={terminalHistory}
+          onCommand={handleCommand}
+          onClearHistory={() => setTerminalHistory([])}
+          terminalHeight={terminalHeight}
+          onHeightChange={setTerminalHeight}
+        />
       )}
       {isCompactLayout && (sidebarVisible || rightPanelVisible) && (
         <button
@@ -905,6 +926,7 @@ export default function App() {
         recentTickers={recentTickers}
       />
       <ToastHost />
+      <GlobalAiCopilot />
     </div>
   );
 }

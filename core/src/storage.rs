@@ -41,6 +41,7 @@ impl AppStore {
                     summary: "Aselsan ile Savunma Sanayii Başkanlığı arasında 125.4 Milyon USD tutarında elektronik harp sistemleri tedarik sözleşmesi imzalanmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 9,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-002".into(),
@@ -51,6 +52,7 @@ impl AppStore {
                     summary: "Türk Hava Yolları'nın Haziran 2026 döneminde taşınan yolcu sayısı geçen yılın aynı ayına göre %8.2 artarak 7.8 milyona ulaşmıştır. Doluluk oranı %83.4'tür.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 8,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-003".into(),
@@ -61,6 +63,7 @@ impl AppStore {
                     summary: "İzmir rafinerisi U-7000 ünitesinde planlanan periyodik bakım duruşu 10 gün erken tamamlanmış olup ünite tam kapasiteyle faaliyete alınmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 7,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-004".into(),
@@ -71,6 +74,7 @@ impl AppStore {
                     summary: "Ereğli Demir Çelik 1 nolu yüksek fırınının planlı modernizasyon çalışmaları başlamış olup, üretimin duraksamaması için stoklar devreye alınmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 6,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-005".into(),
@@ -81,6 +85,7 @@ impl AppStore {
                     summary: "Şirketimizce 2026 geri alım programı kapsamında Borsa İstanbul'da adet başına ortalama 205.5 TL fiyattan toplam 500,000 adet pay geri alımı yapılmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 8,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-006".into(),
@@ -91,6 +96,7 @@ impl AppStore {
                     summary: "Mia Teknoloji'nin TÜBİTAK TEYDEB kapsamında sunduğu 'Yapay Zeka Destekli Akıllı Trafik Yönetim Sistemi' projesi desteklenmeye hak kazanmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 7,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-007".into(),
@@ -101,6 +107,7 @@ impl AppStore {
                     summary: "Astor Enerji, İspanya merkezli bir dağıtım şirketi ile 18.2 Milyon Euro tutarında transformatör satış sözleşmesi imzalamıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 9,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-008".into(),
@@ -111,6 +118,7 @@ impl AppStore {
                     summary: "Kontrolmatik Teknoloji'nin Ankara'daki batarya hücresi üretim tesisi kapasite artış yatırımı için 1.2 Milyar TL tutarında yatırım teşvik belgesi onaylanmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 8,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-009".into(),
@@ -121,6 +129,7 @@ impl AppStore {
                     summary: "BİM Birleşik Mağazalar A.Ş. 2026 ikinci çeyreğinde toplam 185 yeni mağaza açılışı gerçekleştirerek yurt içi toplam mağaza sayısını 11,850'ye ulaştırmıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 6,
+                    attachment_count: 0,
                 },
                 KapAnnouncement {
                     id: "KAP-010".into(),
@@ -131,6 +140,7 @@ impl AppStore {
                     summary: "Sabancı Holding, yeşil enerji portföyünü büyütmek amacıyla rüzgar enerjisi lisansına sahip bir şirketin %100 hisselerini satın almıştır.".into(),
                     url: "https://www.kap.org.tr".into(),
                     ai_importance_score: 8,
+                    attachment_count: 0,
                 }
             ],
             sources: vec![
@@ -308,9 +318,7 @@ Kurallar:
 
     pub fn save_artifacts(&self) {
         if let Some(path) = Self::artifacts_file_path() {
-            if let Ok(json) = serde_json::to_string_pretty(&self.artifacts) {
-                let _ = std::fs::write(&path, json);
-            }
+            let _ = crate::persist::write_json_atomic(&path, &self.artifacts);
         }
     }
 
@@ -386,9 +394,7 @@ Kurallar:
 
     pub fn save_ai_history(&self) {
         if let Some(path) = Self::history_file_path() {
-            if let Ok(json) = serde_json::to_string_pretty(&self.ai_history) {
-                let _ = std::fs::write(&path, json);
-            }
+            let _ = crate::persist::write_json_atomic(&path, &self.ai_history);
         }
     }
 
@@ -408,9 +414,7 @@ Kurallar:
 
     pub fn save_agents(&self) {
         if let Some(path) = Self::agents_file_path() {
-            if let Ok(json) = serde_json::to_string_pretty(&self.agents) {
-                let _ = std::fs::write(&path, json);
-            }
+            let _ = crate::persist::write_json_atomic(&path, &self.agents);
         }
     }
 
@@ -432,9 +436,7 @@ Kurallar:
 
     pub fn save_indices(&self) {
         if let Some(path) = Self::indices_file_path() {
-            if let Ok(json) = serde_json::to_string_pretty(&self.indices) {
-                let _ = std::fs::write(&path, json);
-            }
+            let _ = crate::persist::write_json_atomic(&path, &self.indices);
         }
     }
 }

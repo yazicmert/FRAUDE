@@ -51,6 +51,9 @@ struct DisclosureRow {
     summary: Option<String>,
     #[serde(rename = "disclosureIndex")]
     disclosure_index: u64,
+    /// Bildirime ekli dosya sayısı (IR sunum, finansal rapor PDF'leri vb.).
+    #[serde(rename = "attachmentCount", default)]
+    attachment_count: u32,
 }
 
 impl DisclosureRow {
@@ -259,6 +262,7 @@ fn to_announcement(row: &DisclosureRow) -> Option<KapAnnouncement> {
         summary,
         ai_importance_score: importance(subject, &row.summary.clone().unwrap_or_default()),
         url: format!("{BASE_URL}/Bildirim/{}", row.disclosure_index),
+        attachment_count: row.attachment_count,
     })
 }
 
@@ -406,6 +410,174 @@ pub(crate) fn format_rss_date(raw: &str) -> String {
         return dt.format("%d.%m.%Y %H:%M").to_string();
     }
     cleaned
+}
+
+// ─── Bildirim Detay Scraper ─────────────────────────────────────────────
+//
+// KAP'ın bildirim detay API'si (disclosureDetail, downloadAttachment) API KEY
+// gerektirdiğinden, bildirim ekleri ve export URL'leri doğrudan bildirim
+// sayfasının server-side rendered HTML'inden çıkarılır.
+//
+// Bildirim sayfası HTML'inde bulunan kalıplar:
+//   Ekler:  href="https://www.kap.org.tr/tr/api/file/download/{fileId}">Dosya Adı.pdf</a>
+//   PDF:    href="https://www.kap.org.tr/tr/api/BildirimPdf/{id}"
+//   Word:   href="https://www.kap.org.tr/tr/api/notification/export/word/{id}"
+//   Excel:  href="https://www.kap.org.tr/tr/api/notification/export/excel/{id}"
+
+use crate::domain::{KapAttachmentInfo, KapDisclosureDetail};
+use regex::Regex;
+
+/// Bir KAP bildiriminin detay sayfasını çekip ek dosyaları ve export URL'lerini
+/// çıkarır. `disclosure_index` sayısal bildirim numarasıdır (ör. "1643242").
+///
+/// Başarısız olursa hata mesajı döner — çağıran kod graceful degrade eder.
+pub async fn fetch_disclosure_detail(
+    client: &Client,
+    disclosure_index: &str,
+) -> Result<KapDisclosureDetail, String> {
+    let url = format!("{BASE_URL}/Bildirim/{disclosure_index}");
+    let _permit = crate::retry::kap_permit().await;
+
+    let html = client
+        .get(&url)
+        .timeout(REQUEST_TIMEOUT)
+        .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .map_err(|e| format!("KAP bildirim sayfası isteği: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("KAP bildirim sayfası okunamadı: {e}"))?;
+
+    // ── Bildirim Ekleri: /api/file/download/{fileId} ──
+    // HTML kalıbı: href="https://www.kap.org.tr/tr/api/file/download/XXXXX">DosyaAdı.pdf</a>
+    let file_re = Regex::new(
+        r#"href="(https://www\.kap\.org\.tr/tr/api/file/download/[^"]+)"[^>]*>([^<]+)</a>"#,
+    )
+    .unwrap();
+
+    let attachments: Vec<KapAttachmentInfo> = file_re
+        .captures_iter(&html)
+        .map(|cap| KapAttachmentInfo {
+            url: cap[1].to_string(),
+            name: cap[2].trim().to_string(),
+        })
+        .collect();
+
+    // ── Sağ panel export URL'leri ──
+    let pdf_url = extract_href(&html, "api/BildirimPdf/")
+        .unwrap_or_else(|| format!("{BASE_URL}/api/BildirimPdf/{disclosure_index}"));
+    let word_url = extract_href(&html, "api/notification/export/word/")
+        .unwrap_or_else(|| format!("{BASE_URL}/api/notification/export/word/{disclosure_index}"));
+    let excel_url = extract_href(&html, "api/notification/export/excel/")
+        .unwrap_or_else(|| format!("{BASE_URL}/api/notification/export/excel/{disclosure_index}"));
+
+    Ok(KapDisclosureDetail {
+        disclosure_index: disclosure_index.to_string(),
+        attachments,
+        pdf_url,
+        word_url,
+        excel_url,
+    })
+}
+
+/// HTML'den belirli bir alt-dizi içeren ilk `href="…"` değerini çıkarır.
+fn extract_href(html: &str, pattern: &str) -> Option<String> {
+    let search = format!(r#"href=""#);
+    let mut pos = 0;
+    while let Some(start) = html[pos..].find(&search) {
+        let abs_start = pos + start + search.len();
+        if let Some(end) = html[abs_start..].find('"') {
+            let href = &html[abs_start..abs_start + end];
+            if href.contains(pattern) {
+                return Some(href.to_string());
+            }
+        }
+        pos = abs_start + 1;
+    }
+    None
+}
+
+/// Canlı KAP Finansal Rapor Bildiriminden (XBRL / SSR HTML) en güncel dönemi kazıyıp ayrıştırır.
+pub async fn fetch_latest_kap_financial_period(
+    client: &Client,
+    ticker: &str,
+) -> Result<Option<crate::domain::FinancialPeriod>, Box<dyn Error + Send + Sync>> {
+    let list = ticker_disclosures(client, ticker).await?;
+    let fr = list.into_iter().find(|ann| {
+        let cat = ann.category.to_uppercase();
+        let title = ann.title.to_lowercase();
+        cat == "FR" || title.contains("finansal rapor") || title.contains("bilanço")
+    });
+
+    let ann = match fr {
+        Some(a) => a,
+        None => return Ok(None),
+    };
+
+    let raw_id = ann.id.replace(|c: char| !c.is_ascii_digit(), "");
+    if raw_id.is_empty() {
+        return Ok(None);
+    }
+
+    let url = format!("{BASE_URL}/Bildirim/{raw_id}");
+    let resp = client
+        .get(&url)
+        .timeout(Duration::from_secs(10))
+        .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+
+    let html = resp.text().await?;
+    let period_str = ann.date.chars().take(10).collect::<String>();
+
+    let revenue = parse_html_line_item(&html, &["Hasılat", "Satış Gelirleri", "FAİZ GELİRLERİ"]);
+    let gross_profit = parse_html_line_item(&html, &["Brüt Kâr", "NET FAİZ GELİRİ"]);
+    let operating_income = parse_html_line_item(&html, &["Esas Faaliyet Kârı", "Faaliyet Kârı"]);
+    let net_income = parse_html_line_item(&html, &["Net Dönem Kârı", "DÖNEM KÂRI"]);
+    let total_assets = parse_html_line_item(&html, &["Toplam Varlıklar", "TOPLAM AKTİFLER"]);
+    let total_equity = parse_html_line_item(&html, &["Özkaynaklar", "TOPLAM ÖZKAYNAKLAR"]);
+    let total_debt = parse_html_line_item(&html, &["Finansal Borçlar", "Kısa Vadeli Borçlar"]);
+    let operating_cash_flow = parse_html_line_item(&html, &["İşletme Faaliyetlerinden Nakit"]);
+
+    if revenue.is_none() && net_income.is_none() && total_assets.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(crate::domain::FinancialPeriod {
+        period: period_str,
+        revenue,
+        gross_profit,
+        operating_income,
+        net_income,
+        total_assets,
+        total_equity,
+        total_debt,
+        operating_cash_flow,
+        free_cash_flow: None,
+    }))
+}
+
+fn parse_html_line_item(html: &str, keywords: &[&str]) -> Option<f64> {
+    for kw in keywords {
+        if let Some(pos) = html.find(kw) {
+            let snippet = &html[pos..pos + std::cmp::min(250, html.len() - pos)];
+            for token in snippet.split(|c: char| !c.is_numeric() && c != '.' && c != ',' && c != '-') {
+                let cleaned = token.replace('.', "").replace(',', ".");
+                if let Ok(num) = cleaned.parse::<f64>() {
+                    if num.abs() > 1.0 {
+                        return Some(num);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -659,5 +831,30 @@ mod tests {
         println!("{code}: {} bildirim; ilki: {:?}", items.len(), items.first().map(|i| &i.subject));
         assert!(!items.is_empty());
         assert!(items.iter().all(|i| i.url.contains("/Bildirim/")));
+    }
+
+    /// Canlı uç: Gerçek bir KAP bildirim sayfasından (örneğin 1643242) eklerin
+    /// ve export linklerinin doğru ayrıştırıldığını doğrular.
+    #[tokio::test]
+    #[ignore = "canlı ağ erişimi gerektirir"]
+    async fn live_disclosure_detail_scraping() {
+        let client = reqwest::Client::new();
+        let detail = fetch_disclosure_detail(&client, "1643242")
+            .await
+            .expect("KAP bildirim detayı scrape edilebilmeli");
+
+        println!(
+            "KAP 1643242 scrape sonucu: {} adet ek | PDF: {} | Excel: {} | Word: {}",
+            detail.attachments.len(),
+            detail.pdf_url,
+            detail.excel_url,
+            detail.word_url
+        );
+
+        assert!(!detail.pdf_url.is_empty());
+        assert!(!detail.excel_url.is_empty());
+        assert!(!detail.word_url.is_empty());
+        assert!(detail.attachments.len() >= 3, "THYAO 1643242 bildiriminde en az 3 adet ek olmalı");
+        assert!(detail.attachments[0].url.contains("api/file/download/"));
     }
 }

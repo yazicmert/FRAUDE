@@ -13,8 +13,11 @@ import {
 } from '../../api/tauriClient';
 import type { AiKeyRecord, SaveAiKeyRequest, AiAgent, SaveAiAgentRequest, BridgeInfo } from '../../types';
 import { useTranslation } from '../../api/i18n';
-import { getSession, signOut } from '../auth/session';
+import { openUrl } from '../../lib/openExternal';
+import { getSession, signOut, AUTH_EVENT } from '../auth/session';
+import { supabase } from '../auth/supabaseClient';
 import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
+import { GithubIcon } from '../../components/icons';
 import UpdatesView from '../updates/UpdatesView';
 import './SettingsView.css';
 
@@ -104,6 +107,177 @@ export default function SettingsView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account?.id]);
+
+  const TOKEN_KEY = 'fraude-github-token';
+  const GH_USER_KEY = 'fraude-github-username';
+  const [ghUser, setGhUser] = useState<string | null>(() => localStorage.getItem(GH_USER_KEY));
+  const [ghInput, setGhInput] = useState(() => localStorage.getItem(GH_USER_KEY) ?? '');
+  const [ghToken, setGhToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
+  const [ghSaved, setGhSaved] = useState(false);
+  const [showTokenBox, setShowTokenBox] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [validatingToken, setValidatingToken] = useState(false);
+  const [userChecking, setUserChecking] = useState(false);
+
+  const handleConnectUsername = async (usernameToConnect?: string) => {
+    const target = (usernameToConnect ?? ghInput).trim().replace(/^@/, '');
+    if (!target) return;
+    setUserChecking(true);
+    setTokenError(null);
+    try {
+      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(target)}`, {
+        headers: { accept: 'application/vnd.github+json' },
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { login?: string };
+        if (typeof body.login === 'string') {
+          const cleanLogin = body.login;
+          localStorage.setItem(GH_USER_KEY, cleanLogin);
+          setGhUser(cleanLogin);
+          setGhInput(cleanLogin);
+          setGhSaved(true);
+          setTimeout(() => setGhSaved(false), 2000);
+        } else {
+          setTokenError('GitHub kullanıcısı bulunamadı.');
+        }
+      } else {
+        setTokenError(`GitHub'da @${target} kullanıcısı bulunamadı (HTTP ${res.status}).`);
+      }
+    } catch {
+      setTokenError('Ağ hatası: GitHub API erişilemedi.');
+    } finally {
+      setUserChecking(false);
+    }
+  };
+
+  const handleDisconnectGh = () => {
+    localStorage.removeItem(GH_USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    setGhUser(null);
+    setGhInput('');
+    setGhToken('');
+  };
+
+  const handleSaveToken = async () => {
+    const trimmed = ghToken.trim();
+    if (!trimmed) {
+      localStorage.removeItem(TOKEN_KEY);
+      setGhSaved(false);
+      setTokenError(null);
+      return;
+    }
+    setValidatingToken(true);
+    setTokenError(null);
+    try {
+      const res = await fetch('https://api.github.com/user', {
+        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${trimmed}` },
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { login?: string };
+        if (typeof body.login === 'string') {
+          setGhUser(body.login);
+          setGhInput(body.login);
+          localStorage.setItem(GH_USER_KEY, body.login);
+          localStorage.setItem(TOKEN_KEY, trimmed);
+          setGhSaved(true);
+          setTimeout(() => setGhSaved(false), 2000);
+        } else {
+          setTokenError('GitHub kullanıcı adı alınamadı.');
+        }
+      } else {
+        setTokenError(`Geçersiz GitHub token! (HTTP ${res.status})`);
+      }
+    } catch {
+      setTokenError('Ağ hatası: GitHub API erişilemedi.');
+    } finally {
+      setValidatingToken(false);
+    }
+  };
+
+  useEffect(() => {
+    async function loadGhUser() {
+      try {
+        const storedUser = localStorage.getItem(GH_USER_KEY);
+        if (storedUser) {
+          setGhUser(storedUser);
+          setGhInput(storedUser);
+          return;
+        }
+
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData.user;
+        const meta = user?.user_metadata ?? {};
+        const name = typeof meta.preferred_username === 'string' ? meta.preferred_username : (typeof meta.user_name === 'string' ? meta.user_name : undefined);
+        if (name) {
+          localStorage.setItem(GH_USER_KEY, name);
+          setGhUser(name);
+          setGhInput(name);
+          return;
+        }
+
+        const ghIdentity = user?.identities?.find((id) => id.provider === 'github');
+        if (ghIdentity?.identity_data) {
+          const idData = ghIdentity.identity_data as { preferred_username?: string; user_name?: string };
+          const idName = idData.preferred_username || idData.user_name;
+          if (typeof idName === 'string' && idName) {
+            localStorage.setItem(GH_USER_KEY, idName);
+            setGhUser(idName);
+            setGhInput(idName);
+            return;
+          }
+        }
+
+        const activeToken = localStorage.getItem(TOKEN_KEY) ?? ghToken;
+        if (activeToken.trim()) {
+          const res = await fetch('https://api.github.com/user', {
+            headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${activeToken.trim()}` },
+          });
+          if (res.ok) {
+            const body = (await res.json()) as { login?: string };
+            if (typeof body.login === 'string') {
+              localStorage.setItem(GH_USER_KEY, body.login);
+              setGhUser(body.login);
+              setGhInput(body.login);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void loadGhUser();
+
+    const handleFocus = async () => {
+      void loadGhUser();
+      try {
+        const text = await navigator.clipboard.readText();
+        const trimmed = text ? text.trim() : '';
+        if ((trimmed.startsWith('ghp_') || trimmed.startsWith('github_pat_')) && trimmed !== localStorage.getItem(TOKEN_KEY)) {
+          const res = await fetch('https://api.github.com/user', {
+            headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${trimmed}` },
+          });
+          if (res.ok) {
+            const body = (await res.json()) as { login?: string };
+            if (typeof body.login === 'string') {
+              localStorage.setItem(TOKEN_KEY, trimmed);
+              setGhToken(trimmed);
+              setGhUser(body.login);
+            }
+          }
+        }
+      } catch {
+        // ignore clipboard error
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(AUTH_EVENT, loadGhUser);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(AUTH_EVENT, loadGhUser);
+    };
+  }, [ghToken]);
+
   const [keys, setKeys] = useState<AiKeyRecord[]>([]);
   const [form, setForm] = useState<SaveAiKeyRequest>(emptyForm);
   const [message, setMessage] = useState('');
@@ -253,6 +427,141 @@ export default function SettingsView() {
               </div>
             ) : (
               <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>—</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>GitHub Hesabı & Katkı Yetkisi</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 16px', lineHeight: '1.5' }}>
+              Güncelleme ve modül katkılarınızı GitHub üzerinde kendi adınıza otomatik yayınlamak için hesabınızı veya Personal Access Token'ınızı bağlayabilirsiniz.
+            </p>
+
+            <div className="st-kv" style={{ marginBottom: '16px' }}>
+              <span className="k">GitHub Durumu</span>
+              <span>
+                {ghUser ? (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+                    <span className="st-pill" style={{ background: 'rgba(0,255,157,0.15)', color: '#00ff9d', border: '1px solid rgba(0,255,157,0.3)' }}>
+                      ● Bağlı (@{ghUser})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGh}
+                      style={{ background: 'none', border: '1px solid rgba(255, 77, 77, 0.3)', color: '#ff4d4d', padding: '3px 10px', borderRadius: '6px', fontSize: '0.76rem', cursor: 'pointer' }}
+                    >
+                      Bağlantıyı Kes
+                    </button>
+                  </div>
+                ) : (
+                  <span className="st-pill" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>
+                    Bağlı Değil
+                  </span>
+                )}
+              </span>
+            </div>
+
+            {!ghUser && (
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-main)', marginBottom: '8px', fontWeight: 600 }}>
+                  👤 GitHub Kullanıcı Adınız İle Anında Bağlanın:
+                </label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input
+                    type="text"
+                    value={ghInput}
+                    onChange={(e) => {
+                      setGhInput(e.target.value);
+                      setTokenError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleConnectUsername();
+                    }}
+                    placeholder="Örn: yazicmert"
+                    style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.84rem' }}
+                  />
+                  <button
+                    type="button"
+                    disabled={userChecking || !ghInput.trim()}
+                    style={{ padding: '8px 16px', background: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', color: '#04140d', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                    onClick={() => void handleConnectUsername()}
+                  >
+                    {userChecking ? 'Doğrulanıyor...' : ghSaved ? '✓ Bağlandı' : 'Doğrula & Bağla'}
+                  </button>
+                </div>
+                {tokenError && (
+                  <p style={{ fontSize: '0.76rem', color: '#ff4d4d', margin: '6px 0 0' }}>
+                    ⚠ {tokenError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <button
+                type="button"
+                className="st-btn"
+                onClick={() => {
+                  setShowTokenBox(true);
+                  void openUrl('https://github.com/settings/tokens/new?description=FRAUDE+Terminal&scopes=public_repo,read:user');
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '10px 20px', background: '#24292e', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#ffffff', borderRadius: '8px', fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                <GithubIcon size={18} />
+                <span>GitHub Sayfasında İzin Ver & Bağlan</span>
+              </button>
+
+              <button
+                type="button"
+                className="upd-link"
+                onClick={() => setShowTokenBox((v) => !v)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+              >
+                {showTokenBox ? '▴ Personal Access Token alanını gizle' : 'Token (PAT) ile manuel bağlayın ▾'}
+              </button>
+            </div>
+
+            {showTokenBox && (
+              <div style={{ marginTop: '12px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', margin: 0 }}>
+                    GitHub Personal Access Token (PAT)
+                  </label>
+                  <button
+                    type="button"
+                    className="st-btn"
+                    onClick={() => void openUrl('https://github.com/settings/tokens/new?description=FRAUDE+Terminal&scopes=public_repo')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'rgba(0, 255, 157, 0.12)', border: '1px solid #00ff9d', color: '#00ff9d', borderRadius: '6px', fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    <span>🔑</span> GitHub'da Token Oluştur (Tek Tık)
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input
+                    type="password"
+                    value={ghToken}
+                    onChange={(e) => {
+                      setGhToken(e.target.value);
+                      setTokenError(null);
+                    }}
+                    placeholder="ghp_... veya github_pat_..."
+                    autoFocus
+                    style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    type="button"
+                    disabled={validatingToken}
+                    style={{ padding: '8px 16px', background: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', color: '#04140d', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                    onClick={() => void handleSaveToken()}
+                  >
+                    {validatingToken ? 'Doğrulanıyor...' : ghSaved ? '✓ Bağlandı' : 'Kaydet & Bağla'}
+                  </button>
+                </div>
+                {tokenError && (
+                  <p style={{ fontSize: '0.76rem', color: '#ff4d4d', marginTop: '6px', margin: '6px 0 0' }}>
+                    ⚠ {tokenError}
+                  </p>
+                )}
+              </div>
             )}
           </section>
 

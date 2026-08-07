@@ -21,12 +21,18 @@ export type InstrumentKind =
   | 'global-equity'
   | 'global-index';
 
+const GLOBAL_EQUITY_SYMBOLS = new Set([
+  'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'GOOG', 'TSLA', 'BRK-B', 'BRK.B',
+  'LLY', 'AVGO', 'JPM', 'V', 'XOM', 'UNH', 'WMT', 'MA', 'PG', 'JNJ', 'HD', 'ASML',
+  'BAC', 'COST', 'ORCL', 'ABBV', 'CVX', 'MRK', 'KO', 'PEP', 'AMD', 'NFLX', 'INTC',
+]);
+
 /** Katalog grubu → tür. Katalogda yeni bir grup açılırsa buraya eklenir. */
 const GROUP_TO_KIND: Record<string, InstrumentKind> = {
   Endeks: 'bist-index',
   Döviz: 'fx',
   Emtia: 'commodity',
-  Global: 'global-index',
+  Global: 'global-equity',
   Kripto: 'crypto',
 };
 
@@ -52,6 +58,8 @@ export function classifyInstrument(symbol: string, memberships?: string[] | null
   }
 
   const upper = normalize(symbol);
+  if (GLOBAL_EQUITY_SYMBOLS.has(upper)) return 'global-equity';
+
   const preset = PRESET_SYMBOLS.find((item) => normalize(item.symbol) === upper);
   if (preset) {
     const kind = GROUP_TO_KIND[preset.group];

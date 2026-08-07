@@ -3,6 +3,9 @@ import { useTranslation } from '../../api/i18n';
 import { CORE_VERSION } from '../../modules/workspaceRegistry';
 import { openUrl } from '../../lib/openExternal';
 import { submitUpdateViaPr, type PrStep } from './githubSubmit';
+import { supabase } from '../auth/supabaseClient';
+import { askAi } from '../../api/tauriClient';
+import { GithubIcon } from '../../components/icons';
 import './UpdatesView.css';
 
 // Topluluk güncellemeleri deponun main dalındaki updates/registry.json'dan
@@ -154,6 +157,50 @@ export default function UpdatesView() {
   const [prStep, setPrStep] = useState<PrStep | 'done' | null>(null);
   const [jsonCopied, setJsonCopied] = useState(false);
 
+  const [aiUserNote, setAiUserNote] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+
+  const handleGenerateAiPrompt = async () => {
+    const userGoal = (aiUserNote || form.titleTr || form.summaryTr || 'Uygulama iyileştirmesi ve hata düzeltmesi').trim();
+    setAiGenerating(true);
+    setAiStatus('FRAUDE AI ajanına soruluyor...');
+    try {
+      const promptQuery = `Sen FRAUDE açık kaynaklı finans terminali için topluluk güncellemeleri AI promptu üreten uzman bir yazılım ajanısın.
+
+Kullanıcının yaptığı değişiklik: "${userGoal}"
+Güncelleme Türü: "${form.kind}"
+Etkilenen Alan: "${form.area}"
+
+Aşağıdaki kurallara BİREBİR uyan Türkçe bir AI Uygulama Promptu (agentPrompt) üret:
+1. Sürüm bağımsız yaz: Satır numarası Verme! Dosyaları ve fonksiyonları rolleriyle anlat.
+2. Niyet + Davranış: Neyin, neden değiştiğini ve hedef davranışı numaralı adımlarla açıkla.
+3. En sonda "Kabul:" satırı ile geçerlilik komutunu yaz (Örn: "Kabul: npx tsc --noEmit komutu sıfır hatayla geçmeli.").
+4. Tehlikeli iş yok (silme, gizli anahtar yok).
+
+Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama veya başlık ekleme.`;
+
+      const res = await askAi(promptQuery);
+      if (res && typeof res.summary === 'string' && res.summary.trim()) {
+        const generated = res.summary.trim();
+        setForm((prev) => ({ ...prev, prompt: generated }));
+        setAiStatus('✓ AI Uygulama Promptu başarıyla oluşturuldu ve alana eklendi!');
+      } else {
+        throw new Error('Yanıt alınamadı');
+      }
+    } catch {
+      const fallbackPrompt = `1. Değişiklik Özeti: ${userGoal}
+2. Hedef Dosyalar ve Yapılacak İşlemler:
+   - Değişikliği ${form.area} modülünde ilgili bileşen ve API istemcisi üzerinde uygulayın.
+   - Fonksiyon imzalarını ve tip tanımlarını koruyun.
+3. Kabul: npx tsc --noEmit ve cargo check komutları hatasız tamamlanmalı.`;
+      setForm((prev) => ({ ...prev, prompt: fallbackPrompt }));
+      setAiStatus('✓ Şablon prompt oluşturuldu ve alana eklendi!');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   const check = useCallback(async (force: boolean) => {
     if (!force) {
       const cached = readCache();
@@ -207,6 +254,44 @@ export default function UpdatesView() {
   useEffect(() => {
     check(false);
   }, [check]);
+
+  useEffect(() => {
+    async function autoFillGithubUser() {
+      try {
+        const storedUser = localStorage.getItem('fraude-github-username');
+        if (storedUser) {
+          setForm((prev) => (prev.author ? prev : { ...prev, author: storedUser }));
+          return;
+        }
+
+        const { data } = await supabase.auth.getSession();
+        const user = data.session?.user;
+        const meta = user?.user_metadata ?? {};
+        const ghName = typeof meta.preferred_username === 'string' ? meta.preferred_username : (typeof meta.user_name === 'string' ? meta.user_name : undefined);
+        if (ghName) {
+          setForm((prev) => (prev.author ? prev : { ...prev, author: ghName }));
+          return;
+        }
+        if (token.trim()) {
+          const res = await fetch('https://api.github.com/user', {
+            headers: {
+              accept: 'application/vnd.github+json',
+              authorization: `Bearer ${token.trim()}`,
+            },
+          });
+          if (res.ok) {
+            const body = (await res.json()) as { login?: string };
+            if (typeof body.login === 'string' && body.login) {
+              setForm((prev) => (prev.author ? prev : { ...prev, author: body.login as string }));
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void autoFillGithubUser();
+  }, [token, showSubmit]);
 
   const newVersionAvailable = latestTag !== null && !versionLte(latestTag, CORE_VERSION);
 
@@ -387,6 +472,44 @@ export default function UpdatesView() {
               <textarea rows={3} value={form.summaryEn} onChange={(e) => setForm({ ...form, summaryEn: e.target.value })} />
             </label>
           </div>
+
+          <div style={{ background: 'rgba(0, 255, 157, 0.05)', border: '1px solid rgba(0, 255, 157, 0.2)', padding: '12px 14px', borderRadius: '8px', marginBottom: '14px', marginTop: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#00ff9d', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                🤖 FRAUDE AI Chatbot — Prompt Asistanı
+              </span>
+              <button
+                type="button"
+                className="st-btn"
+                disabled={aiGenerating}
+                onClick={() => void handleGenerateAiPrompt()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: '#00ff9d', color: '#04140d', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                <span>✨</span> {aiGenerating ? 'AI Prompt Üretiyor...' : 'AI ile Prompt Üret'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                value={aiUserNote}
+                onChange={(e) => setAiUserNote(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleGenerateAiPrompt();
+                  }
+                }}
+                placeholder="Yaptığınız değişikliği kısaca anlatın (Örn: BIST aramasına filtreleme ekledim, tauriClient güncellendi)..."
+                style={{ flex: 1, padding: '7px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-main)', fontSize: '0.82rem' }}
+              />
+            </div>
+            {aiStatus && (
+              <p style={{ fontSize: '0.76rem', color: aiStatus.startsWith('✓') ? '#00ff9d' : 'var(--text-muted)', margin: '6px 0 0' }}>
+                {aiStatus}
+              </p>
+            )}
+          </div>
+
           <label>
             {t('updFldPrompt')}
             <textarea
@@ -408,16 +531,31 @@ export default function UpdatesView() {
             </label>
           </div>
           <div className="upd-token-box">
-            <label>
-              {t('updFldToken')}
-              <input
-                type="password"
-                className="mono"
-                value={token}
-                autoComplete="off"
-                onChange={(e) => setToken(e.target.value)}
-              />
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label style={{ margin: 0, flex: 1 }}>{t('updFldToken')}</label>
+              <button
+                type="button"
+                className="upd-link"
+                style={{ fontSize: '0.78rem', color: '#00c3ff', display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', cursor: 'pointer' }}
+                onClick={() => void openUrl('https://github.com/settings/tokens/new?description=FRAUDE+Terminal&scopes=public_repo,read:user')}
+                title="GitHub hesabınızı bağlayarak kullanıcı adınızı otomatik senkronize edin"
+              >
+                <GithubIcon size={14} />
+                <span>GitHub ile Bağlan</span>
+              </button>
+            </div>
+            <input
+              type="password"
+              className="mono"
+              value={token}
+              autoComplete="off"
+              onChange={(e) => {
+                const val = e.target.value;
+                setToken(val);
+                localStorage.setItem(TOKEN_KEY, val.trim());
+              }}
+              placeholder="ghp_... veya github_pat_..."
+            />
             <p className="upd-token-hint">{t('updTokenHint')}</p>
           </div>
           {formError && <p className="upd-form-err">{formError}</p>}

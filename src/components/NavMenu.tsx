@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   NAV_TREE,
   getWorkspaceModule,
@@ -7,6 +8,40 @@ import {
   type NavEntry,
 } from '../modules/workspaceRegistry';
 import type { InstalledModule } from '../modules/types';
+import {
+  DashboardIcon,
+  FundIcon,
+  CommodityIcon,
+  CryptoIcon,
+  ModulesIcon,
+  SearchIcon,
+  RadioIcon,
+  BuildingIcon,
+  MonitorIcon,
+  IpoIcon,
+  BookOpenIcon,
+  SparklesIcon,
+  BellIcon,
+  UserIcon
+} from './icons';
+
+const MODULE_ICONS: Record<string, React.ReactNode> = {
+  dashboard: <DashboardIcon size={15} />,
+  screener: <SearchIcon size={15} />,
+  kap: <RadioIcon size={15} />,
+  corporate: <BuildingIcon size={15} />,
+  ipo: <IpoIcon size={15} />,
+  monitor: <MonitorIcon size={15} />,
+  funds: <FundIcon size={15} />,
+  commodities: <CommodityIcon size={15} />,
+  crypto: <CryptoIcon size={15} />,
+  news: <BookOpenIcon size={15} />,
+  ai: <SparklesIcon size={15} />,
+  research: <SearchIcon size={15} />,
+  team: <UserIcon size={15} />,
+  notifications: <BellIcon size={15} />,
+  modules: <ModulesIcon size={15} />,
+};
 
 interface NavMenuProps {
   activeTabId: string;
@@ -51,14 +86,15 @@ function soleModule(entries: NavEntry[], installed: InstalledModule[]): string |
 }
 
 type TopItem =
-  | { kind: 'module'; moduleKind: string; labelKey?: string; icon?: string }
+  | { kind: 'module'; moduleKind: string; labelKey?: string; icon?: React.ReactNode }
   | { kind: 'soon'; id: string; labelKey: string }
-  | { kind: 'dropdown'; id: string; labelKey: string; icon?: string; entries: NavEntry[] };
+  | { kind: 'dropdown'; id: string; labelKey: string; icon?: React.ReactNode; entries: NavEntry[] };
 
 export default function NavMenu({ activeTabId, installedModules, host, onOpen, t }: NavMenuProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const close = useCallback(() => {
     setOpenId(null);
@@ -69,20 +105,32 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
   useEffect(() => {
     if (!openId) return;
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
+      const target = e.target as Node;
+      if (
+        rootRef.current &&
+        !rootRef.current.contains(target) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target)
+      ) {
+        close();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close();
     };
+    const onScroll = (e: Event) => {
+      if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return;
+      close();
+    };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [openId, close]);
 
@@ -148,6 +196,7 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
     if (entry.type === 'module') {
       const m = getWorkspaceModule(entry.kind);
       if (!m) return null;
+      const icon = MODULE_ICONS[entry.kind];
       return (
         <button
           type="button"
@@ -156,7 +205,11 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
           style={{ paddingLeft: 14 + depth * 12 }}
           onClick={() => openModule(entry.kind)}
         >
-          {moduleLabel(entry.kind)}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {icon && <span className="navmenu-icon" style={{ display: 'inline-flex', alignItems: 'center' }}>{icon}</span>}
+            <span>{moduleLabel(entry.kind)}</span>
+          </span>
+          {activeTabId === entry.kind && <span style={{ fontSize: '0.75rem', color: '#00c3ff', fontWeight: 800 }}>✓</span>}
         </button>
       );
     }
@@ -181,6 +234,7 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
         }
         if (item.kind === 'module') {
           const label = item.labelKey ? t(item.labelKey) : moduleLabel(item.moduleKind);
+          const icon = item.icon ?? MODULE_ICONS[item.moduleKind];
           return (
             <button
               type="button"
@@ -188,7 +242,7 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
               className={`navmenu-item${activeTabId === item.moduleKind ? ' active' : ''}`}
               onClick={() => openModule(item.moduleKind)}
             >
-              {item.icon && <span className="navmenu-icon">{item.icon}</span>}
+              {icon && <span className="navmenu-icon" style={{ display: 'inline-flex', alignItems: 'center' }}>{icon}</span>}
               {label}
             </button>
           );
@@ -203,14 +257,15 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
               className={`navmenu-item${active ? ' active' : ''}${isOpen ? ' open' : ''}`}
               onClick={(e) => toggleDropdown(item.id, e)}
             >
-              {item.icon && <span className="navmenu-icon">{item.icon}</span>}
+              {item.icon && <span className="navmenu-icon" style={{ display: 'inline-flex', alignItems: 'center' }}>{item.icon}</span>}
               {t(item.labelKey)}
               <span className="navmenu-caret">{isOpen ? '▾' : '▸'}</span>
             </button>
-            {isOpen && anchor && (
-              <div className="navmenu-dd" style={{ position: 'fixed', left: anchor.left, top: anchor.top }}>
+            {isOpen && anchor && createPortal(
+              <div ref={dropdownRef} className="navmenu-dd" style={{ position: 'fixed', left: anchor.left, top: anchor.top, zIndex: 9999999 }}>
                 {item.entries.map((e) => renderPanelEntry(e, 0))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
         );

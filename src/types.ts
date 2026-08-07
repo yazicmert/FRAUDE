@@ -101,6 +101,11 @@ export interface IndexChange {
   timestamp: number;
 }
 
+export interface KapAttachment {
+  name: string;
+  url: string;
+}
+
 export interface KapAnnouncement {
   id: string;
   ticker: string;
@@ -110,6 +115,8 @@ export interface KapAnnouncement {
   summary: string;
   url: string;
   ai_importance_score: number;
+  attachment_count: number;
+  attachments?: KapAttachment[];
 }
 
 export interface DataSourceStatus {
@@ -417,6 +424,14 @@ export interface IpoRecord {
   distribution_type: string | null;
   participant_count: string | null;
   split_factor: number | null;
+  fund_usage?: string | null;
+  share_structure?: string | null;
+  ipo_size?: string | null;
+  katilim_index?: string | null;
+  lockup_period?: string | null;
+  consortium_lead?: string | null;
+  t1_t2_available?: string | null;
+  distribution_ratios?: string | null;
 }
 
 export interface UpcomingDividend {

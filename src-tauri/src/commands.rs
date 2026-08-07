@@ -70,6 +70,14 @@ pub async fn list_kap_announcements(
 }
 
 #[tauri::command]
+pub async fn get_kap_disclosure_detail(
+    state: State<'_, AppState>,
+    disclosure_index: String,
+) -> Result<crate::domain::KapDisclosureDetail, String> {
+    fraude_core::kap::fetch_disclosure_detail(&state.http, &disclosure_index).await
+}
+
+#[tauri::command]
 pub async fn get_price_history(
     state: State<'_, AppState>,
     ticker: String,

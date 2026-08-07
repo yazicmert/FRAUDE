@@ -59,9 +59,7 @@ fn read_cache_from_disk() -> BistIndicesCache {
 
 fn save_cache(cache: &BistIndicesCache) {
     *memo().lock().unwrap_or_else(|error| error.into_inner()) = Some(cache.clone());
-    if let Ok(data) = serde_json::to_string(cache) {
-        let _ = fs::write(cache_path(), data);
-    }
+    let _ = crate::persist::write_json_atomic(&cache_path(), cache);
 }
 
 /// Endeks üyelik önbelleğini döndürür; 30 günden eskiyse (ya da `force`) CSV'yi
@@ -71,10 +69,13 @@ fn save_cache(cache: &BistIndicesCache) {
 /// bağlantı havuzunun dışında kalıyor ve her çağrıda yeniden TLS el sıkışıyordu.
 pub async fn fetch_and_update_indices(client: &reqwest::Client, force: bool) -> BistIndicesCache {
     let cache = load_cache();
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
 
     // Update if older than 30 days (2592000 seconds) or if forced
-    if !force && cache.last_updated > 0 && now - cache.last_updated < 2592000 {
+    if !force && cache.last_updated > 0 && now.saturating_sub(cache.last_updated) < 2592000 {
         return cache;
     }
 

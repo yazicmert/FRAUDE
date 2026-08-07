@@ -35,6 +35,22 @@ pub struct PersistedIpo {
     /// Bölünme çarpanının en son kontrol edildiği tarih (YYYY-MM-DD).
     #[serde(default)]
     pub split_checked: Option<String>,
+    #[serde(default)]
+    pub fund_usage: Option<String>,
+    #[serde(default)]
+    pub share_structure: Option<String>,
+    #[serde(default)]
+    pub ipo_size: Option<String>,
+    #[serde(default)]
+    pub katilim_index: Option<String>,
+    #[serde(default)]
+    pub lockup_period: Option<String>,
+    #[serde(default)]
+    pub consortium_lead: Option<String>,
+    #[serde(default)]
+    pub t1_t2_available: Option<String>,
+    #[serde(default)]
+    pub distribution_ratios: Option<String>,
 }
 
 fn archive_path() -> Option<std::path::PathBuf> {
@@ -125,6 +141,30 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
             if ipo.participant_count.is_some() {
                 existing.participant_count = ipo.participant_count.clone();
             }
+            if ipo.fund_usage.is_some() {
+                existing.fund_usage = ipo.fund_usage.clone();
+            }
+            if ipo.share_structure.is_some() {
+                existing.share_structure = ipo.share_structure.clone();
+            }
+            if ipo.ipo_size.is_some() {
+                existing.ipo_size = ipo.ipo_size.clone();
+            }
+            if ipo.katilim_index.is_some() {
+                existing.katilim_index = ipo.katilim_index.clone();
+            }
+            if ipo.lockup_period.is_some() {
+                existing.lockup_period = ipo.lockup_period.clone();
+            }
+            if ipo.consortium_lead.is_some() {
+                existing.consortium_lead = ipo.consortium_lead.clone();
+            }
+            if ipo.t1_t2_available.is_some() {
+                existing.t1_t2_available = ipo.t1_t2_available.clone();
+            }
+            if ipo.distribution_ratios.is_some() {
+                existing.distribution_ratios = ipo.distribution_ratios.clone();
+            }
             existing.last_seen = Some(today.clone());
         } else {
             archive.push(PersistedIpo {
@@ -140,6 +180,14 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
                 last_seen: Some(today.clone()),
                 split_factor: None,
                 split_checked: None,
+                fund_usage: ipo.fund_usage.clone(),
+                share_structure: ipo.share_structure.clone(),
+                ipo_size: ipo.ipo_size.clone(),
+                katilim_index: ipo.katilim_index.clone(),
+                lockup_period: ipo.lockup_period.clone(),
+                consortium_lead: ipo.consortium_lead.clone(),
+                t1_t2_available: ipo.t1_t2_available.clone(),
+                distribution_ratios: ipo.distribution_ratios.clone(),
             });
         }
         changed = true;
@@ -201,6 +249,14 @@ mod tests {
             trading_start_date: None,
             distribution_type: None,
             participant_count: None,
+            fund_usage: None,
+            share_structure: None,
+            ipo_size: None,
+            katilim_index: None,
+            lockup_period: None,
+            consortium_lead: None,
+            t1_t2_available: None,
+            distribution_ratios: None,
         }
     }
 
@@ -218,6 +274,14 @@ mod tests {
             last_seen: None,
             split_factor: None,
             split_checked: None,
+            fund_usage: None,
+            share_structure: None,
+            ipo_size: None,
+            katilim_index: None,
+            lockup_period: None,
+            consortium_lead: None,
+            t1_t2_available: None,
+            distribution_ratios: None,
         }
     }
 

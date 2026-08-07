@@ -455,8 +455,12 @@ pub async fn get_financial_statements(
         })
         .filter(has_data)
         .collect();
-    let keep_from = quarterlies.len().saturating_sub(12);
-    quarterlies.drain(..keep_from);
+    // Hibrit Entegrasyon: Resmî Canlı KAP Scraper Engine ile en güncel bilanço bildirimi kontrolü
+    if let Ok(Some(live_kap_period)) = crate::kap::fetch_latest_kap_financial_period(client, &company).await {
+        if !quarterlies.iter().any(|q| q.period == live_kap_period.period) {
+            quarterlies.push(live_kap_period);
+        }
+    }
 
     let statement = FinancialStatement {
         ticker: company.clone(),
@@ -786,5 +790,41 @@ mod tests {
         let last = statement.annuals.last().unwrap();
         assert!(last.total_assets.is_some(), "banka aktif toplamı dolu olmalı");
         assert!(last.net_income.is_some(), "banka net kârı dolu olmalı");
+    }
+
+    /// Çoklu sektör doğrulaması: Sanayi, Enerji, Otomotiv, Cam, Holding ve Bankacılık
+    /// hisselerinin finansal tabloları sorunsuz yüklenmeli ve 15+ yıllık tarihsel
+    /// dönemi kapsamalı.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_multi_sector_financial_statements_check() {
+        let client = crate::http_client();
+        let tickers = ["TUPRS", "KCHOL", "FROTO", "SISE", "AKBNK"];
+        for ticker in tickers {
+            let statement = get_financial_statements(&client, ticker, Currency::Try)
+                .await
+                .unwrap_or_else(|e| panic!("{ticker} için bilanço yüklenemedi: {e}"));
+            
+            assert!(!statement.annuals.is_empty(), "{ticker} yıllık dönemleri boş");
+            assert!(!statement.quarterlies.is_empty(), "{ticker} çeyreklik dönemleri boş");
+            assert!(
+                statement.annuals.len() >= 10,
+                "{ticker} en az 10 yıllık tarihsel veri içermeli, gelen: {}",
+                statement.annuals.len()
+            );
+
+            let latest = statement.annuals.last().expect("son dönem");
+            assert!(latest.total_assets.is_some(), "{ticker} aktif toplamı dolu olmalı");
+            assert!(latest.net_income.is_some(), "{ticker} net kârı dolu olmalı");
+
+            println!(
+                "✓ {ticker}: {} yıllık / {} çeyreklik dönem, Son Dönem ({}): Aktif={:?} M, NetKâr={:?} M",
+                statement.annuals.len(),
+                statement.quarterlies.len(),
+                latest.period,
+                latest.total_assets.map(|v| v / 1e6),
+                latest.net_income.map(|v| v / 1e6)
+            );
+        }
     }
 }

@@ -1,0 +1,520 @@
+/* KAP Document & PDF Viewer Modal Styles (Excel & Attachments Rule Engine) */
+
+.kap-pdf-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(10px);
+  z-index: 9990;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.kap-pdf-modal-window {
+  width: 95vw;
+  height: 93vh;
+  max-width: 1320px;
+  background: #06090e;
+  border: 1px solid rgba(0, 255, 157, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.95), 0 0 35px rgba(0, 255, 157, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Toolbar Header */
+.kap-pdf-toolbar {
+  padding: 10px 16px;
+  background: #0d131a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kap-pdf-doc-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 250px;
+}
+
+.kap-pdf-ticker-badge {
+  background: rgba(0, 255, 157, 0.15);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+}
+
+.kap-pdf-doc-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.kap-pdf-title-text {
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+}
+
+.kap-pdf-meta-text {
+  font-size: 0.72rem;
+  color: #8b949e;
+  font-family: var(--font-mono, monospace);
+}
+
+.kap-pdf-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Mode Toggle */
+.kap-pdf-mode-toggle {
+  display: flex;
+  background: #161b22;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.mode-btn.active {
+  background: var(--accent-primary, #00ff9d);
+  color: #04140d;
+}
+
+/* Zoom Controls */
+.kap-pdf-zoom-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #161b22;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  color: #c9d1d9;
+  font-family: var(--font-mono, monospace);
+}
+
+.kap-pdf-zoom-ctrl button {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.kap-pdf-zoom-ctrl button:hover {
+  color: #00ff9d;
+}
+
+/* Info Banner */
+.kap-info-banner {
+  padding: 7px 16px;
+  background: rgba(88, 166, 255, 0.08);
+  border-bottom: 1px solid rgba(88, 166, 255, 0.2);
+  font-size: 0.76rem;
+  color: #8b949e;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+}
+
+.kap-info-banner b {
+  color: #58a6ff;
+}
+
+/* AI Button */
+.kap-pdf-ai-btn {
+  background: rgba(0, 255, 157, 0.15);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.kap-pdf-ai-btn:hover {
+  background: #00ff9d;
+  color: #04140d;
+}
+
+.kap-pdf-ext-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #c9d1d9;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.kap-pdf-close-btn {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.kap-pdf-close-btn:hover {
+  color: #ff4d4d;
+  background: rgba(255, 77, 77, 0.15);
+}
+
+/* BİLDİRİM EKLERİ VE EXCEL BAR */
+.kap-attachments-bar {
+  padding: 8px 16px;
+  background: #04070a;
+  border-bottom: 1px solid rgba(0, 255, 157, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.attachments-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #00ff9d;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.attachments-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0d131a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #c9d1d9;
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.attachment-chip:hover {
+  border-color: #00ff9d;
+  color: #00ff9d;
+  background: rgba(0, 255, 157, 0.08);
+}
+
+.attachment-chip.active {
+  background: rgba(0, 255, 157, 0.18);
+  border-color: #00ff9d;
+  color: #00ff9d;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(0, 255, 157, 0.25);
+}
+
+.att-icon {
+  font-size: 0.8rem;
+}
+
+.att-name {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* AI Summary Bar */
+.kap-pdf-ai-summary-bar {
+  background: rgba(0, 255, 157, 0.08);
+  border-bottom: 1px solid rgba(0, 255, 157, 0.25);
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  color: #e6f7ff;
+}
+
+.summary-title {
+  font-weight: 700;
+  color: #00ff9d;
+  margin-bottom: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Viewport Canvas */
+.kap-pdf-viewport {
+  flex: 1;
+  overflow: auto;
+  background: #020406;
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.kap-pdf-iframe-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kap-pdf-iframe-wrapper {
+  width: 100%;
+  flex: 1;
+  min-height: 700px;
+}
+
+.kap-pdf-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 6px;
+  background: #111;
+}
+
+/* Paper Document Styling */
+.kap-paper-document {
+  width: 840px;
+  min-height: 950px;
+  background: #0b0f14;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  padding: 32px 40px;
+  color: #d0d7de;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: transform 0.2s ease;
+}
+
+.paper-header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #00ff9d;
+  padding-bottom: 14px;
+  margin-bottom: 20px;
+}
+
+.paper-kap-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-symbol {
+  font-size: 1.6rem;
+  color: #00ff9d;
+}
+
+.logo-text {
+  font-size: 0.95rem;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+.logo-sub {
+  font-size: 0.72rem;
+  color: #8b949e;
+}
+
+.paper-doc-id {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: #8b949e;
+}
+
+/* Meta Table */
+.paper-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+  font-size: 0.82rem;
+}
+
+.paper-meta-table td {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.meta-lbl {
+  width: 170px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #8b949e;
+  font-weight: 600;
+}
+
+.meta-val {
+  color: #ffffff;
+}
+
+/* Document Body Content */
+.paper-body-content {
+  margin-bottom: 28px;
+}
+
+.paper-body-content h3 {
+  font-size: 0.9rem;
+  color: #00ff9d;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  border-bottom: 1px dashed rgba(0, 255, 157, 0.3);
+  padding-bottom: 6px;
+  font-family: var(--font-mono, monospace);
+}
+
+.paper-text-paragraph {
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: #e6f7ff;
+  margin-bottom: 20px;
+  white-space: pre-wrap;
+}
+
+.paper-legal-note {
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid #58a6ff;
+  padding: 10px 14px;
+  font-size: 0.76rem;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+/* Footer Stamp */
+.paper-footer-stamp {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #484f58;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Binary Download Card (Excel / Word) */
+.kap-binary-download-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: rgba(13, 17, 23, 0.95);
+  padding: 40px 20px;
+}
+
+.binary-card-content {
+  background: rgba(22, 27, 34, 0.9);
+  border: 1px solid rgba(0, 255, 157, 0.2);
+  border-radius: 16px;
+  padding: 36px 48px;
+  max-width: 540px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+.binary-icon {
+  font-size: 3.5rem;
+  margin-bottom: 16px;
+}
+
+.binary-card-content h3 {
+  color: #ffffff;
+  font-size: 1.15rem;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.binary-desc {
+  color: #8b949e;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.binary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.binary-dl-btn {
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-mono, monospace);
+}
+
+.binary-dl-btn.primary {
+  background: #238636;
+  border: 1px solid #2ea043;
+  color: #ffffff;
+}
+
+.binary-dl-btn.primary:hover {
+  background: #2ea043;
+  box-shadow: 0 4px 12px rgba(46, 160, 67, 0.4);
+}
+
+.binary-dl-btn.secondary {
+  background: rgba(0, 255, 157, 0.1);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+}
+
+.binary-dl-btn.secondary:hover {
+  background: rgba(0, 255, 157, 0.2);
+}

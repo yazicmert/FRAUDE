@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { runScreener } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { EquityRow } from '../../types';
+import { classifyInstrument } from '../../lib/instrumentKind';
+import { isBistEquity } from '../../lib/equityGroups';
 import {
   type ScreenerPreset,
   loadScreenerPresets,
@@ -12,17 +14,19 @@ import {
 
 interface ScreenerViewProps {
   initialRows?: EquityRow[];
+  initialCategory?: 'ALL' | 'BIST' | 'GLOBAL' | 'EMTIA' | 'KRIPTO';
   onSelectTicker?: (ticker: string) => void;
 }
 
-export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerViewProps) {
+export default function ScreenerView({ initialRows, initialCategory = 'ALL', onSelectTicker }: ScreenerViewProps) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('where rsi < 35');
+  const [query, setQuery] = useState(initialCategory === 'ALL' ? 'where rsi < 35' : '');
   const [rows, setRows] = useState<EquityRow[]>(initialRows ?? []);
   const [message, setMessage] = useState(initialRows ? t('screenerResultStatus').replace('{{count}}', initialRows.length.toString()) : '');
   const [hasSearched, setHasSearched] = useState(!!initialRows);
   const [presets, setPresets] = useState<ScreenerPreset[]>(() => loadScreenerPresets());
   const [presetName, setPresetName] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'BIST' | 'GLOBAL' | 'EMTIA' | 'KRIPTO'>(initialCategory);
 
   useEffect(() => {
     const onUpdate = (e: Event) => setPresets((e as CustomEvent<ScreenerPreset[]>).detail);
@@ -37,12 +41,38 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
     setPresetName('');
   };
 
-  const execute = async (searchQuery: string = query) => {
+  const execute = async (searchQuery: string = query, cat: 'ALL' | 'BIST' | 'GLOBAL' | 'EMTIA' | 'KRIPTO' = categoryFilter) => {
     setQuery(searchQuery);
-    const result = await runScreener(searchQuery);
-    setRows(result.rows);
-    setMessage(t('screenerResultStatus').replace('{{count}}', result.rows.length.toString()));
+    let fullQuery = searchQuery;
+    if (cat === 'BIST') fullQuery = `BIST ${searchQuery}`;
+    else if (cat === 'GLOBAL') fullQuery = `GLOBAL ${searchQuery}`;
+    else if (cat === 'EMTIA') fullQuery = `EMTIA ${searchQuery}`;
+    else if (cat === 'KRIPTO') fullQuery = `KRIPTO ${searchQuery}`;
+
+    const result = await runScreener(fullQuery);
+    let filtered = result.rows;
+    if (cat === 'BIST') {
+      filtered = result.rows.filter((r) => isBistEquity(r));
+    } else if (cat === 'GLOBAL') {
+      filtered = result.rows.filter((r) => classifyInstrument(r.ticker, r.index_memberships) === 'global-equity');
+    } else if (cat === 'EMTIA') {
+      filtered = result.rows.filter((r) => classifyInstrument(r.ticker, r.index_memberships) === 'commodity');
+    } else if (cat === 'KRIPTO') {
+      filtered = result.rows.filter((r) => classifyInstrument(r.ticker, r.index_memberships) === 'crypto');
+    }
+    setRows(filtered);
+    setMessage(t('screenerResultStatus').replace('{{count}}', filtered.length.toString()));
     setHasSearched(true);
+  };
+
+  useEffect(() => {
+    void execute(initialCategory === 'ALL' ? 'where rsi < 35' : '', initialCategory);
+  }, [initialCategory]);
+
+  const handleCategoryChange = (cat: 'ALL' | 'BIST' | 'GLOBAL' | 'EMTIA' | 'KRIPTO') => {
+    setCategoryFilter(cat);
+    const nextQuery = cat !== 'ALL' && query === 'where rsi < 35' ? '' : query;
+    void execute(nextQuery, cat);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -61,6 +91,36 @@ export default function ScreenerView({ initialRows, onSelectTicker }: ScreenerVi
       </div>
 
       <section className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 'bold', marginRight: '4px' }}>Kategori:</span>
+          {[
+            { id: 'ALL', label: '🌐 Tüm Varlıklar' },
+            { id: 'BIST', label: '📈 BIST Hisse' },
+            { id: 'GLOBAL', label: '🌍 Global Hisse' },
+            { id: 'EMTIA', label: '🛢️ Emtialar' },
+            { id: 'KRIPTO', label: '🪙 Kripto' },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => handleCategoryChange(cat.id as typeof categoryFilter)}
+              style={{
+                padding: '6px 14px',
+                fontSize: '0.82rem',
+                fontWeight: categoryFilter === cat.id ? 'bold' : 'normal',
+                background: categoryFilter === cat.id ? 'var(--accent-primary)' : 'var(--bg-main)',
+                color: categoryFilter === cat.id ? '#000000' : 'var(--text-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', overflowX: 'auto', paddingBottom: '4px' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>{t('screenerPresets')}:</span>
           <button 

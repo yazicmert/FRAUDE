@@ -253,14 +253,29 @@ export function listKapAnnouncements(ticker?: string) {
   });
 }
 
+export interface KapDisclosureDetail {
+  disclosure_index: string;
+  attachments: { name: string; url: string }[];
+  pdf_url: string;
+  word_url: string;
+  excel_url: string;
+}
+
+export function getKapDisclosureDetail(disclosureIndex: string) {
+  return invoke<KapDisclosureDetail>('get_kap_disclosure_detail', {
+    disclosureIndex,
+  });
+}
+
 export function askAi(
   prompt: string,
   activeContext?: string,
   agentId?: string,
   history?: import('../types').AiChatMessage[],
+  effortLevel?: string,
 ) {
   return invoke<AiResponse>('ask_ai', {
-    request: { prompt, active_context: activeContext, agent_id: agentId, history },
+    request: { prompt, active_context: activeContext, agent_id: agentId, history, effort_level: effortLevel },
   });
 }
 

@@ -631,19 +631,22 @@ fn holdings_store() -> &'static Mutex<HashMap<String, StoredReport>> {
 }
 
 fn store_report(code: &str, report: &FundHoldingsReport) {
-    let mut guard = holdings_store().lock().unwrap_or_else(|e| e.into_inner());
-    guard.insert(
-        code.to_string(),
-        StoredReport {
-            fetched_at_unix: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or_default(),
-            report: report.clone(),
-        },
-    );
-    if let (Some(path), Ok(json)) = (holdings_store_path(), serde_json::to_string(&*guard)) {
-        let _ = std::fs::write(path, json);
+    let copy = {
+        let mut guard = holdings_store().lock().unwrap_or_else(|e| e.into_inner());
+        guard.insert(
+            code.to_string(),
+            StoredReport {
+                fetched_at_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or_default(),
+                report: report.clone(),
+            },
+        );
+        guard.clone()
+    };
+    if let Some(path) = holdings_store_path() {
+        let _ = crate::persist::write_json_atomic(&path, &copy);
     }
 }
 

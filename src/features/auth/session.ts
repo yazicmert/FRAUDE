@@ -117,8 +117,7 @@ export async function signIn(email: string, password: string): Promise<AuthUser 
 }
 
 /**
- * GitHub OAuth'u sistem tarayıcısında başlatır. Masaüstü dönüşü kayıtlı
- * `fraude://auth-callback` şemasına gelir ve deepLink.ts oturumu tamamlar.
+ * GitHub OAuth'u sistem tarayıcısında başlatır.
  */
 export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network' | null> {
   try {
@@ -129,16 +128,42 @@ export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network
       provider: 'github',
       options: {
         redirectTo,
-        // OAuth'u webview içinde gezdirmeyip varsayılan tarayıcıda açıyoruz.
         skipBrowserRedirect: true,
       },
     });
-    if (error || !data.url) return 'oauth-unavailable';
+
+    if (error || !data?.url) return 'oauth-unavailable';
     await openUrl(data.url);
     return null;
   } catch (error) {
     if (error instanceof TypeError) return 'network';
     return 'oauth-unavailable';
+  }
+}
+
+/**
+ * Mevcut oturum açmış e-posta hesabına GitHub kimliğini bağlar.
+ */
+export async function linkGitHubIdentity(): Promise<'oauth-unavailable' | 'network' | null> {
+  try {
+    const redirectTo = isDesktopRuntime()
+      ? DESKTOP_AUTH_REDIRECT
+      : `${window.location.origin}${window.location.pathname}`;
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'github',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error || !data?.url) {
+      return signInWithGitHub();
+    }
+    await openUrl(data.url);
+    return null;
+  } catch {
+    return signInWithGitHub();
   }
 }
 

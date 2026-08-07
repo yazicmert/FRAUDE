@@ -115,10 +115,32 @@ pub struct KapAnnouncement {
     pub summary: String,
     pub url: String,
     pub ai_importance_score: u8,
+    /// KAP `byCriteria` yanıtındaki `attachmentCount` alanı.
+    pub attachment_count: u32,
 }
 
+/// KAP bildirim sayfasından scrape edilen tek bir ek dosya.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KapAttachmentInfo {
+    /// Ek dosyanın KAP'taki adı ("IR Presentation 2Q26.pdf").
+    pub name: String,
+    /// Doğrudan indirme URL'si (`https://www.kap.org.tr/tr/api/file/download/{fileId}`).
+    pub url: String,
+}
 
-
+/// Bir KAP bildiriminin tam detayı: ekler + export URL'leri.
+#[derive(Clone, Debug, Serialize)]
+pub struct KapDisclosureDetail {
+    pub disclosure_index: String,
+    /// Bildirim Ekleri (PDF dosyaları).
+    pub attachments: Vec<KapAttachmentInfo>,
+    /// Sağ panel PDF export URL'si.
+    pub pdf_url: String,
+    /// Sağ panel Word export URL'si.
+    pub word_url: String,
+    /// Sağ panel Excel export URL'si.
+    pub excel_url: String,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct DataSourceStatus {
     pub name: String,
@@ -183,6 +205,8 @@ pub struct AiRequest {
     /// tek atımlık çağrılar) küresel geçmişten kısa bağlam eklenir.
     #[serde(default)]
     pub history: Option<Vec<AiChatMessage>>,
+    #[serde(default)]
+    pub effort_level: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -404,6 +428,22 @@ pub struct IpoRecord {
     /// Arzdan bu yana bedelsiz/bölünme kümülatif çarpanı (2:1 bedelsiz = 2.0).
     /// return_pct bu çarpanla düzeltilerek hesaplanır.
     pub split_factor: Option<f64>,
+    #[serde(default)]
+    pub fund_usage: Option<String>,
+    #[serde(default)]
+    pub share_structure: Option<String>,
+    #[serde(default)]
+    pub ipo_size: Option<String>,
+    #[serde(default)]
+    pub katilim_index: Option<String>,
+    #[serde(default)]
+    pub lockup_period: Option<String>,
+    #[serde(default)]
+    pub consortium_lead: Option<String>,
+    #[serde(default)]
+    pub t1_t2_available: Option<String>,
+    #[serde(default)]
+    pub distribution_ratios: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

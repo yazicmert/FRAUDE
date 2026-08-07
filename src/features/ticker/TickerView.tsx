@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '../../lib/openExternal';
-import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, type PriceSource, type TickerFundsPayload } from '../../api/tauriClient';
+import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot } from '../../types';
 import PriceChart from './PriceChart';
@@ -14,6 +14,8 @@ import FlashValue from '../../components/FlashValue';
 import { useLiveQuotes } from '../../hooks/useLiveQuotes';
 import { hasCorporateData } from '../../lib/instrumentKind';
 import { BellIcon, SparklesIcon, StarIcon } from '../../components/icons';
+import FundDetail from '../funds/FundDetail';
+import KapDocumentViewerModal from '../kap/KapDocumentViewerModal';
 
 const OWNER_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00ced1', '#f0883e', '#7ee787'];
 
@@ -87,6 +89,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [newsLoading, setNewsLoading] = useState(true);
   const [kapItems, setKapItems] = useState<KapAnnouncement[]>([]);
   const [kapLoading, setKapLoading] = useState(true);
+  const [selectedKapDoc, setSelectedKapDoc] = useState<KapAnnouncement | null>(null);
   const [dividends, setDividends] = useState<DividendRecord[]>([]);
   const [capitalIncreases, setCapitalIncreases] = useState<CapitalIncrease[]>([]);
   const [shareholders, setShareholders] = useState<ShareholderSnapshot | null>(null);
@@ -112,15 +115,29 @@ export default function TickerView({ ticker }: { ticker: string }) {
   // backend etiketi (ör. AAPL → "Global") sınıflandırmayı keskinleştirir.
   const corporate = hasCorporateData(ticker, snapshot?.equity.index_memberships ?? null);
   const [activeTab, setActiveTab] = useState<'overview' | 'financials'>('overview');
+  const [fundRow, setFundRow] = useState<FundRow | null>(null);
 
   useEffect(() => {
     setSnapshot(null);
     setError(null);
+    setFundRow(null);
     setActiveTab('overview');
 
     getTickerSnapshot(ticker)
       .then(setSnapshot)
-      .catch((err: unknown) => setError(String(err)));
+      .catch(async (err: unknown) => {
+        try {
+          const funds = await getFunds();
+          const match = funds.find((f) => f.code.toUpperCase() === ticker.toUpperCase());
+          if (match) {
+            setFundRow(match);
+            return;
+          }
+        } catch {
+          // ignore fund search failure
+        }
+        setError(String(err));
+      });
   }, [ticker]);
 
   // Hisse değişince kaynak Yahoo'ya döner: İş Yatırım yalnız BIST hisselerinde
@@ -250,6 +267,14 @@ export default function TickerView({ ticker }: { ticker: string }) {
     window.addEventListener('fraude-sync-completed', handleSync);
     return () => window.removeEventListener('fraude-sync-completed', handleSync);
   }, [ticker, priceSource]);
+
+  if (fundRow) {
+    return (
+      <div className="view ticker-view" style={{ padding: '16px' }}>
+        <FundDetail fund={fundRow} />
+      </div>
+    );
+  }
 
   if (error) return <div className="empty-state error">{error}</div>;
   if (!snapshot) return <div className="empty-state">{t('loadingChart')} {ticker}...</div>;
@@ -772,18 +797,28 @@ export default function TickerView({ ticker }: { ticker: string }) {
         ) : (
           <div className="kap-list">
             {kapItems.map((item) => (
-              <article className="kap-item" key={item.id}>
-                <div>
-                  {item.url ? (
-                    <a href={item.url} target="_blank" rel="noreferrer" style={{ color: '#58a6ff', textDecoration: 'none' }}>
-                      <strong>{item.title}</strong>
-                    </a>
-                  ) : (
-                    <strong>{item.title}</strong>
-                  )}
-                  <span>{item.date} / {item.category}</span>
+              <article
+                className="kap-item"
+                key={item.id}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setSelectedKapDoc(item)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong style={{ color: '#00ff9d' }}>{item.title}</strong>
+                    <div style={{ fontSize: '0.74rem', color: '#8b949e', marginTop: '2px' }}>
+                      {item.date} / {item.category}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    style={{ fontSize: '0.72rem', padding: '4px 8px', background: 'rgba(0, 255, 157, 0.15)', color: '#00ff9d', border: '1px solid #00ff9d' }}
+                  >
+                    📄 Doküman / PDF Oku
+                  </button>
                 </div>
-                {item.summary && <p>{item.summary}</p>}
+                {item.summary && <p style={{ marginTop: '6px' }}>{item.summary}</p>}
               </article>
             ))}
           </div>
@@ -1014,6 +1049,12 @@ export default function TickerView({ ticker }: { ticker: string }) {
           </div>
         </div>
       )}
+
+      <KapDocumentViewerModal
+        announcement={selectedKapDoc}
+        onClose={() => setSelectedKapDoc(null)}
+        onAskAi={(prompt) => dispatchAiAsk(prompt)}
+      />
     </div>
   );
 }

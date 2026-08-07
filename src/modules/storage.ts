@@ -29,6 +29,7 @@ export function readInstalledModules(): InstalledModule[] {
       const existing = known.get(module.id);
       return existing ? {
         ...existing,
+        enabled: existing.enabled ?? true,
         artifactHash: existing.artifactHash ?? module.artifact?.sha256 ?? embeddedArtifactId(module),
       } : {
         id: module.id,

@@ -232,9 +232,7 @@ fn load_disk_cache<T: for<'de> Deserialize<'de>>(
 fn save_disk_cache<T: Serialize + Clone>(path: Option<std::path::PathBuf>, rows: &[T]) {
     let Some(path) = path else { return };
     let cache = DiskCache { fetched_at_unix: unix_now(), rows: rows.to_vec() };
-    if let Ok(json) = serde_json::to_string(&cache) {
-        let _ = std::fs::write(path, json);
-    }
+    let _ = crate::persist::write_json_atomic(&path, &cache);
 }
 
 // ─── Fon listesi ───────────────────────────────────────────────────────────────

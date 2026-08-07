@@ -60,6 +60,15 @@ export function PanelBottomIcon({ size = 15 }: IconProps) {
   );
 }
 
+/** GitHub marka ikonu. */
+export function GithubIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+    </svg>
+  );
+}
+
 /** YZ paneli (sağ panel). */
 export function PanelRightIcon({ size = 15 }: IconProps) {
   return (
@@ -169,6 +178,148 @@ export function EyeOffIcon({ size = 15 }: IconProps) {
       <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
       <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
       <path d="m2 2 20 20" />
+    </svg>
+  );
+}
+
+/** Pano / Ana Sayfa (4 kareli grid). */
+export function DashboardIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+/** Hisse Senedi (Yükselen trend çizgisi). */
+export function StockIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  );
+}
+
+/** TEFAS Fonları (Sepet/Katmanlar). */
+export function FundIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
+    </svg>
+  );
+}
+
+/** Emtia & Değerli Metaller (Silindir/Varil). */
+export function CommodityIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+    </svg>
+  );
+}
+
+/** Kripto Piyasaları (Sikke/Coin). */
+export function CryptoIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 8h4a2 2 0 0 1 0 4H10v-4z" />
+      <path d="M10 12h4.5a2 2 0 0 1 0 4H10v-4z" />
+      <line x1="12" y1="6" x2="12" y2="8" />
+      <line x1="12" y1="16" x2="12" y2="18" />
+    </svg>
+  );
+}
+
+/** Araçlar & Analizler (Anahtar/Cıvata). */
+export function ToolsIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  );
+}
+
+/** Modül Merkezi (Kutu/Küp). */
+export function ModulesIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+  );
+}
+
+/** Teknik Tarayıcı (Mercek). */
+export function SearchIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+/** KAP Akışı (Radyo/Yayın). */
+export function RadioIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M4.9 19.1C3.1 17.3 2 14.8 2 12s1.1-5.3 2.9-7.1" />
+      <path d="M7.8 16.2C6.7 15.1 6 13.6 6 12s.7-3.1 1.8-4.2" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M16.2 7.8c1.1 1.1 1.8 2.6 1.8 4.2s-.7 3.1-1.8 4.2" />
+      <path d="M19.1 4.9C20.9 6.7 22 9.2 22 12s-1.1 5.3-2.9 7.1" />
+    </svg>
+  );
+}
+
+/** Şirket Duyuruları (Bina/Büro). */
+export function BuildingIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="9" y1="6" x2="9.01" y2="6" />
+      <line x1="15" y1="6" x2="15.01" y2="6" />
+      <line x1="9" y1="10" x2="9.01" y2="10" />
+      <line x1="15" y1="10" x2="15.01" y2="10" />
+      <line x1="9" y1="14" x2="9.01" y2="14" />
+      <line x1="15" y1="14" x2="15.01" y2="14" />
+      <path d="M10 22v-4h4v4" />
+    </svg>
+  );
+}
+
+/** Piyasa Taraması (Monitör/Ekran). */
+export function MonitorIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+/** Halka Arz (Sütunlu Bina / Banka / Borsaya Açılış). */
+export function IpoIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M3 21h18" />
+      <path d="M3 10h18" />
+      <path d="M5 10v11" />
+      <path d="M9 10v11" />
+      <path d="M15 10v11" />
+      <path d="M19 10v11" />
+      <path d="M12 3L2 10h20L12 3z" />
     </svg>
   );
 }

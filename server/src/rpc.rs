@@ -36,6 +36,7 @@ impl RpcResponse {
 
 /// Paylaşımlı piyasa verisi — auth opsiyonel, sunucuda cache'lenir.
 /// (Masaüstü `invoke_handler` yüzeyinden türetildi.)
+#[allow(dead_code)]
 pub const SHARED_COMMANDS: &[&str] = &[
     "execute_fql",
     "get_dashboard_snapshot",
@@ -107,6 +108,10 @@ pub const ADMIN_COMMANDS: &[&str] = &[
     "rollback_module_release",
 ];
 
+#[allow(dead_code)]
+pub fn is_shared(cmd: &str) -> bool {
+    SHARED_COMMANDS.contains(&cmd)
+}
 fn is_user(cmd: &str) -> bool {
     USER_COMMANDS.contains(&cmd)
 }

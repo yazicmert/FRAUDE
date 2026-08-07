@@ -31,6 +31,8 @@ const NotificationsView = lazy(() => import('../features/notifications/Notificat
 const ResearchView = lazy(() => import('../features/research/ResearchView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
+const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
+const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 
 export const CORE_VERSION = '0.1.4';
 
@@ -52,6 +54,7 @@ export interface ModuleHost {
   activeContext: string;
   openTicker: (ticker: string) => void;
   openIndex: (symbol: string) => void;
+  openModule?: (kind: string, props?: Record<string, unknown>) => void;
   monitor: {
     state: MonitorState | null;
     setState: (state: MonitorState) => void;
@@ -200,6 +203,32 @@ export const workspaceModules: WorkspaceModule[] = [
     render: () => <FundsView />,
   },
   {
+    kind: 'commodities',
+    titleKey: 'navCommodities',
+    manifest: manifest(
+      'fraude.commodities',
+      { tr: 'Emtia & Değerli Metaller', en: 'Commodities & Metals' },
+      { tr: 'Ons/Gram Altın, Gümüş, Petrol ve Sanayi Metalleri canlı ısı haritası ve hesaplayıcı.', en: 'Live heatmap, gainers & converter for gold, silver, oil and metals.' },
+      ['api:market-data'],
+      'commodities',
+      'navCommodities',
+    ),
+    render: (_tab, host) => <CommoditiesView onSelectTicker={host.openTicker} />,
+  },
+  {
+    kind: 'crypto',
+    titleKey: 'navCrypto',
+    manifest: manifest(
+      'fraude.crypto',
+      { tr: 'Kripto Piyasaları', en: 'Crypto Markets' },
+      { tr: '7/24 Kripto para piyasa değeri ısı haritası, sıralama ve teknik görünüm.', en: '24/7 Crypto market cap heatmap, rankings and technical view.' },
+      ['api:market-data'],
+      'crypto',
+      'navCrypto',
+    ),
+    render: (_tab, host) => <CryptoView onSelectTicker={host.openTicker} />,
+  },
+  {
     kind: 'ai',
     titleKey: 'aiResearch',
     manifest: manifest(
@@ -303,6 +332,19 @@ export const workspaceModules: WorkspaceModule[] = [
     render: (_tab, host) => <CorporateActionsView onSelectTicker={host.openTicker} />,
   },
   {
+    kind: 'ipo',
+    titleKey: 'caIpo',
+    manifest: manifest(
+      'fraude.ipo',
+      { tr: 'Halka Arz', en: 'IPOs' },
+      { tr: 'Canlı ve taslak halka arz takibi.', en: 'Live and draft IPO tracking.' },
+      ['network:yahoo'],
+      'ipo',
+      'caIpo',
+    ),
+    render: (_tab, host) => <CorporateActionsView initialTab="ipo" onSelectTicker={host.openTicker} />,
+  },
+  {
     kind: 'guide',
     titleKey: 'guide',
     // Kenar çubuğunda değil, üst çubuktaki kitap ikonunda yaşar (App.tsx);
@@ -319,7 +361,7 @@ export const workspaceModules: WorkspaceModule[] = [
       'guide',
       'guide',
     ),
-    render: () => <GuideView />,
+    render: (_tab, host) => <GuideView onOpenModule={host.openModule} />,
   },
   // Admin-only publishing surface. Core view (no manifest → not toggle-able);
   // desktop-only in the sidebar because the private signing key lives locally.
@@ -426,7 +468,7 @@ export function moduleIsTransient(module: WorkspaceModule | undefined): boolean 
 
 export type NavEntry =
   | { type: 'module'; kind: string }
-  | { type: 'group'; id: string; labelKey: string; icon?: string; defaultOpen?: boolean; children: NavEntry[] }
+  | { type: 'group'; id: string; labelKey: string; icon?: ReactNode; defaultOpen?: boolean; children: NavEntry[] }
   | { type: 'soon'; id: string; labelKey: string };
 
 export interface NavSection {
@@ -443,6 +485,13 @@ export interface NavSection {
   menu?: 'flat' | 'group';
 }
 
+import {
+  StockIcon,
+  FundIcon,
+  CommodityIcon,
+  CryptoIcon
+} from '../components/icons';
+
 export const NAV_TREE: NavSection[] = [
   {
     id: 'home',
@@ -456,7 +505,7 @@ export const NAV_TREE: NavSection[] = [
         type: 'group',
         id: 'stocks',
         labelKey: 'navStocks',
-        icon: '📈',
+        icon: <StockIcon size={15} />,
         defaultOpen: true,
         children: [
           {
@@ -468,6 +517,7 @@ export const NAV_TREE: NavSection[] = [
               { type: 'module', kind: 'screener' },
               { type: 'module', kind: 'kap' },
               { type: 'module', kind: 'corporate' },
+              { type: 'module', kind: 'ipo' },
               { type: 'module', kind: 'monitor' },
             ],
           },
@@ -479,10 +529,23 @@ export const NAV_TREE: NavSection[] = [
         type: 'group',
         id: 'funds',
         labelKey: 'navFunds',
-        icon: '🧺',
+        icon: <FundIcon size={15} />,
         children: [{ type: 'module', kind: 'funds' }],
       },
-      { type: 'soon', id: 'commodities', labelKey: 'navCommodities' },
+      {
+        type: 'group',
+        id: 'commodities',
+        labelKey: 'navCommodities',
+        icon: <CommodityIcon size={15} />,
+        children: [{ type: 'module', kind: 'commodities' }],
+      },
+      {
+        type: 'group',
+        id: 'crypto',
+        labelKey: 'navCrypto',
+        icon: <CryptoIcon size={15} />,
+        children: [{ type: 'module', kind: 'crypto' }],
+      },
     ],
   },
   {

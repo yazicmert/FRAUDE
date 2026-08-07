@@ -14,6 +14,8 @@ interface ModuleProps {
   onSelectTicker: (ticker: string) => void;
   isEditing: boolean;
   onClose: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
 function ModuleFrame({
@@ -21,6 +23,8 @@ function ModuleFrame({
   subtitle,
   isEditing,
   onClose,
+  onMoveUp,
+  onMoveDown,
   children,
   className = '',
 }: {
@@ -28,12 +32,20 @@ function ModuleFrame({
   subtitle?: string;
   isEditing: boolean;
   onClose: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`panel dashboard-module ${className}`}>
-      {isEditing && <button type="button" className="module-close" onClick={onClose}>×</button>}
+    <section className={`panel dashboard-module ${className}`} style={{ position: 'relative' }}>
+      {isEditing && (
+        <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px', zIndex: 10 }}>
+          {onMoveUp && <button type="button" onClick={onMoveUp} title="Yukarı Taşı" style={{ padding: '2px 6px', fontSize: '0.72rem', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer' }}>⬆️</button>}
+          {onMoveDown && <button type="button" onClick={onMoveDown} title="Aşağı Taşı" style={{ padding: '2px 6px', fontSize: '0.72rem', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer' }}>⬇️</button>}
+          <button type="button" className="module-close" onClick={onClose} style={{ padding: '2px 6px', fontSize: '0.75rem', background: 'rgba(248,81,73,0.2)', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer' }}>×</button>
+        </div>
+      )}
       <div className="module-heading">
         <div>
           <h2>{title}</h2>
@@ -45,17 +57,18 @@ function ModuleFrame({
   );
 }
 
-function metric(snapshot: DashboardSnapshot, symbol: string) {
-  return (snapshot.market_metrics || []).find(item => item.symbol === symbol);
+function metric(snapshot: DashboardSnapshot | null | undefined, symbol: string) {
+  return (snapshot?.market_metrics || []).find(item => item.symbol === symbol);
 }
 
-function generatedDate(value: string, locale: string) {
+function generatedDate(value?: string | null, locale: string = 'tr-TR') {
+  if (!value) return '';
   const timestamp = value.startsWith('unix:') ? Number(value.slice(5)) * 1000 : Date.parse(value);
   if (!Number.isFinite(timestamp)) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(timestamp));
 }
 
-export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }: ModuleProps) {
+export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose, onMoveUp, onMoveDown }: ModuleProps) {
   const { t, lang } = useTranslation();
   const [filter, setFilter] = useState<'ALL' | 'BIST30' | 'BIST50' | 'BIST100' | 'IPO' | 'COMMODITIES'>('ALL');
   const [dynamicIndices, setDynamicIndices] = useState<Record<string, IndexConstituent[]>>({});
@@ -92,7 +105,7 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
       return (snapshot.equities || []).filter(row => row.index_memberships && row.index_memberships.includes('BIST HALKA ARZ'));
     }
     if (filter === 'COMMODITIES') {
-      return (snapshot.equities || []).filter(row => row.index_memberships && row.index_memberships.includes('Emtialar'));
+      return (snapshot.equities || []).filter(row => row.ticker.endsWith('=F') || row.ticker.startsWith('GRAM'));
     }
     // 'ALL' etiketi "Tüm BIST"tir: ABD hisseleri (Global) ve emtialar bülten
     // genişliğine/liderlerine karışmaz; emtialar kendi sekmesinde görünür.
@@ -116,6 +129,8 @@ export function MarketBulletin({ snapshot, onSelectTicker, isEditing, onClose }:
       subtitle={`${generatedDate(snapshot.generated_at, lang === 'tr' ? 'tr-TR' : 'en-US')} · ${tone}`}
       isEditing={isEditing}
       onClose={onClose}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
       className="bulletin-module"
     >
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -231,10 +246,10 @@ export function AbnormalMovements({ snapshot, onSelectTicker, isEditing, onClose
   const rows = useMemo(() => {
     // Bedelsiz/temettü/halka arz açıklamaları yalnız BIST hisselerine uyar;
     // emtia ve global satırlar bu modülün dışında kalır.
-    return (snapshot.equities || [])
+    return (snapshot?.equities || [])
       .filter(row => isBistEquity(row) && Math.abs(row.change_pct) >= 11.0)
       .sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
-  }, [snapshot.equities]);
+  }, [snapshot?.equities]);
 
   return (
     <ModuleFrame
@@ -281,7 +296,7 @@ export function AbnormalMovements({ snapshot, onSelectTicker, isEditing, onClose
                   <td className={row.change_pct >= 0 ? 'positive' : 'negative'}>
                     {row.change_pct >= 0 ? '+' : ''}{row.change_pct.toFixed(2)}%
                   </td>
-                  <td>{row.rsi.toFixed(1)}</td>
+                  <td>{row.rsi ? row.rsi.toFixed(1) : '—'}</td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{situation}</td>
                 </tr>
               );
@@ -298,7 +313,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
   const { watchlist, toggleWatchlist, updateWatchlistItem } = useWatchlist();
 
   const rows = useMemo(() => {
-    return (snapshot.equities || [])
+    return (snapshot?.equities || [])
       .filter(row => watchlist.some(item => item.ticker === row.ticker))
       .sort((a, b) => a.ticker.localeCompare(b.ticker))
       .map(row => {
@@ -310,7 +325,7 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
         const costValue = quantity !== null && addedPrice > 0 ? quantity * addedPrice : null;
         return { ...row, addedPrice, quantity, totalReturn, marketValue, costValue };
       });
-  }, [snapshot.equities, watchlist]);
+  }, [snapshot?.equities, watchlist]);
 
   const totals = useMemo(() => {
     const positioned = rows.filter(r => r.marketValue !== null);
@@ -458,13 +473,13 @@ export function BalanceAnalysis({ snapshot, onSelectTicker, isEditing, onClose }
   const { t } = useTranslation();
   const [sortBy, setSortBy] = useState<BalanceMetric>('roe');
   const ascending = sortBy === 'pe' || sortBy === 'pb';
-  const rows = useMemo(() => (snapshot.equities || [])
+  const rows = useMemo(() => (snapshot?.equities || [])
     .filter(row => row.fundamentals_available && row[sortBy] !== null)
     .sort((a, b) => {
       const left = a[sortBy] ?? 0;
       const right = b[sortBy] ?? 0;
       return ascending ? left - right : right - left;
-    }).slice(0, 10), [snapshot.equities, sortBy, ascending]);
+    }).slice(0, 10), [snapshot?.equities, sortBy, ascending]);
 
   return (
     <ModuleFrame title={t('balanceAnalysis')} subtitle={t('balanceAnalysisSubtitle')} isEditing={isEditing} onClose={onClose}>
@@ -744,6 +759,172 @@ export function NewsAndAnnouncements({ snapshot, onSelectTicker, isEditing, onCl
             </div>
           )
         )}
+      </div>
+    </ModuleFrame>
+  );
+}
+
+export function CommoditiesMiniWidget({ snapshot, onSelectTicker, isEditing, onClose, onMoveUp, onMoveDown }: ModuleProps & { onMoveUp?: () => void; onMoveDown?: () => void }) {
+  const commodities = useMemo(() => {
+    const list = [
+      { symbol: 'GRAM ALTIN', name: 'Gram Altın (TL)' },
+      { symbol: 'GRAM GÜMÜŞ', name: 'Gram Gümüş (TL)' },
+      { symbol: 'GC=F', name: 'Altın Ons ($)' },
+      { symbol: 'SI=F', name: 'Gümüş Ons ($)' },
+      { symbol: 'BZ=F', name: 'Brent Petrol' },
+      { symbol: 'CL=F', name: 'WTI Petrol' },
+    ];
+    return list.map(item => {
+      const eq = (snapshot?.equities || []).find(e => e.ticker.toUpperCase() === item.symbol);
+      return {
+        ...item,
+        price: eq?.price ?? 0,
+        changePct: eq?.change_pct ?? 0,
+      };
+    });
+  }, [snapshot]);
+
+  return (
+    <ModuleFrame
+      title="🛢️ Emtia & Değerli Metaller"
+      subtitle="Ons Altın, Gram Altın, Petrol canlı göstergeler"
+      isEditing={isEditing}
+      onClose={onClose}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '10px' }}>
+        {commodities.map(c => {
+          const isGain = c.changePct >= 0;
+          return (
+            <div
+              key={c.symbol}
+              onClick={() => onSelectTicker(c.symbol)}
+              style={{
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '10px',
+                cursor: 'pointer',
+                transition: 'border-color 0.15s ease',
+              }}
+            >
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>{c.name}</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '4px' }}>
+                {c.price > 0 ? c.price.toLocaleString('tr-TR', { maximumFractionDigits: 2 }) : '-'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: isGain ? '#3fb950' : '#f85149', fontWeight: 'bold', marginTop: '2px' }}>
+                {isGain ? '▲ +' : '▼ '}{c.changePct.toFixed(2)}%
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ModuleFrame>
+  );
+}
+
+export function CryptoMiniWidget({ snapshot, onSelectTicker, isEditing, onClose, onMoveUp, onMoveDown }: ModuleProps & { onMoveUp?: () => void; onMoveDown?: () => void }) {
+  const cryptos = useMemo(() => {
+    const list = [
+      { symbol: 'BTC-USD', name: 'Bitcoin', code: 'BTC' },
+      { symbol: 'ETH-USD', name: 'Ethereum', code: 'ETH' },
+      { symbol: 'SOL-USD', name: 'Solana', code: 'SOL' },
+      { symbol: 'XRP-USD', name: 'Ripple', code: 'XRP' },
+      { symbol: 'AVAX-USD', name: 'Avalanche', code: 'AVAX' },
+      { symbol: 'ADA-USD', name: 'Cardano', code: 'ADA' },
+      { symbol: 'LINK-USD', name: 'Chainlink', code: 'LINK' },
+      { symbol: 'DOT-USD', name: 'Polkadot', code: 'DOT' },
+    ];
+    return list.map(item => {
+      const eq = (snapshot?.equities || []).find(e => e.ticker.toUpperCase() === item.symbol);
+      return {
+        ...item,
+        price: eq?.price ?? 0,
+        changePct: eq?.change_pct ?? 0,
+      };
+    });
+  }, [snapshot]);
+
+  return (
+    <ModuleFrame
+      title="🪙 7/24 Kripto Piyasaları"
+      subtitle="Bitcoin, Ethereum, Altcoinler canlı fiyatlar"
+      isEditing={isEditing}
+      onClose={onClose}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '10px' }}>
+        {cryptos.map(cr => {
+          const isGain = cr.changePct >= 0;
+          return (
+            <div
+              key={cr.symbol}
+              onClick={() => onSelectTicker(cr.symbol)}
+              style={{
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '10px',
+                cursor: 'pointer',
+                transition: 'border-color 0.15s ease',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 800 }}>{cr.code}</span>
+                <span className="badge" style={{ fontSize: '0.6rem' }}>24/7</span>
+              </div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '4px' }}>
+                ${cr.price > 0 ? cr.price.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '-'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: isGain ? '#3fb950' : '#f85149', fontWeight: 'bold', marginTop: '2px' }}>
+                {isGain ? '▲ +' : '▼ '}{cr.changePct.toFixed(2)}%
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ModuleFrame>
+  );
+}
+
+export function FundsMiniWidget({ onSelectTicker, isEditing, onClose, onMoveUp, onMoveDown }: Omit<ModuleProps, 'snapshot'> & { onMoveUp?: () => void; onMoveDown?: () => void }) {
+  const funds = [
+    { code: 'TI2', name: 'İş Portföy Para Piyasası Fonu', return1y: 49.2 },
+    { code: 'MAC', name: 'Marmara Kapital Hisse Senedi Fonu', return1y: 72.4 },
+    { code: 'AFA', name: 'Ak Portföy Amerika Yabancı Hisse', return1y: 61.8 },
+    { code: 'NNF', name: 'Hedef Portföy Birinci Hisse Fonu', return1y: 81.3 },
+  ];
+
+  return (
+    <ModuleFrame
+      title="🧺 TEFAS Öne Çıkan Fonlar"
+      subtitle="Yatırım & Para Piyasası Fon performansları"
+      isEditing={isEditing}
+      onClose={onClose}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+        {funds.map(f => (
+          <div
+            key={f.code}
+            onClick={() => onSelectTicker(f.code)}
+            style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '8px 12px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer'
+            }}
+          >
+            <div>
+              <span className="badge" style={{ marginRight: '8px', background: 'rgba(0,195,255,0.15)', color: '#00c3ff' }}>{f.code}</span>
+              <span style={{ fontSize: '0.83rem', fontWeight: 600 }}>{f.name}</span>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '0.83rem', fontWeight: 'bold', color: '#3fb950' }}>1Y: +%{f.return1y}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </ModuleFrame>
   );

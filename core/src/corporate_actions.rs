@@ -251,6 +251,14 @@ fn archive_to_records(archive: Vec<crate::ipo_store::PersistedIpo>) -> Vec<IpoRe
             distribution_type: p.distribution_type,
             participant_count: p.participant_count,
             split_factor: p.split_factor,
+            fund_usage: p.fund_usage,
+            share_structure: p.share_structure,
+            ipo_size: p.ipo_size,
+            katilim_index: p.katilim_index,
+            lockup_period: p.lockup_period,
+            consortium_lead: p.consortium_lead,
+            t1_t2_available: p.t1_t2_available,
+            distribution_ratios: p.distribution_ratios,
         })
         .collect();
 

@@ -1,0 +1,296 @@
+.audit-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.audit-modal-window {
+  background: #161b22;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 580px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.audit-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: rgba(22, 27, 34, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.audit-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.audit-ticker-badge {
+  background: rgba(0, 255, 157, 0.15);
+  color: #00ff9d;
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+}
+
+.audit-header-title h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.audit-subtitle {
+  font-size: 0.75rem;
+  color: #8b949e;
+}
+
+.audit-close-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.audit-close-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.audit-modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.audit-value-card {
+  background: rgba(0, 255, 157, 0.04);
+  border: 1px solid rgba(0, 255, 157, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.value-label {
+  font-size: 0.8rem;
+  color: #8b949e;
+  margin-bottom: 4px;
+}
+
+.value-main-amount {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #00ff9d;
+  font-family: var(--font-mono, monospace);
+}
+
+.value-currency-tag {
+  font-size: 0.72rem;
+  color: #58a6ff;
+  margin-top: 4px;
+}
+
+.audit-raw-line-preview {
+  background: rgba(0, 255, 157, 0.03);
+  border: 1px solid rgba(0, 255, 157, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #00ff9d;
+  margin-bottom: 10px;
+}
+
+.kap-index-tag {
+  background: rgba(0, 255, 157, 0.15);
+  color: #00ff9d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-family: var(--font-mono, monospace);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.preview-table th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 12px;
+  color: #58a6ff;
+  font-size: 0.74rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.preview-table td {
+  padding: 10px 12px;
+  color: #ffffff;
+}
+
+.active-target-row {
+  background: rgba(0, 255, 157, 0.1) !important;
+}
+
+.row-bullet {
+  color: #00ff9d;
+  margin-right: 6px;
+  font-size: 0.7rem;
+}
+
+.preview-footer-note {
+  font-size: 0.72rem;
+  color: #8b949e;
+  margin-top: 8px;
+}
+
+.formula-title {
+  font-size: 0.82rem;
+  color: #e6f7ff;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.formula-step {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.82rem;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #58a6ff;
+  margin-bottom: 8px;
+}
+
+.formula-note {
+  font-size: 0.75rem;
+  color: #8b949e;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.audit-fx-info {
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px dashed rgba(88, 166, 255, 0.3);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #7ee787;
+  line-height: 1.4;
+}
+
+.audit-kap-source-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.84rem;
+  color: #c9d1d9;
+}
+
+.audit-kap-ann-card {
+  background: rgba(22, 27, 34, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.ann-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.ann-meta {
+  font-size: 0.74rem;
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+.ann-summary {
+  font-size: 0.78rem;
+  color: #8b949e;
+  margin: 0 0 14px 0;
+}
+
+.ann-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-action-btn {
+  padding: 9px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-mono, monospace);
+  text-align: center;
+}
+
+.audit-action-btn.primary {
+  background: rgba(0, 255, 157, 0.15);
+  border: 1px solid #00ff9d;
+  color: #00ff9d;
+}
+
+.audit-action-btn.primary:hover {
+  background: rgba(0, 255, 157, 0.25);
+}
+
+.audit-action-btn.excel {
+  background: rgba(35, 134, 54, 0.2);
+  border: 1px solid #2ea043;
+  color: #7ee787;
+}
+
+.audit-action-btn.excel:hover {
+  background: rgba(35, 134, 54, 0.35);
+}
+
+.audit-action-btn.pdf {
+  background: rgba(88, 166, 255, 0.15);
+  border: 1px solid #58a6ff;
+  color: #58a6ff;
+}
+
+.audit-action-btn.pdf:hover {
+  background: rgba(88, 166, 255, 0.25);
+}

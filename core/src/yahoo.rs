@@ -31,6 +31,10 @@ pub const CRYPTO_TICKERS: &[(&str, &str)] = &[
     ("ETH-USD", "Ethereum ($)"),
     ("SOL-USD", "Solana ($)"),
     ("XRP-USD", "Ripple ($)"),
+    ("AVAX-USD", "Avalanche ($)"),
+    ("ADA-USD", "Cardano ($)"),
+    ("LINK-USD", "Chainlink ($)"),
+    ("DOT-USD", "Polkadot ($)"),
 ];
 
 /// Global hisselerin `index_memberships` grup etiketi. Frontend BIST'e özel
@@ -288,6 +292,10 @@ pub fn canonical_ticker(ticker: &str) -> String {
         "ETHEREUM ($)" => "ETH-USD".into(),
         "SOLANA ($)" => "SOL-USD".into(),
         "RIPPLE ($)" => "XRP-USD".into(),
+        "AVALANCHE ($)" => "AVAX-USD".into(),
+        "CARDANO ($)" => "ADA-USD".into(),
+        "CHAINLINK ($)" => "LINK-USD".into(),
+        "POLKADOT ($)" => "DOT-USD".into(),
         _ if upper.ends_with(".IS") => upper.trim_end_matches(".IS").into(),
         _ => upper,
     }
@@ -349,23 +357,30 @@ async fn chart(client: &reqwest::Client, ticker: &str, range: &str) -> Result<Ya
 /// hacmine de bakar: yoğun kullanımda tek bir istek bile 429 dönebilir. Bu
 /// sayıyı büyütmeden önce sembol başına düşen istek sayısını azaltmak daha
 /// etkilidir; tam senkron artık sembol başına tek grafik isteği yapıyor.
-const YAHOO_CONCURRENCY: usize = 8;
+///
+/// Kripto evreninin 8 sembole genişlemesiyle toplam istek sayısı arttı;
+/// 8 eşzamanlı istek Yahoo'nun hız penceresini taşırıyor. 4'e düşürmek
+/// trafiği zamana yayar ve 429 oranını büyük ölçüde azaltır.
+const YAHOO_CONCURRENCY: usize = 4;
 
 /// Geçici hatada toplam deneme sayısı (ilk deneme dahil).
-const YAHOO_MAX_ATTEMPTS: u32 = 3;
+const YAHOO_MAX_ATTEMPTS: u32 = 4;
 
 /// Ağ/geçici hatalarda ilk bekleme; her denemede ikiye katlanır.
-const YAHOO_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(300);
+const YAHOO_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// Hız sınırında ilk bekleme. 429 "yavaşla" demektir; ağ hatasından çok daha
 /// uzun beklenir, aksi halde yeniden denemeler kısıtlamayı büyütür.
-const YAHOO_RATE_LIMIT_BACKOFF: std::time::Duration = std::time::Duration::from_millis(1500);
+const YAHOO_RATE_LIMIT_BACKOFF: std::time::Duration = std::time::Duration::from_millis(3000);
 
 /// `chart` çağrısını geçici hatalara karşı yeniden dener.
 ///
 /// 429 ve ağ hataları geçicidir; geri çekilerek tekrar denenir. 404 kalıcıdır
 /// (sembol Yahoo'da yok) ve beklemeden döner. Yeniden deneme olmadan hız
 /// sınırına takılan sembol evrenden sessizce düşerdi.
+///
+/// 429'da jitter eklenir: aynı anda 429 alan N görev tam aynı anda yeniden
+/// denemezler; bu "thundering herd" sorununu önler.
 async fn chart_with_retry(client: &reqwest::Client, ticker: &str, range: &str) -> Result<YahooResult, String> {
     let mut attempt = 1;
     loop {
@@ -378,7 +393,11 @@ async fn chart_with_retry(client: &reqwest::Client, ticker: &str, range: &str) -
             return Err(error);
         }
         let base = if error.contains("429") { YAHOO_RATE_LIMIT_BACKOFF } else { YAHOO_RETRY_BACKOFF };
-        tokio::time::sleep(base * 2u32.pow(attempt - 1)).await;
+        // Jitter: sembol adının hash'inden 0–500 ms arası deterministik ama
+        // semboller arası farklı bir ek gecikme türetilir.
+        let jitter_ms = ticker.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64)) % 500;
+        let delay = base * 2u32.pow(attempt - 1) + std::time::Duration::from_millis(jitter_ms);
+        tokio::time::sleep(delay).await;
         attempt += 1;
     }
 }

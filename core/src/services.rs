@@ -253,11 +253,19 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
 
         messages.push(serde_json::json!({ "role": "user", "content": request.prompt }));
 
+        let effort = request.effort_level.as_deref().unwrap_or("medium").to_lowercase();
+        let (temp, max_tok, reasoning_eff) = match effort.as_str() {
+            "low" => (0.3, 512, "low"),
+            "high" => (0.9, 4096, "high"),
+            _ => (0.7, 1536, "medium"),
+        };
+
         let body = serde_json::json!({
             "model": model,
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 1024
+            "temperature": temp,
+            "max_tokens": max_tok,
+            "reasoning_effort": reasoning_eff
         });
 
         let response = match client.post(&api_url)
@@ -411,7 +419,7 @@ pub async fn execute(store: &mut AppStore, client: &reqwest::Client, command: &s
             })
         }
         FqlCommand::Ai { prompt } => {
-            let ai = ask_ai(store, client, AiRequest { prompt, active_context, agent_id: None, history: None }).await;
+            let ai = ask_ai(store, client, AiRequest { prompt, active_context, agent_id: None, history: None, effort_level: None }).await;
             let preview: String = ai.summary.chars().take(80).collect();
             Ok(FqlResponse {
                 command_type: "ai".into(),
@@ -608,6 +616,25 @@ pub async fn sync_data(store: &mut AppStore, client: &reqwest::Client, source: &
 fn apply_simple_filters(equities: &[EquityRow], query: &str) -> Vec<EquityRow> {
     let lower = query.to_lowercase();
     let mut rows = equities.to_vec();
+
+    // --- Category / Universe Filtering ---
+    if lower.contains("bist100") || lower.contains("bist 100") {
+        rows.retain(|r| r.index_memberships.iter().any(|g| g.eq_ignore_ascii_case("BIST 100") || g.eq_ignore_ascii_case("XU100")));
+    } else if lower.contains("bist") {
+        rows.retain(|r| !r.index_memberships.iter().any(|g| g == "Global" || g == "Emtialar" || g == "Kripto" || g == "Döviz"));
+    } else if lower.contains("global") {
+        rows.retain(|r| r.index_memberships.iter().any(|g| g == "Global") || crate::yahoo::GLOBAL_TICKERS.iter().any(|(sym, _)| sym.eq_ignore_ascii_case(&r.ticker)));
+    } else if lower.contains("emtia") || lower.contains("commodity") {
+        rows.retain(|r| {
+            let t = r.ticker.to_uppercase();
+            t.ends_with("=F") || t.starts_with("GRAM") || r.index_memberships.iter().any(|g| g == "Emtialar" || g == "Emtia")
+        });
+    } else if lower.contains("kripto") || lower.contains("crypto") {
+        rows.retain(|r| {
+            let t = r.ticker.to_uppercase();
+            t.ends_with("-USD") || t.ends_with("-TRY") || t.ends_with("-USDT") || r.index_memberships.iter().any(|g| g == "Kripto")
+        });
+    }
 
     // Helper closure to filter by a generic field
     fn apply_filter(rows: &mut Vec<EquityRow>, lower: &str, keyword: &str, extract_field: fn(&EquityRow) -> Option<f64>) {
@@ -930,6 +957,7 @@ pub async fn fetch_kap_disclosures(
             summary: item.summary.unwrap_or_default(),
             url: item.link,
             ai_importance_score: 50,
+            attachment_count: 0,
         })
         .take(10)
         .collect();
@@ -1742,37 +1770,27 @@ fn is_forbidden_news_host(host: &str) -> bool {
 }
 
 fn extract_meta_content(html: &str, key: &str) -> Option<String> {
-    let lower = html.to_lowercase();
-    let mut cursor = 0;
-    while let Some(relative_start) = lower[cursor..].find("<meta") {
-        let start = cursor + relative_start;
-        let end = lower[start..].find('>')? + start + 1;
-        let tag = &html[start..end];
-        let tag_lower = tag.to_lowercase();
-        if tag_lower.contains(&format!("property=\"{key}\""))
-            || tag_lower.contains(&format!("property='{key}'"))
-            || tag_lower.contains(&format!("name=\"{key}\""))
-            || tag_lower.contains(&format!("name='{key}'"))
-        {
-            if let Some(content) = extract_html_attribute(tag, "content") {
-                return Some(content);
-            }
+    let escaped_key = regex::escape(key);
+    let p1 = format!(
+        r#"(?is)<meta\s+[^>]*(?:property|name)\s*=\s*["']?{}["']?[^>]*content\s*=\s*["']([^"']*)["']"#,
+        escaped_key
+    );
+    if let Ok(re) = regex::Regex::new(&p1) {
+        if let Some(caps) = re.captures(html) {
+            return Some(caps[1].to_string());
         }
-        cursor = end;
     }
-    None
-}
 
-fn extract_html_attribute(tag: &str, attribute: &str) -> Option<String> {
-    let lower = tag.to_lowercase();
-    for quote in ['\"', '\''] {
-        let needle = format!("{attribute}={quote}");
-        if let Some(start) = lower.find(&needle) {
-            let value_start = start + needle.len();
-            let value_end = tag[value_start..].find(quote)? + value_start;
-            return Some(tag[value_start..value_end].to_string());
+    let p2 = format!(
+        r#"(?is)<meta\s+[^>]*content\s*=\s*["']([^"']*)["'][^>]*(?:property|name)\s*=\s*["']?{}["']?"#,
+        escaped_key
+    );
+    if let Ok(re) = regex::Regex::new(&p2) {
+        if let Some(caps) = re.captures(html) {
+            return Some(caps[1].to_string());
         }
     }
+
     None
 }
 
@@ -1784,7 +1802,7 @@ fn news_timestamp(value: &str) -> i64 {
             chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")
                 .map(|date| date.and_utc().timestamp())
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|_| chrono::Utc::now().timestamp())
 }
 
 #[cfg(test)]
@@ -1797,8 +1815,6 @@ mod news_tests {
         let items = parse_rss(xml, "Google News", Some("ASELS"), false);
 
         assert_eq!(items.len(), 1);
-        // Yayıncı eki (" - Örnek Haber") başlıktan temizlenir; yayıncı kaynak
-        // alanında korunur. Böylece aynı bildirim farklı yayıncılarda tekilleşir.
         assert_eq!(items[0].title, "ASELSAN & yeni sözleşme");
         assert_eq!(items[0].source, "Google News / Örnek Haber");
         assert_eq!(items[0].summary, None);

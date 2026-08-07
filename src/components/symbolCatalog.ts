@@ -42,10 +42,21 @@ export const PRESET_SYMBOLS: PresetSymbol[] = [
   { symbol: '^DJI', label: 'Dow Jones', group: 'Global', keywords: ['dow', 'dji'], indexName: 'DOW JONES' },
   { symbol: '^GDAXI', label: 'DAX', group: 'Global', keywords: ['dax'], indexName: 'DAX' },
   { symbol: '^FTSE', label: 'FTSE 100', group: 'Global', keywords: ['ftse'], indexName: 'FTSE 100' },
+  { symbol: 'AAPL', label: 'Apple Inc.', group: 'Global', keywords: ['apple', 'aapl'] },
+  { symbol: 'NVDA', label: 'NVIDIA Corp.', group: 'Global', keywords: ['nvidia', 'nvda'] },
+  { symbol: 'TSLA', label: 'Tesla Inc.', group: 'Global', keywords: ['tesla', 'tsla'] },
+  { symbol: 'MSFT', label: 'Microsoft Corp.', group: 'Global', keywords: ['microsoft', 'msft'] },
+  { symbol: 'AMZN', label: 'Amazon.com', group: 'Global', keywords: ['amazon', 'amzn'] },
+  { symbol: 'META', label: 'Meta Platforms', group: 'Global', keywords: ['meta', 'facebook'] },
+  { symbol: 'GOOGL', label: 'Alphabet Inc.', group: 'Global', keywords: ['google', 'googl'] },
   { symbol: 'BTC-USD', label: 'Bitcoin ($)', group: 'Kripto', keywords: ['btc', 'kripto', 'crypto'] },
   { symbol: 'ETH-USD', label: 'Ethereum ($)', group: 'Kripto', keywords: ['eth', 'kripto', 'crypto'] },
   { symbol: 'SOL-USD', label: 'Solana ($)', group: 'Kripto', keywords: ['sol', 'kripto', 'crypto'] },
   { symbol: 'XRP-USD', label: 'Ripple ($)', group: 'Kripto', keywords: ['xrp', 'kripto', 'crypto'] },
+  { symbol: 'AVAX-USD', label: 'Avalanche ($)', group: 'Kripto', keywords: ['avax', 'avalanche', 'kripto', 'crypto'] },
+  { symbol: 'ADA-USD', label: 'Cardano ($)', group: 'Kripto', keywords: ['ada', 'cardano', 'kripto', 'crypto'] },
+  { symbol: 'LINK-USD', label: 'Chainlink ($)', group: 'Kripto', keywords: ['link', 'chainlink', 'kripto', 'crypto'] },
+  { symbol: 'DOT-USD', label: 'Polkadot ($)', group: 'Kripto', keywords: ['dot', 'polkadot', 'kripto', 'crypto'] },
 ];
 
 /** Aksan ve Türkçe ı/i farklarını düzleştirerek arama eşleştirmesi yapar. */

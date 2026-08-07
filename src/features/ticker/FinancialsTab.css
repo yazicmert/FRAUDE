@@ -1,0 +1,132 @@
+.ai-compare-floating-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 255, 157, 0.08);
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+  animation: compareFadeIn 0.2s ease-out;
+  flex-wrap: wrap;
+  font-family: var(--font-mono, monospace);
+}
+
+@keyframes compareFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bar-left-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.compare-badge {
+  background: #00ff9d;
+  color: #000000;
+  font-weight: bold;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.compare-hint {
+  font-size: 0.78rem;
+  color: #c9d1d9;
+}
+
+.compare-tags-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.selected-compare-tag {
+  background: rgba(22, 27, 34, 0.9);
+  border: 1px solid rgba(0, 255, 157, 0.4);
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 0.76rem;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.remove-tag-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0 2px;
+}
+
+.remove-tag-btn:hover {
+  color: #ff7b72;
+}
+
+.bar-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-action-btn {
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.76rem;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-mono, monospace);
+  transition: all 0.15s ease;
+}
+
+.ai-action-btn.primary {
+  background: #00ff9d;
+  color: #000000;
+}
+
+.ai-action-btn.primary:hover {
+  background: #50ffb8;
+  box-shadow: 0 0 12px rgba(0, 255, 157, 0.4);
+}
+
+.ai-action-btn.secondary {
+  background: rgba(88, 166, 255, 0.2);
+  border: 1px solid #58a6ff;
+  color: #58a6ff;
+}
+
+.ai-action-btn.secondary:hover {
+  background: rgba(88, 166, 255, 0.35);
+}
+
+.clear-compare-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #8b949e;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 0.74rem;
+  cursor: pointer;
+  font-family: var(--font-mono, monospace);
+}
+
+.clear-compare-btn:hover {
+  background: rgba(255, 123, 114, 0.2);
+  color: #ff7b72;
+}

@@ -22,6 +22,14 @@ pub struct ScrapedIpo {
     pub trading_start_date: Option<String>,
     pub distribution_type: Option<String>,
     pub participant_count: Option<String>,
+    pub fund_usage: Option<String>,
+    pub share_structure: Option<String>,
+    pub ipo_size: Option<String>,
+    pub katilim_index: Option<String>,
+    pub lockup_period: Option<String>,
+    pub consortium_lead: Option<String>,
+    pub t1_t2_available: Option<String>,
+    pub distribution_ratios: Option<String>,
 }
 
 /// Liste sayfasından okunan, detay sayfası henüz gezilmemiş kayıt.
@@ -41,6 +49,14 @@ struct DetailData {
     trading_start_date: Option<String>,
     distribution_type: Option<String>,
     participant_count: Option<String>,
+    fund_usage: Option<String>,
+    share_structure: Option<String>,
+    ipo_size: Option<String>,
+    katilim_index: Option<String>,
+    lockup_period: Option<String>,
+    consortium_lead: Option<String>,
+    t1_t2_available: Option<String>,
+    distribution_ratios: Option<String>,
 }
 
 fn current_year_string() -> String {
@@ -223,23 +239,28 @@ fn parse_detail(html: &str) -> DetailData {
         }
     }
 
-    let sp_tr_selector = Selector::parse(".sp-table tr").unwrap();
+    let all_tr_selector = Selector::parse("tr").unwrap();
     let em_selector = Selector::parse("em").unwrap();
     let td_selector = Selector::parse("td").unwrap();
 
-    for tr in doc.select(&sp_tr_selector) {
+    for tr in doc.select(&all_tr_selector) {
         let label = tr.select(&em_selector).next().map(|e| e.text().collect::<String>()).unwrap_or_default();
         let tds: Vec<_> = tr.select(&td_selector).collect();
         if tds.len() >= 2 {
             let val = tds[1].text().collect::<String>().trim().to_string();
             let clean_val = val.replace("**", "").trim().to_string();
+            let row_text = tr.text().collect::<String>();
 
-            if label.contains("Halka Arz Tarihi") {
-                data.book_building_dates = Some(clean_val);
-            } else if label.contains("Bist İlk İşlem Tarihi") {
-                data.trading_start_date = Some(clean_val);
-            } else if label.contains("Dağıtım Yöntemi") {
-                data.distribution_type = Some(clean_val);
+            if (label.contains("Halka Arz Tarihi") || row_text.contains("Halka Arz Tarihi")) && data.book_building_dates.is_none() {
+                data.book_building_dates = Some(clean_val.clone());
+            } else if (label.contains("Bist İlk İşlem Tarihi") || row_text.contains("İlk İşlem Tarihi")) && data.trading_start_date.is_none() {
+                data.trading_start_date = Some(clean_val.clone());
+            } else if (label.contains("Dağıtım Yöntemi") || row_text.contains("Dağıtım Yöntemi")) && data.distribution_type.is_none() {
+                data.distribution_type = Some(clean_val.clone());
+            } else if (label.contains("Arz Büyüklüğü") || label.contains("Halka Arz Büyüklüğü") || row_text.contains("Halka Arz Büyüklüğü")) && data.ipo_size.is_none() {
+                data.ipo_size = Some(clean_val.clone());
+            } else if (label.contains("Konsorsiyum") || label.contains("Aracı Kurum") || row_text.contains("Konsorsiyum Lideri")) && data.consortium_lead.is_none() {
+                data.consortium_lead = Some(clean_val.clone());
             }
         }
     }
@@ -253,6 +274,80 @@ fn parse_detail(html: &str) -> DetailData {
                 let val = tds[1].text().collect::<String>().trim().to_string();
                 let clean_val = val.replace(" Kişi", "").replace(" Müşteri", "").replace("**", "").trim().to_string();
                 data.participant_count = Some(clean_val);
+            }
+        }
+    }
+
+    // Extract detailed text blocks from li, p, and div tags
+    let block_selector = Selector::parse("li, p, div").unwrap();
+    for el in doc.select(&block_selector) {
+        let text = el.text().collect::<Vec<_>>().join(" ");
+
+        // Fon Kullanım Yeri
+        if (text.contains("Fonun Kullanım Yeri") || text.contains("Fon Kullanım Yeri")) && data.fund_usage.is_none() {
+            let mut clean = text.replace("Fonun Kullanım Yeri", "").replace("Fon Kullanım Yeri", "");
+            if let Some(idx) = clean.find("* İzahname") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("* SPK") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("Katkılarınız için") { clean.truncate(idx); }
+            let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
+            if !trimmed.is_empty() && trimmed.len() < 500 {
+                data.fund_usage = Some(trimmed);
+            }
+        }
+
+        // Halka Arz Şekli (Pay Yapısı: Sermaye Artırımı vs Ortak Satışı)
+        if (text.contains("Halka Arz Şekli") || (text.contains("Sermaye Artırımı") && text.contains("Ortak Satışı"))) && data.share_structure.is_none() {
+            let mut clean = text.replace("Halka Arz Şekli", "");
+            if let Some(idx) = clean.find("* SPK Bülteni") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("* İzahname") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("Katkılarınız için") { clean.truncate(idx); }
+            let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
+            if !trimmed.is_empty() && trimmed.len() < 500 {
+                data.share_structure = Some(trimmed);
+            }
+        }
+
+        // Katılım Endeksi
+        if text.contains("Katılım Endeksi") && data.katilim_index.is_none() {
+            let lower = text.to_lowercase();
+            if lower.contains("uygun değildir") || lower.contains("uygun değil") {
+                data.katilim_index = Some("Katılım Endeksine Uygun Değil".to_string());
+            } else if lower.contains("uygun") {
+                data.katilim_index = Some("Katılım Endeksine Uygun (XKTUM)".to_string());
+            }
+        }
+
+        // Satmama Taahhüdü
+        if text.contains("Satmama Taahhüdü") && data.lockup_period.is_none() {
+            let mut clean = text.replace("Satmama Taahhüdü", "");
+            if let Some(idx) = clean.find("* İzahname") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("* SPK") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("Katkılarınız için") { clean.truncate(idx); }
+            let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
+            if !trimmed.is_empty() && trimmed.len() < 300 {
+                data.lockup_period = Some(trimmed);
+            }
+        }
+
+        // T1-T2 Bakiyesi
+        if (text.contains("T1") || text.contains("T2")) && (text.to_lowercase().contains("bakiye") || text.to_lowercase().contains("kullanıl")) && data.t1_t2_available.is_none() {
+            let lower = text.to_lowercase();
+            if lower.contains("kullanılamaz") || lower.contains("uygun değil") {
+                data.t1_t2_available = Some("T1-T2 Bakiyesi Kullanılamaz".to_string());
+            } else if lower.contains("kullanılabilir") || lower.contains("uygun") {
+                data.t1_t2_available = Some("T1-T2 Bakiyesi Kullanılabilir".to_string());
+            }
+        }
+
+        // Tahsisat Oranları / Gruplara Göre Dağıtım
+        if (text.contains("Tahsisat") || text.contains("Tahsisat Oranları") || (text.contains("Yurt İçi Bireysel") && text.contains("Yurt İçi Kurumsal"))) && data.distribution_ratios.is_none() {
+            let mut clean = text.replace("Tahsisat Oranları", "").replace("Tahsisat Grubu", "").replace("Tahsisat", "");
+            if let Some(idx) = clean.find("* İzahname") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("* SPK") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("Katkılarınız için") { clean.truncate(idx); }
+            let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
+            if !trimmed.is_empty() && trimmed.len() < 500 {
+                data.distribution_ratios = Some(trimmed);
             }
         }
     }
@@ -320,6 +415,14 @@ async fn resolve_details(
                 trading_start_date: detail.trading_start_date,
                 distribution_type: detail.distribution_type,
                 participant_count: detail.participant_count,
+                fund_usage: detail.fund_usage,
+                share_structure: detail.share_structure,
+                ipo_size: detail.ipo_size,
+                katilim_index: detail.katilim_index,
+                lockup_period: detail.lockup_period,
+                consortium_lead: detail.consortium_lead,
+                t1_t2_available: detail.t1_t2_available,
+                distribution_ratios: detail.distribution_ratios,
             })
         }));
     }
