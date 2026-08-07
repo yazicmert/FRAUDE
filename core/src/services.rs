@@ -710,8 +710,22 @@ pub fn technical_summary(equity: &EquityRow) -> Vec<String> {
     ]
 }
 
+pub fn enrich_equity_from_financials(equity: &mut EquityRow, statement: &crate::domain::FinancialStatement) {
+    let ratios = crate::fundamentals::compute_ratios_from_statement(statement);
+    if equity.net_margin.is_none() { equity.net_margin = ratios.net_margin; }
+    if equity.gross_margin.is_none() { equity.gross_margin = ratios.gross_margin; }
+    if equity.sales_growth.is_none() { equity.sales_growth = ratios.sales_growth; }
+    if equity.profit_growth.is_none() { equity.profit_growth = ratios.profit_growth; }
+    if equity.net_debt_ebitda.is_none() { equity.net_debt_ebitda = ratios.net_debt_ebitda; }
+    if equity.fundamentals_as_of.is_none() {
+        if let Some(period) = statement.annuals.last().or_else(|| statement.quarterlies.last()) {
+            equity.fundamentals_as_of = Some(period.period.clone());
+        }
+    }
+}
+
 pub fn fundamental_summary(equity: &EquityRow) -> Vec<String> {
-    if !equity.fundamentals_available {
+    if !equity.fundamentals_available && equity.pe.is_none() && equity.pb.is_none() && equity.net_margin.is_none() {
         return vec!["Temel veriler doğrulanmış bir finansal tablo kaynağından alınamadı.".into()];
     }
     let value = |number: Option<f64>| number.map(|v| format!("{v:.1}")).unwrap_or_else(|| "—".into());

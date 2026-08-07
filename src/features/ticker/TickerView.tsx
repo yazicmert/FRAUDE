@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '../../lib/openExternal';
-import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
+import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, getFinancialStatements, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot } from '../../types';
+import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
 import PriceChart from './PriceChart';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
@@ -202,6 +202,51 @@ export default function TickerView({ ticker }: { ticker: string }) {
       .then(setTickerFunds)
       .catch((err: unknown) => console.error('Failed to load ticker funds:', err));
   }, [ticker, corporate]);
+
+  const [financials, setFinancials] = useState<FinancialStatement | null>(null);
+
+  useEffect(() => {
+    setFinancials(null);
+    if (!corporate) return;
+    getFinancialStatements(ticker, 'TRY')
+      .then(setFinancials)
+      .catch(() => setFinancials(null));
+  }, [ticker, corporate]);
+
+  const derivedRatios = useMemo(() => {
+    if (!financials) return null;
+    const annuals = financials.annuals || [];
+    const quarterlies = financials.quarterlies || [];
+    const latestAnnual = annuals[annuals.length - 1];
+    const prevAnnual = annuals.length >= 2 ? annuals[annuals.length - 2] : null;
+    const cur = latestAnnual || quarterlies[quarterlies.length - 1];
+    if (!cur) return null;
+
+    const net_margin = (cur.revenue && cur.revenue > 0 && cur.net_income !== null && cur.net_income !== undefined)
+      ? (cur.net_income / cur.revenue) * 100
+      : null;
+    const gross_margin = (cur.revenue && cur.revenue > 0 && cur.gross_profit !== null && cur.gross_profit !== undefined)
+      ? (cur.gross_profit / cur.revenue) * 100
+      : null;
+    const sales_growth = (latestAnnual?.revenue && prevAnnual?.revenue && prevAnnual.revenue > 0)
+      ? ((latestAnnual.revenue - prevAnnual.revenue) / prevAnnual.revenue) * 100
+      : null;
+    const profit_growth = (latestAnnual?.net_income !== null && latestAnnual?.net_income !== undefined && prevAnnual?.net_income !== null && prevAnnual?.net_income !== undefined && prevAnnual.net_income !== 0)
+      ? ((latestAnnual.net_income - prevAnnual.net_income) / Math.abs(prevAnnual.net_income)) * 100
+      : null;
+    const net_debt_ebitda = (cur.total_debt !== null && cur.total_debt !== undefined && cur.operating_income && cur.operating_income > 0)
+      ? cur.total_debt / cur.operating_income
+      : null;
+
+    return {
+      net_margin,
+      gross_margin,
+      sales_growth,
+      profit_growth,
+      net_debt_ebitda,
+      asOf: cur.period,
+    };
+  }, [financials]);
 
   // Ortaklık yapısı ilk açılışta bir kez çekilip diske yazılır; sonraki
   // açılışlar önbellekten gelir, değişiklik takibi KAP bildirimlerindedir.
@@ -506,7 +551,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
         {corporate && (
         <section className="panel">
           <h2>{t('fundamentals')}</h2>
-          {!equity.fundamentals_available ? (
+          {(!equity.fundamentals_available && !derivedRatios) ? (
             <div className="empty-state" style={{ minHeight: '180px' }}>
               {t('fundamentalsUnavailable')}
             </div>
@@ -540,25 +585,25 @@ export default function TickerView({ ticker }: { ticker: string }) {
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Net Margin</span>
               <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#ffffff', marginTop: '4px' }}>
-                {metric(equity.net_margin, '%')}
+                {metric(equity.net_margin ?? derivedRatios?.net_margin ?? null, '%')}
               </div>
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Gross Margin</span>
               <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#ffffff', marginTop: '4px' }}>
-                {metric(equity.gross_margin, '%')}
+                {metric(equity.gross_margin ?? derivedRatios?.gross_margin ?? null, '%')}
               </div>
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Sales Growth</span>
               <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#3fb950', marginTop: '4px' }}>
-                {signedMetric(equity.sales_growth, '%')}
+                {signedMetric(equity.sales_growth ?? derivedRatios?.sales_growth ?? null, '%')}
               </div>
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Profit Growth</span>
-              <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: (equity.profit_growth ?? 0) >= 0 ? '#3fb950' : '#f85149', marginTop: '4px' }}>
-                {signedMetric(equity.profit_growth, '%')}
+              <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: ((equity.profit_growth ?? derivedRatios?.profit_growth ?? 0) >= 0) ? '#3fb950' : '#f85149', marginTop: '4px' }}>
+                {signedMetric(equity.profit_growth ?? derivedRatios?.profit_growth ?? null, '%')}
               </div>
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d' }}>
@@ -569,14 +614,14 @@ export default function TickerView({ ticker }: { ticker: string }) {
             </div>
             <div style={{ background: '#0d1117', padding: '12px', borderRadius: '4px', border: '1px solid #21262d', gridColumn: 'span 2' }}>
               <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Net Debt / EBITDA</span>
-              <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: equity.net_debt_ebitda !== null && equity.net_debt_ebitda <= 1.5 ? '#3fb950' : '#f85149', marginTop: '4px' }}>
-                {metric(equity.net_debt_ebitda)}
+              <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: (equity.net_debt_ebitda ?? derivedRatios?.net_debt_ebitda ?? null) !== null && (equity.net_debt_ebitda ?? derivedRatios?.net_debt_ebitda ?? 0) <= 1.5 ? '#3fb950' : '#f85149', marginTop: '4px' }}>
+                {metric(equity.net_debt_ebitda ?? derivedRatios?.net_debt_ebitda ?? null)}
               </div>
             </div>
           </div>
           <div style={{ marginTop: '10px', fontSize: '0.68rem', color: '#8b949e', lineHeight: 1.5 }}>
-            {t('fundamentalsSource')}: {equity.fundamentals_source ?? '—'}
-            {equity.fundamentals_as_of ? ` · ${t('dataPeriod')}: ${equity.fundamentals_as_of}` : ''}
+            {t('fundamentalsSource')}: {equity.fundamentals_source ?? (derivedRatios ? 'İş Yatırım Resmî Mali Tablolar' : '—')}
+            {(equity.fundamentals_as_of || derivedRatios?.asOf) ? ` · ${t('dataPeriod')}: ${equity.fundamentals_as_of ?? derivedRatios?.asOf}` : ''}
             {equity.fundamentals_currency ? ` · ${equity.fundamentals_currency}` : ''}
           </div>
           </>

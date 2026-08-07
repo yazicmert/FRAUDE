@@ -478,6 +478,93 @@ pub async fn get_financial_statements(
     Ok(statement)
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DerivedFinancialRatios {
+    pub gross_margin: Option<f64>,
+    pub net_margin: Option<f64>,
+    pub sales_growth: Option<f64>,
+    pub profit_growth: Option<f64>,
+    pub net_debt_ebitda: Option<f64>,
+}
+
+pub fn compute_ratios_from_statement(statement: &FinancialStatement) -> DerivedFinancialRatios {
+    let annuals = &statement.annuals;
+    let latest_annual = annuals.last();
+    let prev_annual = if annuals.len() >= 2 { annuals.get(annuals.len() - 2) } else { None };
+
+    let quarterly_latest = statement.quarterlies.last();
+
+    let cur = latest_annual.or(quarterly_latest);
+
+    let net_margin = cur.and_then(|p| {
+        let rev = p.revenue?;
+        let net = p.net_income?;
+        if rev > 0.0 {
+            Some((net / rev) * 100.0)
+        } else {
+            None
+        }
+    });
+
+    let gross_margin = cur.and_then(|p| {
+        let rev = p.revenue?;
+        let gp = p.gross_profit?;
+        if rev > 0.0 {
+            Some((gp / rev) * 100.0)
+        } else {
+            None
+        }
+    });
+
+    let sales_growth = match (latest_annual, prev_annual) {
+        (Some(curr), Some(prev)) => {
+            if let (Some(r0), Some(r1)) = (curr.revenue, prev.revenue) {
+                if r1 > 0.0 {
+                    Some(((r0 - r1) / r1) * 100.0)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let profit_growth = match (latest_annual, prev_annual) {
+        (Some(curr), Some(prev)) => {
+            if let (Some(n0), Some(n1)) = (curr.net_income, prev.net_income) {
+                if n1 != 0.0 {
+                    Some(((n0 - n1) / n1.abs()) * 100.0)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let net_debt_ebitda = cur.and_then(|p| {
+        let debt = p.total_debt?;
+        let op = p.operating_income?;
+        if op > 0.0 {
+            Some(debt / op)
+        } else {
+            None
+        }
+    });
+
+    DerivedFinancialRatios {
+        gross_margin,
+        net_margin,
+        sales_growth,
+        profit_growth,
+        net_debt_ebitda,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
