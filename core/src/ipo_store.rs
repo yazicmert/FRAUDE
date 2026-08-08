@@ -58,18 +58,61 @@ fn archive_path() -> Option<std::path::PathBuf> {
 }
 
 pub fn load() -> Vec<PersistedIpo> {
-    if let Some(path) = archive_path() {
+    let mut ipos = if let Some(path) = archive_path() {
         if let Ok(contents) = std::fs::read_to_string(&path) {
-            if let Ok(ipos) = serde_json::from_str::<Vec<PersistedIpo>>(&contents) {
-                if !ipos.is_empty() {
-                    return ipos;
+            if let Ok(records) = serde_json::from_str::<Vec<PersistedIpo>>(&contents) {
+                if !records.is_empty() {
+                    records
+                } else {
+                    serde_json::from_str(IPO_SEED_JSON).unwrap_or_default()
                 }
+            } else {
+                serde_json::from_str(IPO_SEED_JSON).unwrap_or_default()
+            }
+        } else {
+            serde_json::from_str(IPO_SEED_JSON).unwrap_or_default()
+        }
+    } else {
+        serde_json::from_str(IPO_SEED_JSON).unwrap_or_default()
+    };
+
+    if enrich_consortium_leads(&mut ipos) {
+        save(&ipos);
+    }
+    ipos
+}
+
+fn enrich_consortium_leads(ipos: &mut [PersistedIpo]) -> bool {
+    let mut changed = false;
+    for ipo in ipos.iter_mut() {
+        let is_savur = ipo.ticker == "SVGYO" || ipo.name.contains("Savur");
+        if is_savur && (ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("")) {
+            ipo.consortium_lead = Some("Tera Yatırım Menkul Değerler A.Ş.".to_string());
+            changed = true;
+        }
+        if ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("") {
+            let lead = match ipo.ticker.as_str() {
+                "SVGYO" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "TKNKA" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "CITAS" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "SARAE" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "MCARD" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "LXGYO" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "ALBTN" => Some("Tera Yatırım Menkul Değerler A.Ş."),
+                "QUICK" => Some("İş Yatırım Menkul Değerler A.Ş."),
+                "KARCL" => Some("Halk Yatırım Menkul Değerler A.Ş."),
+                "MASFN" => Some("Deniz Yatırım Menkul Değerler A.Ş."),
+                "METEN" => Some("OYAK Yatırım Menkul Değerler A.Ş."),
+                "VEYAS" => Some("Ziraat Yatırım / Halk Yatırım"),
+                _ => None,
+            };
+            if let Some(l) = lead {
+                ipo.consortium_lead = Some(l.to_string());
+                changed = true;
             }
         }
     }
-    let seeded: Vec<PersistedIpo> = serde_json::from_str(IPO_SEED_JSON).unwrap_or_default();
-    save(&seeded);
-    seeded
+    changed
 }
 
 pub fn save(ipos: &[PersistedIpo]) {
