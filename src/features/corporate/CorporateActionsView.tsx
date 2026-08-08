@@ -1428,7 +1428,14 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
               </thead>
               <tbody>
                 {filteredSplits.slice(0, 200).map((c, i) => {
-                  const typeColor = c.increase_type === 'BEDELSİZ' ? '#3fb950' : c.increase_type === 'BİRLEŞTİRME' ? '#f0883e' : '#58a6ff';
+                  // Bedelli ayrı renk alır: bedelsizin aksine ortak para öder,
+                  // katılmayan sulanır — aynı kutuda göstermek yanıltıcı.
+                  const typeColor =
+                    c.increase_type === 'BEDELSİZ' ? '#3fb950'
+                    : c.increase_type === 'BEDELLİ' ? '#d29922'
+                    : c.increase_type === 'KARMA' ? '#a371f7'
+                    : c.increase_type === 'BİRLEŞTİRME' ? '#f0883e'
+                    : '#58a6ff';
                   return (
                     <tr key={i} style={{ transition: 'background 0.15s' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#161b22')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                       <td style={{ ...tdStyle, fontWeight: 'bold' }}>

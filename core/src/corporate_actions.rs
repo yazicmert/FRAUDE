@@ -233,6 +233,51 @@ pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> 
     Ok(records)
 }
 
+/// Yahoo'dan derlenen piyasa geneli listesini SPK arşiviyle değiştirir.
+///
+/// SPK kaydı bulunan **her hisse için Yahoo satırları tamamen atılır**, tarih
+/// eşleştirmesi yapılmaz: SPK onay tarihini, Yahoo gerçekleşme tarihini verir
+/// ve ikisi gün-hafta ayrı düşer (KTLEV: onay 29.07, gerçekleşme 03.08). Aynı
+/// artırımı iki kez listelememek için hisse bazında tek kaynak seçilir.
+///
+/// Böylece liste bedelliyi de gösterir — Yahoo split akışında bedelli hiç yok.
+fn overlay_official_increases(
+    yahoo_splits: Vec<CapitalIncrease>,
+    cutoff: &str,
+) -> Vec<CapitalIncrease> {
+    overlay_with(yahoo_splits, &crate::capital_store::load(), cutoff)
+}
+
+fn overlay_with(
+    yahoo_splits: Vec<CapitalIncrease>,
+    archive: &crate::capital_store::CapitalArchive,
+    cutoff: &str,
+) -> Vec<CapitalIncrease> {
+    let official: Vec<CapitalIncrease> = archive
+        .records
+        .iter()
+        .filter_map(|row| {
+            let ticker = row.ticker.as_deref()?;
+            (row.increase.approval_date.as_str() >= cutoff)
+                .then(|| spk_to_record(ticker, &row.increase))
+        })
+        .collect();
+
+    if official.is_empty() {
+        return yahoo_splits;
+    }
+
+    let covered: std::collections::HashSet<&str> =
+        official.iter().map(|r| r.ticker.as_str()).collect();
+
+    let mut merged: Vec<CapitalIncrease> = yahoo_splits
+        .into_iter()
+        .filter(|r| !covered.contains(r.ticker.as_str()))
+        .collect();
+    merged.extend(official);
+    merged
+}
+
 /// SPK kaydını arayüzün beklediği biçime çevirir.
 ///
 /// Bir artırım hem bedelli hem bedelsiz olabilir (karma); oran metni her
@@ -731,9 +776,11 @@ pub struct MarketEventsCache {
 }
 
 const MARKET_EVENTS_TTL_SECS: i64 = 24 * 3600;
-/// Akışta tutulan pencereler: temettüler 24 ay, bölünmeler 5 yıl geriye.
+/// Akışta tutulan pencereler: temettüler 24 ay, sermaye artırımları 10 yıl
+/// geriye. Artırım penceresi SPK arşiviyle aynı derinlikte tutulur; daha dar
+/// bir pencere resmî kaynaktan gelen kayıtları listede kırpardı.
 const DIVIDEND_WINDOW_MONTHS: i64 = 24;
-const SPLIT_WINDOW_YEARS: i64 = 5;
+const SPLIT_WINDOW_YEARS: i64 = 10;
 
 fn market_events_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".fraude_corporate_events.json"))
@@ -846,7 +893,10 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
         return;
     }
 
+    let splits = overlay_official_increases(splits, &split_cutoff);
+
     dividends.sort_by(|a, b| b.ex_date.cmp(&a.ex_date));
+    let mut splits = splits;
     splits.sort_by(|a, b| b.date.cmp(&a.date));
     assign_installments(&mut dividends);
 
@@ -976,7 +1026,90 @@ async fn fetch_upcoming_dividends(
 
 #[cfg(test)]
 mod tests {
-    use super::{effective_status, reconcile_split_factor};
+    use super::{effective_status, reconcile_split_factor, spk_to_record};
+
+    fn spk_row(company: &str, date: &str, existing: f64, bonus: f64, rights: f64) -> crate::spk::SpkCapitalIncrease {
+        crate::spk::SpkCapitalIncrease {
+            company_name: company.into(),
+            existing_capital: existing,
+            new_capital: existing + bonus + rights,
+            rights_amount: rights,
+            bonus_internal: bonus,
+            bonus_profit: 0.0,
+            sale_type: None,
+            bulletin_no: "2026/48".into(),
+            approval_date: date.into(),
+        }
+    }
+
+    /// Yahoo'nun split akışında bedelli hiç yok; SPK kaydı BEDELLİ olarak
+    /// görünmeli ve kaynağı bülten numarasını taşımalı.
+    #[test]
+    fn rights_issue_is_labelled_and_sourced_from_the_bulletin() {
+        let record = spk_to_record("CVKMD", &spk_row("CVK", "2026-01-15", 1_400_000_000.0, 0.0, 2_380_000_000.0));
+        assert_eq!(record.increase_type, "BEDELLİ");
+        assert_eq!(record.ratio, "%170");
+        assert_eq!(record.source, "SPK Bülteni 2026/48");
+        assert_eq!(record.date, "2026-01-15");
+    }
+
+    fn yahoo_row(ticker: &str, date: &str) -> crate::domain::CapitalIncrease {
+        crate::domain::CapitalIncrease {
+            ticker: ticker.into(),
+            date: date.into(),
+            increase_type: "BEDELSİZ".into(),
+            ratio: "200:100 (%100)".into(),
+            rights_price: None,
+            source: "Yahoo Finance".into(),
+        }
+    }
+
+    /// SPK kaydı olan hissede Yahoo satırları tamamen düşer — tarihler
+    /// (onay / gerçekleşme) tutmadığı için aynı artırım iki kez listelenirdi.
+    #[test]
+    fn official_records_replace_yahoo_rows_for_the_same_ticker() {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        crate::capital_store::merge(&mut archive, vec![
+            spk_row("Katılımevim Tasarruf Finansman AŞ", "2026-07-29", 2_070_000_000.0, 4_930_000_000.0, 0.0),
+        ]);
+
+        let merged = super::overlay_with(
+            vec![yahoo_row("KTLEV", "2026-08-03"), yahoo_row("ASELS", "2026-05-01")],
+            &archive,
+            "2020-01-01",
+        );
+
+        let ktlev: Vec<_> = merged.iter().filter(|r| r.ticker == "KTLEV").collect();
+        assert_eq!(ktlev.len(), 1, "aynı artırım iki kez listelenmemeli");
+        assert!(ktlev[0].source.starts_with("SPK"), "{}", ktlev[0].source);
+
+        // SPK'da olmayan hisse Yahoo'dan gelmeye devam eder
+        assert!(merged.iter().any(|r| r.ticker == "ASELS" && r.source == "Yahoo Finance"));
+    }
+
+    /// Pencere dışındaki resmî kayıt listeye girmemeli.
+    #[test]
+    fn official_records_outside_the_window_are_dropped() {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        crate::capital_store::merge(&mut archive, vec![
+            spk_row("Katılımevim Tasarruf Finansman AŞ", "2017-01-01", 100.0, 100.0, 0.0),
+        ]);
+
+        let merged = super::overlay_with(vec![yahoo_row("KTLEV", "2026-08-03")], &archive, "2020-01-01");
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "Yahoo Finance", "pencere dışı SPK kaydı devralmamalı");
+    }
+
+    #[test]
+    fn bonus_and_mixed_increases_are_labelled() {
+        let bonus = spk_to_record("KTLEV", &spk_row("K", "2026-01-01", 2_070_000_000.0, 4_930_000_000.0, 0.0));
+        assert_eq!(bonus.increase_type, "BEDELSİZ");
+        assert_eq!(bonus.ratio, "%238");
+
+        let mixed = spk_to_record("X", &spk_row("X", "2026-01-01", 100.0, 100.0, 50.0));
+        assert_eq!(mixed.increase_type, "KARMA");
+        assert_eq!(mixed.ratio, "Bedelsiz %100 + Bedelli %50");
+    }
 
     /// İki kaynak uyuşuyorsa olay listesi korunur — kesin değer odur, ima
     /// edilen çarpan ilk gün hareketi kadar sapar.
