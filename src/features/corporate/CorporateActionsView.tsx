@@ -1292,7 +1292,18 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
         ipos.length === 0 ? (
           <div className="empty-state">{t('caNoIpo')}</div>
         ) : (
-          <div className="panel" style={{ overflowX: 'auto' }}>
+          <div
+            className="panel"
+            onWheel={(e) => {
+              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                const scrollParent = e.currentTarget.closest('.workspace-tab-pane') || e.currentTarget.closest('.workspace') || document.documentElement;
+                if (scrollParent) {
+                  scrollParent.scrollTop += e.deltaY;
+                }
+              }
+            }}
+            style={{ overflowX: 'auto', overflowY: 'visible', touchAction: 'pan-y' }}
+          >
             {ipoData && !ipoData.scrape_ok && (
               <div style={{
                 marginBottom: '12px', padding: '8px 14px', borderRadius: '6px',
@@ -1621,7 +1632,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                             <div
                               onWheel={(e) => {
                                 if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                                  const scrollParent = e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
+                                  const scrollParent = e.currentTarget.closest('.workspace-tab-pane') || e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
                                   if (scrollParent) {
                                     scrollParent.scrollTop += e.deltaY;
                                   }
