@@ -242,12 +242,15 @@ pub async fn get_price_history(
     if source.as_deref() == Some("isyatirim") {
         return crate::isyatirim_price::fetch_price_history(&state.http, &ticker, &r).await;
     }
-    // X ile başlayan BIST endeksleri Borsa İstanbul'dan gelir; XRP-USD gibi
-    // kripto sembolleri bu yola girmemeli.
+    // X ile başlayan BIST endeksleri kısa vadede Borsa İstanbul'dan gelir;
+    // 'max', '5y', '1y' gibi çok yıllık uzun dönemlerde Borsa İstanbul grafiği
+    // yalnızca son birkaç ayı döndürdüğü için Yahoo Finance tarihselliği kullanılır.
     if ticker.starts_with('X') && !ticker.contains('-') && (ticker.ends_with(".IS") || !ticker.contains('=')) {
-        if let Ok(rows) = crate::bist::fetch_index_history(&state.http, &ticker, &r).await {
-            if !rows.is_empty() {
-                return Ok(rows);
+        if r != "max" && r != "5y" && r != "1y" {
+            if let Ok(rows) = crate::bist::fetch_index_history(&state.http, &ticker, &r).await {
+                if !rows.is_empty() {
+                    return Ok(rows);
+                }
             }
         }
     }

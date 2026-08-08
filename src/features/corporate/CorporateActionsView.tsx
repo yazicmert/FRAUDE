@@ -1199,7 +1199,17 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
             <div style={{ marginBottom: '12px', color: '#8b949e', fontSize: '0.8rem' }}>
               {t('caIpoCount', { n: ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length })}
             </div>
-            <div style={{ overflowX: 'auto', width: '100%' }}>
+            <div
+              style={{ overflowX: 'auto', overflowY: 'visible', width: '100%', touchAction: 'pan-y' }}
+              onWheel={(e) => {
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                  const scrollParent = e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
+                  if (scrollParent) {
+                    scrollParent.scrollTop += e.deltaY;
+                  }
+                }
+              }}
+            >
               <table style={{ width: '100%', minWidth: '960px', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -1299,20 +1309,30 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                       {isExpanded && (
                         <tr style={{ background: 'rgba(13, 17, 23, 0.7)' }}>
                           <td colSpan={11} style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', boxSizing: 'border-box' }}>
-                            <div style={{
-                              background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.95))',
-                              border: '1px solid rgba(88, 166, 255, 0.25)',
-                              borderRadius: '14px',
-                              padding: '22px 26px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '18px',
-                              width: '100%',
-                              maxWidth: '100%',
-                              boxSizing: 'border-box',
-                              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-                              backdropFilter: 'blur(16px)',
-                            }}>
+                            <div
+                              onWheel={(e) => {
+                                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                                  const scrollParent = e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
+                                  if (scrollParent) {
+                                    scrollParent.scrollTop += e.deltaY;
+                                  }
+                                }
+                              }}
+                              style={{
+                                background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.95))',
+                                border: '1px solid rgba(88, 166, 255, 0.25)',
+                                borderRadius: '14px',
+                                padding: '22px 26px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '18px',
+                                width: '100%',
+                                maxWidth: '100%',
+                                boxSizing: 'border-box',
+                                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+                                backdropFilter: 'blur(16px)',
+                              }}
+                            >
                               {/* Header Bar */}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '14px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', minWidth: 0 }}>
