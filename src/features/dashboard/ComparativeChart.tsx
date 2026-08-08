@@ -21,8 +21,7 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRefs = useRef<Record<string, ISeriesApi<'Line'>>>({});
   const dataCache = useRef<Record<string, HistoricalQuote[]>>({});
-  // Üst üste binen yüklemelerde yalnızca en son başlatılan seri çizebilir;
-  // aksi halde seriler mükerrer eklenir (lejantta çift USDTRY/XU100 hatası).
+  // Üst üste binen yüklemelerde yalnızca en son başlatılan seri çizebilir
   const loadIdRef = useRef(0);
 
   const { t } = useTranslation();
@@ -33,8 +32,60 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
   const [range, setRange] = useState('6mo');
   const [loading, setLoading] = useState(false);
 
-  const displayName = (sym: string) =>
-    sym === 'PORTFOLIO' ? t('modelPortfolioLabel') : (presetBySymbol.get(sym)?.label ?? sym.replace('.IS', ''));
+  const resolveSymbol = (input: string): string => {
+    let sym = input.trim().toUpperCase();
+    if (!sym) return '';
+
+    const ALIASES: Record<string, string> = {
+      'THY': 'THYAO.IS',
+      'THYAO': 'THYAO.IS',
+      'THY.IS': 'THYAO.IS',
+      'BIST100': 'XU100.IS',
+      'BIST50': 'XU050.IS',
+      'BIST30': 'XU030.IS',
+      'USD': 'USDTRY=X',
+      'EUR': 'EURTRY=X',
+      'GBP': 'GBPTRY=X',
+      'DOLAR': 'USDTRY=X',
+      'EURO': 'EURTRY=X',
+      'STERLIN': 'GBPTRY=X',
+      'ALTIN': 'GRAM ALTIN',
+      'GUMUS': 'GRAM GÜMÜŞ',
+      'BTC': 'BTC-USD',
+      'ETH': 'ETH-USD',
+    };
+    if (ALIASES[sym]) return ALIASES[sym];
+
+    const preset = PRESET_SYMBOLS.find(
+      p => p.symbol.toUpperCase() === sym || p.symbol.toUpperCase() === `${sym}.IS`
+    );
+    if (preset) return preset.symbol;
+
+    if (equities && equities.length > 0) {
+      const eq = equities.find(
+        e => e.ticker.toUpperCase() === sym || e.ticker.toUpperCase() === `${sym}.IS` || e.ticker.toUpperCase().replace('.IS', '') === sym
+      );
+      if (eq) return eq.ticker.includes('.') ? eq.ticker : `${eq.ticker}.IS`;
+    }
+
+    if (/^[A-Z0-9]{2,6}$/.test(sym) && !sym.includes('.') && !sym.includes('=')) {
+      return `${sym}.IS`;
+    }
+
+    return sym;
+  };
+
+  const displayName = (sym: string) => {
+    if (sym === 'PORTFOLIO') return t('modelPortfolioLabel');
+    if (sym === 'THYAO.IS' || sym === 'THYAO') return 'THY';
+    const preset = presetBySymbol.get(sym);
+    if (preset) return preset.label;
+    if (equities) {
+      const eq = equities.find(e => e.ticker === sym || e.ticker === sym.replace('.IS', ''));
+      if (eq) return eq.ticker.replace('.IS', '');
+    }
+    return sym.replace('.IS', '');
+  };
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -45,7 +96,11 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
       height: 350,
       timeScale: { borderColor: '#30363d', timeVisible: false, minBarSpacing: 0.02 },
       rightPriceScale: {
-        mode: PriceScaleMode.Percentage,
+        mode: PriceScaleMode.Normal,
+        autoScale: true,
+      },
+      localization: {
+        priceFormatter: (price: number) => `${price >= 0 ? '+' : ''}${price.toFixed(2)}%`,
       },
     });
     chartRef.current = chart;
@@ -77,8 +132,6 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
       setLoading(true);
 
       try {
-        // Tüm geçmiş bir kez indirilir ('max'); aralık butonları yalnızca
-        // görünür pencereyi değiştirir, yeniden istek atılmaz.
         const fetchPromises = symbols.map(async (sym) => {
           let rawData: HistoricalQuote[] = [];
 
@@ -87,17 +140,15 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
           } else if (sym === 'PORTFOLIO') {
             if (watchlist.length > 0) {
               const promises = watchlist.map(w => {
-                  if (dataCache.current[w.ticker]) return Promise.resolve(dataCache.current[w.ticker]);
-                  return getPriceHistory(w.ticker, 'max').then(res => {
-                      if (res.length > 0) dataCache.current[w.ticker] = res;
+                  const resolved = resolveSymbol(w.ticker);
+                  if (dataCache.current[resolved]) return Promise.resolve(dataCache.current[resolved]);
+                  return getPriceHistory(resolved, 'max').then(res => {
+                      if (res.length > 0) dataCache.current[resolved] = res;
                       return res;
                   }).catch(() => [] as HistoricalQuote[]);
               });
               const results = await Promise.all(promises);
 
-              // Portföy bir endeks gibi simüle edilir: adet girilmişse gerçek
-              // pozisyon büyüklükleri, girilmemişse eşit tutarlı sanal pozisyonlar
-              // kullanılır; veri olmayan günlerde son bilinen fiyat taşınır.
               const holdings = watchlist
                 .map((w, i) => {
                   const hist = results[i];
@@ -112,7 +163,6 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
                 .filter((h): h is NonNullable<typeof h> => h !== null);
 
               if (holdings.length > 0) {
-                // Ortak başlangıç: tüm hisselerin işlem gördüğü ilk gün
                 const start = Math.max(...holdings.map(h => h.firstTime));
                 const allTimes = new Set<number>();
                 holdings.forEach(h => h.priceByTime.forEach((_, time) => { if (time >= start) allTimes.add(time); }));
@@ -145,15 +195,24 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
 
         const results = await Promise.all(fetchPromises);
 
-        // Bu yükleme eskidiyse (yeni bir yükleme başladıysa) çizim yapılmaz.
         if (loadId !== loadIdRef.current || !chartRef.current) return;
 
-        // Eski seriler ancak yeni veri hazırken temizlenir; böylece temizleme
-        // ve çizim tek senkron blokta kalır ve mükerrer seri oluşmaz.
         for (const key in seriesRefs.current) {
           chartRef.current.removeSeries(seriesRefs.current[key]);
         }
         seriesRefs.current = {};
+
+        // Seçilen aralığa göre başlangıç barını hesapla ve % değişim tabanına oturt
+        const nowSec = Math.floor(Date.now() / 1000);
+        const secondsByRange: Record<string, number> = {
+          '1mo': 30 * 86400,
+          '3mo': 90 * 86400,
+          '6mo': 180 * 86400,
+          '1y': 365 * 86400,
+          '5y': 5 * 365 * 86400,
+          'max': 100 * 365 * 86400,
+        };
+        const rangeCutoff = nowSec - (secondsByRange[range] ?? 180 * 86400);
 
         let colorIndex = 0;
         for (const { sym, rawData } of results) {
@@ -161,34 +220,32 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
           colorIndex++;
 
           if (rawData.length > 0) {
-            const series = chartRef.current.addSeries(LineSeries, {
-              color,
-              lineWidth: 2,
-              title: displayName(sym),
-              priceLineVisible: false,
-            });
-            series.setData(rawData.map(d => ({ time: d.time as Time, value: d.close })));
-            seriesRefs.current[sym] = series;
+            // Sadece aralığa uyan barları al; en az 1 bar kalmasını sağla
+            let sliced = rawData.filter(d => (d.time as number) >= rangeCutoff);
+            if (sliced.length === 0) sliced = rawData.slice(-1);
+
+            const basePrice = sliced[0].close;
+            if (basePrice > 0) {
+              const series = chartRef.current.addSeries(LineSeries, {
+                color,
+                lineWidth: 2,
+                title: displayName(sym),
+                priceLineVisible: false,
+              });
+
+              const chartData = sliced.map(d => ({
+                time: d.time as Time,
+                value: ((d.close / basePrice) - 1) * 100,
+              }));
+
+              series.setData(chartData);
+              seriesRefs.current[sym] = series;
+            }
           }
         }
 
-        // Aralık: 'max' tüm geçmişi sığdırır, diğerleri son N barı gösterir
-        const drawn = Object.values(seriesRefs.current);
-        if (drawn.length > 0) {
-          if (range === 'max') {
-            chartRef.current.timeScale().fitContent();
-          } else {
-            const longest = drawn.reduce((best, s) => (s.data().length > best.data().length ? s : best), drawn[0]);
-            const data = longest.data();
-            if (data && data.length > 0) {
-              const barsByRange: Record<string, number> = { '1mo': 22, '3mo': 65, '6mo': 130, '1y': 250, '5y': 1250 };
-              const barsToShow = Math.min(data.length, barsByRange[range] ?? data.length);
-              chartRef.current.timeScale().setVisibleLogicalRange({
-                from: Math.max(0, data.length - barsToShow),
-                to: Math.max(0, data.length - 1),
-              });
-            }
-          }
+        if (Object.keys(seriesRefs.current).length > 0) {
+          chartRef.current.timeScale().fitContent();
         }
 
       } finally {
@@ -199,8 +256,11 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
     loadData();
   }, [symbols, range, watchlistKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addSymbol = (sym: string) => {
-    if (!symbols.includes(sym)) setSymbols([...symbols, sym]);
+  const addSymbol = (inputSym: string) => {
+    const canonical = resolveSymbol(inputSym);
+    if (canonical && !symbols.includes(canonical)) {
+      setSymbols([...symbols, canonical]);
+    }
     setSearch('');
     setSearchOpen(false);
   };
@@ -211,10 +271,8 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    let sym = search.trim().toUpperCase();
-    if (!sym) return;
-    if (/^[A-Z0-9]{4,6}$/.test(sym) && !sym.includes('.')) sym += '.IS';
-    addSymbol(sym);
+    if (!search.trim()) return;
+    addSymbol(search);
   };
 
   const query = normalize(search);
