@@ -486,6 +486,98 @@ fn split_factor_since(splits: &[YahooSplitEvent], ipo_date: &str) -> f64 {
     factor
 }
 
+/// Olay listesinden çıkan çarpanı Yahoo'nun kendi fiyat serisiyle doğrular.
+///
+/// Yahoo'nun `close` serisi bölünmelere göre geriye dönük düzeltilmiştir:
+/// arz günündeki kapanış, o günkü gerçek fiyatın çarpana bölünmüş hâlidir.
+/// Buradan bağımsız bir "ima edilen çarpan" çıkar:
+/// `arz fiyatı / arz günü düzeltilmiş kapanış`.
+///
+/// İki kaynak birbirini tutuyorsa olay listesi kullanılır — o kesin değerdir,
+/// ima edilen çarpan ilk gün hareketi kadar sapar. Tutmuyorsa seri kazanır;
+/// olay listesi bozuk olabiliyor:
+///
+/// * EUREN — olaylar ×12,44 diyor, bu ilk gün ₺16,25 → ₺49,37 (%204) demek
+///   olurdu; BIST'te günlük marj ±%10. Seri ×4,09 diyor, o da ilk günü
+///   ₺16,23'e koyuyor: arz fiyatının tam üstüne.
+/// * KTLEV — üç kayıt çarpılınca ×937,9 çıkıyor, getiri %304.256 görünüyordu.
+///
+/// Bant, ilk gün hareketini (birkaç gün üst üste tavan olabilir) tolere
+/// edecek kadar geniş, mertebe hatasını yakalayacak kadar dar.
+const SPLIT_AGREEMENT_BAND: std::ops::RangeInclusive<f64> = 0.5..=2.5;
+
+fn reconcile_split_factor(event_factor: f64, ipo_price: f64, reference_close: Option<f64>) -> f64 {
+    let Some(reference) = reference_close.filter(|c| *c > 0.0) else {
+        // Yahoo'nun serisi arz gününü kapsamıyor (bazı hisselerde veri aylar
+        // sonra başlıyor); doğrulanamayan çarpan olduğu gibi bırakılır.
+        return event_factor;
+    };
+    if ipo_price <= 0.0 {
+        return event_factor;
+    }
+
+    let implied = ipo_price / reference;
+    if !implied.is_finite() || implied <= 0.0 {
+        return event_factor;
+    }
+
+    if SPLIT_AGREEMENT_BAND.contains(&(event_factor / implied)) {
+        event_factor
+    } else {
+        // Çarpan 1'in altına düşemez: arz sonrası bölünme pay sayısını azaltmaz.
+        implied.max(1.0)
+    }
+}
+
+/// Arz gününe ait düzeltilmiş kapanışı **günlük** seriden okur.
+///
+/// Aylık seri bu iş için kullanılamaz: ay-sonu kapanışını verir. EUREN'de
+/// arz günü ₺3,97 iken Haziran 2022 ay-sonu ₺6,65; ima edilen çarpan 1,7 kat
+/// kayıyor. Pencere dar tutulur — arz gününden itibaren üç hafta içinde veri
+/// yoksa hisse için doğrulama yapılmaz.
+async fn fetch_ipo_reference_close(
+    client: &reqwest::Client,
+    ticker: &str,
+    ipo_date: &str,
+) -> Option<f64> {
+    let start = chrono::NaiveDate::parse_from_str(ipo_date, "%Y-%m-%d")
+        .ok()?
+        .and_hms_opt(0, 0, 0)?
+        .and_utc()
+        .timestamp();
+    let end = start + 21 * 24 * 60 * 60;
+
+    let symbol = if ticker.ends_with(".IS") { ticker.to_string() } else { format!("{ticker}.IS") };
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?period1={start}&period2={end}&interval=1d"
+    );
+
+    let body = client
+        .get(&url)
+        .header("User-Agent", YAHOO_USER_AGENT)
+        .send()
+        .await
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+    let parsed: YahooChartResponse = serde_json::from_str(&body).ok()?;
+
+    parsed
+        .chart?
+        .result?
+        .into_iter()
+        .next()?
+        .indicators?
+        .quote?
+        .into_iter()
+        .next()?
+        .close?
+        .into_iter()
+        .flatten()
+        .find(|c| *c > 0.0)
+}
+
 /// Arşivdeki (taslak olmayan, ISO tarihli) arzların arz sonrası bölünme
 /// çarpanlarını Yahoo'dan günceller. Haftalık backfill içinde çalışır;
 /// aynı gün içinde tekrar kontrol edilmez.
@@ -496,12 +588,12 @@ async fn refresh_split_factors(
     use futures::future::join_all;
 
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let pending: Vec<(usize, String, String)> = archive
+    let pending: Vec<(usize, String, String, f64)> = archive
         .iter()
         .enumerate()
         .filter(|(_, p)| p.status != "TASLAK" && crate::ipo_store::looks_like_iso_date(&p.ipo_date))
         .filter(|(_, p)| p.split_checked.as_deref() != Some(today.as_str()))
-        .map(|(i, p)| (i, p.ticker.clone(), p.ipo_date.clone()))
+        .map(|(i, p)| (i, p.ticker.clone(), p.ipo_date.clone(), p.price))
         .collect();
 
     if pending.is_empty() {
@@ -510,13 +602,22 @@ async fn refresh_split_factors(
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
     let mut tasks = Vec::new();
-    for (idx, ticker, ipo_date) in pending {
+    for (idx, ticker, ipo_date, ipo_price) in pending {
         let client = client.clone();
         let permit = semaphore.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = permit.acquire().await.ok()?;
             let events = fetch_chart_events(&client, &ticker).await.ok()?;
-            Some((idx, split_factor_since(&events.splits, &ipo_date)))
+            let from_events = split_factor_since(&events.splits, &ipo_date);
+            let reference = fetch_ipo_reference_close(&client, &ticker, &ipo_date).await;
+            let factor = reconcile_split_factor(from_events, ipo_price, reference);
+            if (factor - from_events).abs() > f64::EPSILON {
+                eprintln!(
+                    "[ipo] {ticker}: bölünme çarpanı olay listesine göre ×{from_events:.2}, \
+                     fiyat serisine göre ×{factor:.2} — seri kullanıldı"
+                );
+            }
+            Some((idx, factor))
         }));
     }
 
@@ -815,7 +916,52 @@ async fn fetch_upcoming_dividends(
 
 #[cfg(test)]
 mod tests {
-    use super::effective_status;
+    use super::{effective_status, reconcile_split_factor};
+
+    /// İki kaynak uyuşuyorsa olay listesi korunur — kesin değer odur, ima
+    /// edilen çarpan ilk gün hareketi kadar sapar.
+    ///
+    /// ENERY: arz ₺88,76, arz günü düzeltilmiş kapanış ₺1,5724 → ima ×56,45.
+    /// Olay listesi ×62,07; oran 1,10 (ilk gün tavanı) — bantta.
+    #[test]
+    fn agreeing_sources_keep_the_event_factor() {
+        assert_eq!(reconcile_split_factor(62.07, 88.76, Some(1.5724)), 62.07);
+        assert_eq!(reconcile_split_factor(1.0, 20.0, Some(20.0)), 1.0);
+    }
+
+    /// EUREN: olaylar ×12,44 diyor; bu ilk günü ₺49,37 yapardı (arz ₺16,25,
+    /// %204) — BIST marjı ±%10 iken imkânsız. Seri ×4,09 diyor ve ilk günü
+    /// ₺16,23'e, yani arz fiyatının üstüne koyuyor.
+    #[test]
+    fn impossible_first_day_move_falls_back_to_the_price_series() {
+        let factor = reconcile_split_factor(12.44, 16.25, Some(3.9685));
+        assert!((factor - 16.25 / 3.9685).abs() < 1e-9, "çarpan: {factor}");
+
+        // Düzeltilmiş çarpanla ilk gün fiyatı arz fiyatına oturmalı
+        assert!((3.9685 * factor - 16.25).abs() < 0.05, "ilk gün: {}", 3.9685 * factor);
+    }
+
+    /// KTLEV: üç bozuk kayıt çarpılınca ×937,9 — getiri %304.256 görünüyordu.
+    #[test]
+    fn corrupt_event_chain_is_rejected() {
+        let factor = reconcile_split_factor(937.93, 13.43, Some(3.1603));
+        assert!(factor < 5.0, "mertebe hatası elenmeli: {factor}");
+    }
+
+    /// Yahoo serisi arz gününü kapsamıyorsa (bazı hisselerde veri aylar sonra
+    /// başlıyor) doğrulama yapılamaz; çarpan olduğu gibi bırakılır.
+    #[test]
+    fn unverifiable_factor_is_left_untouched() {
+        assert_eq!(reconcile_split_factor(6.0, 36.2, None), 6.0);
+        assert_eq!(reconcile_split_factor(4.0, 0.0, Some(3.0)), 4.0);
+        assert_eq!(reconcile_split_factor(4.0, 13.43, Some(0.0)), 4.0);
+    }
+
+    /// Arz sonrası bölünme pay sayısını azaltmaz; çarpan 1'in altına inemez.
+    #[test]
+    fn fallback_factor_never_drops_below_one() {
+        assert_eq!(reconcile_split_factor(500.0, 10.0, Some(40.0)), 1.0);
+    }
 
     #[test]
     fn past_dated_open_offering_is_reported_completed() {
