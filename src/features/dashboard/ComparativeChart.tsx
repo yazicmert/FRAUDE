@@ -163,25 +163,36 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
                 .filter((h): h is NonNullable<typeof h> => h !== null);
 
               if (holdings.length > 0) {
-                const start = Math.max(...holdings.map(h => h.firstTime));
                 const allTimes = new Set<number>();
-                holdings.forEach(h => h.priceByTime.forEach((_, time) => { if (time >= start) allTimes.add(time); }));
+                holdings.forEach(h => h.priceByTime.forEach((_, time) => allTimes.add(time)));
                 const times = [...allTimes].sort((a, b) => a - b);
 
                 const useQuantities = holdings.every(h => h.quantity !== null);
-                const lastPrice = holdings.map(h => h.priceByTime.get(start) ?? h.firstPrice);
-                const shares = holdings.map((h, i) => useQuantities ? (h.quantity as number) : 10000 / lastPrice[i]);
+                const lastPrices = new Map<number, number>();
 
                 let baseValue: number | null = null;
                 times.forEach(time => {
                   holdings.forEach((h, i) => {
                     const price = h.priceByTime.get(time);
-                    if (price !== undefined) lastPrice[i] = price;
+                    if (price !== undefined) lastPrices.set(i, price);
                   });
-                  const value = shares.reduce((sum, count, i) => sum + count * lastPrice[i], 0);
-                  if (baseValue === null) baseValue = value;
-                  const indexed = baseValue > 0 ? (value / baseValue) * 100 : 100;
-                  rawData.push({ time, open: indexed, high: indexed, low: indexed, close: indexed, volume: 0 });
+
+                  let value = 0;
+                  let activeCount = 0;
+                  holdings.forEach((h, i) => {
+                    const p = lastPrices.get(i);
+                    if (p !== undefined) {
+                      const qty = useQuantities ? (h.quantity as number) : 10000 / h.firstPrice;
+                      value += qty * p;
+                      activeCount++;
+                    }
+                  });
+
+                  if (activeCount > 0 && value > 0) {
+                    if (baseValue === null) baseValue = value;
+                    const indexed = (value / baseValue) * 100;
+                    rawData.push({ time, open: indexed, high: indexed, low: indexed, close: indexed, volume: 0 });
+                  }
                 });
                 if (rawData.length > 0) dataCache.current[sym] = rawData;
               }
@@ -210,9 +221,9 @@ export default function ComparativeChart({ isEditing, onClose, equities }: Compa
           '6mo': 180 * 86400,
           '1y': 365 * 86400,
           '5y': 5 * 365 * 86400,
-          'max': 100 * 365 * 86400,
+          'max': 0,
         };
-        const rangeCutoff = nowSec - (secondsByRange[range] ?? 180 * 86400);
+        const rangeCutoff = range === 'max' ? 0 : nowSec - (secondsByRange[range] ?? 180 * 86400);
 
         let colorIndex = 0;
         for (const { sym, rawData } of results) {
