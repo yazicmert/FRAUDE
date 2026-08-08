@@ -840,6 +840,25 @@ function IpoAllocationSimulator({ price, ipoSize, shareStructure, distributionRa
   );
 }
 
+function normalizeTurkishSearchText(str: string | null | undefined): string {
+  if (!str) return '';
+  return str
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/ı/g, 'i')
+    .replace(/Ğ/g, 'g')
+    .replace(/ğ/g, 'g')
+    .replace(/Ü/g, 'u')
+    .replace(/ü/g, 'u')
+    .replace(/Ş/g, 's')
+    .replace(/ş/g, 's')
+    .replace(/Ö/g, 'o')
+    .replace(/ö/g, 'o')
+    .replace(/Ç/g, 'c')
+    .replace(/ç/g, 'c')
+    .toLowerCase();
+}
+
 function parseIpoSizeTL(ipo: IpoRecord): number {
   if (ipo.ipo_size) {
     const text = ipo.ipo_size;
@@ -923,18 +942,12 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     )
   ).sort((a, b) => a.localeCompare(b, 'tr'));
 
-  const filteredIpos = ipos.filter(ipo => {
-    if (ipoSubTab === 'taslak') {
-      if (ipo.status !== 'TASLAK') return false;
-    } else {
-      if (ipo.status === 'TASLAK') return false;
-    }
-
+  const filterIpoMatch = (ipo: IpoRecord): boolean => {
     if (ipoSearchQuery) {
-      const q = ipoSearchQuery.trim().toLowerCase();
-      const matchesTicker = (ipo.ticker || '').toLowerCase().includes(q);
-      const matchesName = (ipo.company_name || '').toLowerCase().includes(q);
-      const matchesLead = (ipo.consortium_lead || '').toLowerCase().includes(q);
+      const q = normalizeTurkishSearchText(ipoSearchQuery);
+      const matchesTicker = normalizeTurkishSearchText(ipo.ticker).includes(q);
+      const matchesName = normalizeTurkishSearchText(ipo.company_name).includes(q);
+      const matchesLead = normalizeTurkishSearchText(ipo.consortium_lead).includes(q);
       if (!matchesTicker && !matchesName && !matchesLead) return false;
     }
 
@@ -957,8 +970,8 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     }
 
     if (ipoKatilimFilter !== 'all') {
-      const katilimText = (ipo.katilim_index || '').toLowerCase();
-      const isSuitable = katilimText.includes('uygun') && !katilimText.includes('değil');
+      const katilimText = normalizeTurkishSearchText(ipo.katilim_index);
+      const isSuitable = katilimText.includes('uygun') && !katilimText.includes('degil');
       if (ipoKatilimFilter === 'suitable' && !isSuitable) return false;
       if (ipoKatilimFilter === 'unsuitable' && isSuitable) return false;
     }
@@ -971,11 +984,24 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     }
 
     if (ipoConsortiumFilter !== 'all') {
-      const lead = (ipo.consortium_lead || '').toLowerCase();
-      if (!lead.includes(ipoConsortiumFilter.toLowerCase())) return false;
+      const lead = normalizeTurkishSearchText(ipo.consortium_lead);
+      const targetLead = normalizeTurkishSearchText(ipoConsortiumFilter);
+      if (!lead.includes(targetLead)) return false;
     }
 
     return true;
+  };
+
+  const activeIposCount = ipos.filter(i => i.status !== 'TASLAK' && filterIpoMatch(i)).length;
+  const draftIposCount = ipos.filter(i => i.status === 'TASLAK' && filterIpoMatch(i)).length;
+
+  const filteredIpos = ipos.filter(ipo => {
+    if (ipoSubTab === 'taslak') {
+      if (ipo.status !== 'TASLAK') return false;
+    } else {
+      if (ipo.status === 'TASLAK') return false;
+    }
+    return filterIpoMatch(ipo);
   });
 
   const normalizedFilter = filter.trim().toUpperCase();
@@ -1285,9 +1311,17 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     padding: '6px 12px',
                     borderBottom: ipoSubTab === 'tamamlanan' ? '2px solid #58a6ff' : '2px solid transparent',
                     color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
+                    display: 'flex', alignItems: 'center', gap: '6px',
                   }}
                 >
-                  {t('caIpoDone')}
+                  <span>{t('caIpoDone')}</span>
+                  <span style={{
+                    fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px',
+                    background: ipoSubTab === 'tamamlanan' ? 'rgba(88, 166, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
+                  }}>
+                    {activeIposCount}
+                  </span>
                 </button>
                 <button
                   onClick={() => setIpoSubTab('taslak')}
@@ -1296,9 +1330,18 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     padding: '6px 12px',
                     borderBottom: ipoSubTab === 'taslak' ? '2px solid #58a6ff' : '2px solid transparent',
                     color: ipoSubTab === 'taslak' ? '#58a6ff' : '#8b949e',
+                    display: 'flex', alignItems: 'center', gap: '6px',
                   }}
                 >
-                  {t('caIpoDraft')}
+                  <span>{t('caIpoDraft')}</span>
+                  <span style={{
+                    fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px',
+                    background: ipoSubTab === 'taslak' ? 'rgba(88, 166, 255, 0.2)' : draftIposCount > 0 ? 'rgba(63, 185, 80, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    color: ipoSubTab === 'taslak' ? '#58a6ff' : draftIposCount > 0 ? '#3fb950' : '#8b949e',
+                    fontWeight: draftIposCount > 0 ? 'bold' : 'normal',
+                  }}>
+                    {draftIposCount}
+                  </span>
                 </button>
               </div>
 

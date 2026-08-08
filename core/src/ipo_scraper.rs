@@ -259,7 +259,7 @@ fn parse_detail(html: &str) -> DetailData {
                 data.distribution_type = Some(clean_val.clone());
             } else if (label.contains("Arz Büyüklüğü") || label.contains("Halka Arz Büyüklüğü") || row_text.contains("Halka Arz Büyüklüğü")) && data.ipo_size.is_none() {
                 data.ipo_size = Some(clean_val.clone());
-            } else if (label.contains("Konsorsiyum") || label.contains("Aracı Kurum") || row_text.contains("Konsorsiyum Lideri")) && data.consortium_lead.is_none() {
+            } else if (label.contains("Konsorsiyum") || label.contains("Aracı Kurum") || label.contains("Lider") || row_text.contains("Konsorsiyum Lideri") || row_text.contains("Lider Aracı Kurum") || row_text.contains("Lider Kurum") || row_text.contains("Konsorsiyum")) && data.consortium_lead.is_none() {
                 data.consortium_lead = Some(clean_val.clone());
             }
         }
@@ -348,6 +348,22 @@ fn parse_detail(html: &str) -> DetailData {
             let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
             if !trimmed.is_empty() && trimmed.len() < 500 {
                 data.distribution_ratios = Some(trimmed);
+            }
+        }
+
+        // Konsorsiyum Lideri (Block text fallback)
+        if (text.contains("Konsorsiyum Lideri") || text.contains("Lider Aracı Kurum") || text.contains("Konsorsiyum Liderliği") || text.contains("Lider Kurum")) && data.consortium_lead.is_none() {
+            let mut clean = text
+                .replace("Konsorsiyum Lideri", "")
+                .replace("Lider Aracı Kurum", "")
+                .replace("Konsorsiyum Liderliği", "")
+                .replace("Lider Kurum", "");
+            if let Some(idx) = clean.find("* İzahname") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("* SPK") { clean.truncate(idx); }
+            if let Some(idx) = clean.find("Katkılarınız için") { clean.truncate(idx); }
+            let trimmed = clean.trim().trim_start_matches('-').trim_start_matches(':').trim().to_string();
+            if !trimmed.is_empty() && trimmed.len() < 300 {
+                data.consortium_lead = Some(trimmed);
             }
         }
     }
