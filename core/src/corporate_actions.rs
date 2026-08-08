@@ -203,7 +203,21 @@ pub async fn fetch_dividends(client: &reqwest::Client, ticker: &str) -> Result<V
     Ok(records)
 }
 
+/// Bir hissenin sermaye artırımları.
+///
+/// Asıl kaynak SPK bültenleridir; Yahoo yalnız SPK arşivinde kayıt yoksa
+/// devreye girer. İki fark önemli:
+///
+/// * Yahoo'nun split akışı **bedelliyi hiç taşımaz**, SPK tablosu taşır.
+/// * Yahoo bedelsizde bozulabiliyor (KTLEV'de üç kayıt çarpılınca ×937,9
+///   çıkıyordu); SPK aynı zinciri ×11,5 ve ×3,3816 olarak veriyor.
 pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> Result<Vec<CapitalIncrease>, String> {
+    let archive = crate::capital_store::load();
+    let official = crate::capital_store::increases_for(&archive, ticker);
+    if !official.is_empty() {
+        return Ok(official.into_iter().map(|row| spk_to_record(ticker, &row.increase)).collect());
+    }
+
     let events = fetch_chart_events(client, ticker).await?;
     let records = events.splits.into_iter().map(|s| {
         let (increase_type, ratio) = classify_split(s.numerator, s.denominator);
@@ -217,6 +231,34 @@ pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> 
         }
     }).collect();
     Ok(records)
+}
+
+/// SPK kaydını arayüzün beklediği biçime çevirir.
+///
+/// Bir artırım hem bedelli hem bedelsiz olabilir (karma); oran metni her
+/// bileşeni mevcut sermayeye göre yüzde olarak verir.
+fn spk_to_record(ticker: &str, increase: &crate::spk::SpkCapitalIncrease) -> CapitalIncrease {
+    let bonus_pct = increase.bonus_amount() / increase.existing_capital * 100.0;
+    let rights_pct = increase.rights_ratio() * 100.0;
+
+    let (increase_type, ratio) = match (increase.is_bonus(), increase.is_rights()) {
+        (true, true) => (
+            "KARMA",
+            format!("Bedelsiz %{bonus_pct:.0} + Bedelli %{rights_pct:.0}"),
+        ),
+        (true, false) => ("BEDELSİZ", format!("%{bonus_pct:.0}")),
+        (false, true) => ("BEDELLİ", format!("%{rights_pct:.0}")),
+        (false, false) => ("BÖLÜNME", String::new()),
+    };
+
+    CapitalIncrease {
+        ticker: ticker.to_string(),
+        date: increase.approval_date.clone(),
+        increase_type: increase_type.to_string(),
+        ratio,
+        rights_price: None,
+        source: format!("SPK Bülteni {}", increase.bulletin_no),
+    }
 }
 
 
@@ -453,6 +495,13 @@ pub async fn backfill_ipo_history(client: &reqwest::Client) -> bool {
         }
     }
 
+    // Bölünme çarpanları SPK arşivinden okunduğu için sermaye artırımları
+    // önce tazelenir; sıra ters olursa yeni onaylar bir tur geç yansır.
+    let added = crate::spk::backfill_capital_increases(client).await;
+    if added > 0 {
+        eprintln!("[spk] {added} yeni sermaye artırımı arşive eklendi");
+    }
+
     changed |= refresh_split_factors(client, &mut archive).await;
 
     if changed {
@@ -602,11 +651,22 @@ async fn refresh_split_factors(
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
     let mut tasks = Vec::new();
+    // SPK arşivi asıl kaynaktır; Yahoo yalnız o hisse için resmî kayıt
+    // bulunmadığında devreye girer.
+    let capital_archive = std::sync::Arc::new(crate::capital_store::load());
+
     for (idx, ticker, ipo_date, ipo_price) in pending {
         let client = client.clone();
         let permit = semaphore.clone();
+        let capital_archive = capital_archive.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = permit.acquire().await.ok()?;
+
+            let official = crate::capital_store::bonus_factor_since(&capital_archive, &ticker, &ipo_date);
+            if official > 1.0 {
+                return Some((idx, official));
+            }
+
             let events = fetch_chart_events(&client, &ticker).await.ok()?;
             let from_events = split_factor_since(&events.splits, &ipo_date);
             let reference = fetch_ipo_reference_close(&client, &ticker, &ipo_date).await;

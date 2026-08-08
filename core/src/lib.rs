@@ -11,6 +11,8 @@ pub mod api;
 pub mod bist;
 pub mod bist_indices;
 pub mod bist_universe;
+pub mod capital_store;
+pub mod company_match;
 pub mod corporate_actions;
 pub mod domain;
 pub mod economic_calendar;
