@@ -63,7 +63,10 @@ fn current_year_string() -> String {
     chrono::Local::now().format("%Y").to_string()
 }
 
-fn parse_turkish_date(date_str: &str) -> String {
+/// "05 Ağustos 2026 Çarşamba" → "2026-08-05". Ay adı bulunamazsa metin
+/// olduğu gibi döner; çağıranlar ISO olup olmadığına `looks_like_iso_date`
+/// ile bakar.
+pub(crate) fn parse_turkish_date(date_str: &str) -> String {
     let months = [
         ("ocak", "01"), ("şubat", "02"), ("subat", "02"), ("mart", "03"),
         ("nisan", "04"), ("mayıs", "05"), ("mayis", "05"), ("haziran", "06"),

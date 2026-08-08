@@ -11,7 +11,7 @@ const IPO_SEED_JSON: &str = include_str!("../data/ipo_seed.json");
 /// üyeliği için aynı pencereyi kullanıyoruz.
 const RECENT_IPO_WINDOW_DAYS: i64 = 730;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PersistedIpo {
     pub ticker: String,
     pub name: String,
@@ -84,131 +84,195 @@ pub fn load() -> Vec<PersistedIpo> {
         serde_json::from_str(IPO_SEED_JSON).unwrap_or_default()
     };
 
-    if enrich_all_ipos(&mut ipos) {
+    let mut changed = drop_corrupt_records(&mut ipos);
+    changed |= drop_fabricated_values(&mut ipos);
+    changed |= enrich_all_ipos(&mut ipos);
+    if changed {
         save(&ipos);
     }
     ipos
 }
 
+/// Unvanı hiç harf içermeyen kayıtları düşürür ve düşürdüyse `true` döner.
+///
+/// SPK başvuru tablosu üç sütunludur (`sıra no | unvan | tarih`); konuma bağlı
+/// eski ayrıştırıcı sıra numarasını unvan sanıyor ve arşive "1", "2", "3" adlı
+/// yüzlerce sahte TASLAK yazıyordu. Ayrıştırıcı düzeltildi, ama bozuk kayıtlar
+/// kullanıcıların diskindeki arşivde kalıyor — burada kendiliğinden temizlenir.
+/// Harf içermeyen bir unvan meşru olamayacağı için ölçüt güvenlidir.
+fn drop_corrupt_records(ipos: &mut Vec<PersistedIpo>) -> bool {
+    let before = ipos.len();
+    ipos.retain(|ipo| ipo.name.chars().any(char::is_alphabetic));
+    before != ipos.len()
+}
+
+/// Elle derlenmiş, kaynağı doğrulanmış alanlar. Yalnız burada adı geçen
+/// kodlara uygulanır — listede olmayan hisseye varsayılan **yazılmaz**.
+///
+/// Eskiden bu işlev listede bulunmayan her kayda da bir değer basıyordu:
+/// arz büyüklüğü `fiyat × 45.000.000` diye hesaplanıyor, her tamamlanmış arza
+/// "854.320 Katılımcı", her şirkete aynı fon kullanım metni ve aynı tahsisat
+/// oranı yazılıyordu. Uydurma değerler ekranda gerçek veriden ayırt edilemiyor,
+/// üstelik SPK/KAP'tan gelen doğru veriyi de "alan zaten dolu" diye engelliyordu.
+const CURATED_LEAD: &[(&str, &str)] = &[
+    ("AAGYO", "Tacirler Yatırım Menkul Değerler A.Ş."),
+    ("SVGYO", "Tera Yatırım Menkul Değerler A.Ş."),
+    ("SARAE", "Tera Yatırım Menkul Değerler A.Ş."),
+    ("SSAAT", "Deniz Yatırım Menkul Değerler A.Ş."),
+    ("ISVEA", "İş Yatırım Menkul Değerler A.Ş."),
+    ("EKIM", "Garanti BBVA Yatırım"),
+    ("GOLDA", "Halk Yatırım Menkul Değerler A.Ş."),
+    ("SOHOE", "QNB Finans Yatırım"),
+    ("ORZAX", "Vakıf Yatırım Menkul Değerler A.Ş."),
+    ("BETAE", "Ak Yatırım Menkul Değerler A.Ş."),
+    ("EKDMR", "Ziraat Yatırım Menkul Değerler A.Ş."),
+    ("ENPRA", "QNB Finans Yatırım / İş Yatırım"),
+    ("MCARD", "Tera Yatırım Menkul Değerler A.Ş."),
+    ("LXGYO", "Tera Yatırım Menkul Değerler A.Ş."),
+    ("ALBTN", "Tera Yatırım Menkul Değerler A.Ş."),
+    ("QUICK", "İş Yatırım Menkul Değerler A.Ş."),
+    ("KARCL", "Halk Yatırım Menkul Değerler A.Ş."),
+    ("MASFN", "Deniz Yatırım Menkul Değerler A.Ş."),
+    ("METEN", "OYAK Yatırım Menkul Değerler A.Ş."),
+    ("VEYAS", "Ziraat Yatırım / Halk Yatırım"),
+];
+
+const CURATED_KATILIM: &[(&str, &str)] = &[
+    ("SVGYO", "Katılım Endeksine Uygun Değil"),
+    ("EKIM", "Katılım Endeksine Uygun Değil"),
+    ("ENPRA", "Katılım Endeksine Uygun Değil"),
+    ("SSAAT", "Katılım Endeksine Uygun Değil"),
+];
+
+const CURATED_SIZE: &[(&str, &str)] = &[
+    ("AAGYO", "2.110.000.000 TL (2,11 Milyar ₺)"),
+    ("SVGYO", "1.100.000.000 TL (1,1 Milyar ₺)"),
+    ("SARAE", "3.500.000.000 TL (3,5 Milyar ₺)"),
+    ("SSAAT", "1.680.000.000 TL (1,68 Milyar ₺)"),
+    ("ISVEA", "836.000.000 TL (836 Milyon ₺)"),
+    ("EKIM", "1.513.000.000 TL (1,51 Milyar ₺)"),
+    ("GOLDA", "920.000.000 TL (920 Milyon ₺)"),
+    ("ENPRA", "4.750.000.000 TL (4,75 Milyar ₺)"),
+];
+
+const CURATED_FUND_USAGE: &[(&str, &str)] = &[
+    ("AAGYO", "%50 Gayrimenkul Projeleri Geliştirme, %35 Portföy Yatırımları, %15 İşletme Sermayesi"),
+    ("SVGYO", "%25-40 Kandilli Projesi maliyetlerinin finansmanı, %60-75 Yeni gayrimenkul yatırımları, %0-15 İşletme sermayesi"),
+    ("SARAE", "%50 Üretim ve Fabrika Yatırımları, %30 İhracat İşletme Sermayesi, %20 Yenilenebilir GES Yatırımı"),
+    ("SSAAT", "%40 Mağaza Ağı Genişletme & Lojistik, %40 Dijital ve E-Ticaret Altyapısı, %20 Finansman Borç Ödemesi"),
+    ("ISVEA", "%60 Yeni Fırın ve Üretim Tesisi Kapasite Artışı, %25 GES Güneş Enerjisi Yatırımı, %15 İşletme Sermayesi"),
+];
+
+const CURATED_SHARE_STRUCTURE: &[(&str, &str)] = &[
+    ("AAGYO", "100.000.000 Lot (%22,50 Halka Açıklık Oranı)"),
+    ("SVGYO", "295.400.000 Lot (%27,28 Halka Açıklık Oranı)"),
+    ("SARAE", "50.000.000 Lot Sermaye Artırımı (%20 Halka Açıklık)"),
+    ("ISVEA", "40.000.000 Lot Sermaye Artırımı (%25 Halka Açıklık)"),
+];
+
+/// Eski sürümlerin ürettiği uydurma değerler. Kullanıcıların diskindeki
+/// arşivde kaldıkları için yükleme sırasında silinirler; aksi halde gerçek
+/// kaynaklardan gelen veri "alan dolu" diye hiç yazılamaz.
+const FABRICATED_VALUES: &[&str] = &[
+    "Bireysele Eşit Dağıtım",
+    "İş Yatırım / Garanti BBVA Yatırım",
+    "Katılım Endeksine Uygun (XKTUM)",
+    "%45 Üretim Kapasitesi Artırımı ve Tesis Yatırımları, %35 İşletme Sermayesi Finansmanı, %20 Yenilenebilir Enerji Yatırımları",
+    "45.000.000 Lot Sermaye Artırımı - Ortak Satışı Yok (%20 Halka Açıklık)",
+    "Yurt İçi Bireysel: %80 (Eşit Dağıtım) - Yurt İçi Kurumsal: %20 (Orantısal)",
+    "854.320 Katılımcı",
+];
+
+fn curated(table: &[(&str, &str)], ticker: &str) -> Option<String> {
+    if ticker.is_empty() {
+        return None;
+    }
+    table
+        .iter()
+        .find(|(code, _)| *code == ticker)
+        .map(|(_, value)| (*value).to_string())
+}
+
+/// Boş alanları elle derlenmiş değerlerle doldurur. Karşılığı olmayan kayda
+/// hiçbir şey yazılmaz: alanın boş kalması, uydurulmuş bir değerden iyidir.
 fn enrich_all_ipos(ipos: &mut [PersistedIpo]) -> bool {
     let mut changed = false;
-    for ipo in ipos.iter_mut() {
-        // 1. Distribution Type
-        if ipo.distribution_type.is_none() || ipo.distribution_type.as_deref() == Some("") {
-            ipo.distribution_type = Some("Bireysele Eşit Dağıtım".to_string());
-            changed = true;
-        }
 
-        // 2. Consortium Lead
-        if ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("") {
-            let lead = match ipo.ticker.as_str() {
-                "AAGYO" => Some("Tacirler Yatırım Menkul Değerler A.Ş."),
-                "SVGYO" => Some("Tera Yatırım Menkul Değerler A.Ş."),
-                "SARAE" => Some("Tera Yatırım Menkul Değerler A.Ş."),
-                "SSAAT" => Some("Deniz Yatırım Menkul Değerler A.Ş."),
-                "ISVEA" => Some("İş Yatırım Menkul Değerler A.Ş."),
-                "EKIM" => Some("Garanti BBVA Yatırım"),
-                "GOLDA" => Some("Halk Yatırım Menkul Değerler A.Ş."),
-                "SOHOE" => Some("QNB Finans Yatırım"),
-                "ORZAX" => Some("Vakıf Yatırım Menkul Değerler A.Ş."),
-                "BETAE" => Some("Ak Yatırım Menkul Değerler A.Ş."),
-                "EKDMR" => Some("Ziraat Yatırım Menkul Değerler A.Ş."),
-                "ENPRA" => Some("QNB Finans Yatırım / İş Yatırım"),
-                "MCARD" => Some("Tera Yatırım Menkul Değerler A.Ş."),
-                "LXGYO" => Some("Tera Yatırım Menkul Değerler A.Ş."),
-                "ALBTN" => Some("Tera Yatırım Menkul Değerler A.Ş."),
-                "QUICK" => Some("İş Yatırım Menkul Değerler A.Ş."),
-                "KARCL" => Some("Halk Yatırım Menkul Değerler A.Ş."),
-                "MASFN" => Some("Deniz Yatırım Menkul Değerler A.Ş."),
-                "METEN" => Some("OYAK Yatırım Menkul Değerler A.Ş."),
-                "VEYAS" => Some("Ziraat Yatırım / Halk Yatırım"),
-                _ => Some("İş Yatırım / Garanti BBVA Yatırım"),
-            };
-            if let Some(l) = lead {
-                ipo.consortium_lead = Some(l.to_string());
+    for ipo in ipos.iter_mut() {
+        let fills: [(&mut Option<String>, Option<String>); 5] = [
+            (&mut ipo.consortium_lead, curated(CURATED_LEAD, &ipo.ticker)),
+            (&mut ipo.katilim_index, curated(CURATED_KATILIM, &ipo.ticker)),
+            (&mut ipo.ipo_size, curated(CURATED_SIZE, &ipo.ticker)),
+            (&mut ipo.fund_usage, curated(CURATED_FUND_USAGE, &ipo.ticker)),
+            (
+                &mut ipo.share_structure,
+                curated(CURATED_SHARE_STRUCTURE, &ipo.ticker),
+            ),
+        ];
+
+        for (field, value) in fills {
+            let empty = field.as_deref().is_none_or(str::is_empty);
+            if empty {
+                if let Some(value) = value {
+                    *field = Some(value);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    changed
+}
+
+/// Eski sürümlerin yazdığı uydurma değerleri arşivden siler.
+fn drop_fabricated_values(ipos: &mut [PersistedIpo]) -> bool {
+    let mut changed = false;
+
+    for ipo in ipos.iter_mut() {
+        let fields = [
+            &mut ipo.distribution_type,
+            &mut ipo.consortium_lead,
+            &mut ipo.katilim_index,
+            &mut ipo.fund_usage,
+            &mut ipo.share_structure,
+            &mut ipo.distribution_ratios,
+            &mut ipo.participant_count,
+        ];
+        for field in fields {
+            if field
+                .as_deref()
+                .is_some_and(|value| FABRICATED_VALUES.contains(&value))
+            {
+                *field = None;
                 changed = true;
             }
         }
 
-        // 3. Katılım Endeksi
-        if ipo.katilim_index.is_none() || ipo.katilim_index.as_deref().unwrap_or("").contains("İzahname") {
-            let katilim = match ipo.ticker.as_str() {
-                "SVGYO" | "EKIM" | "ENPRA" | "SSAAT" => "Katılım Endeksine Uygun Değil",
-                _ => "Katılım Endeksine Uygun (XKTUM)",
-            };
-            ipo.katilim_index = Some(katilim.to_string());
+        // "<tarih> Dönemi" gerçek bir talep toplama aralığı değil, arz
+        // tarihinden türetilmiş bir dolgudur.
+        if ipo
+            .book_building_dates
+            .as_deref()
+            .is_some_and(|value| value == format!("{} Dönemi", ipo.ipo_date))
+        {
+            ipo.book_building_dates = None;
             changed = true;
         }
 
-        // 4. Halka Arz Büyüklüğü
-        if ipo.ipo_size.is_none() || ipo.ipo_size.as_deref().unwrap_or("").contains("İzahname") {
-            let size = match ipo.ticker.as_str() {
-                "AAGYO" => "2.110.000.000 TL (2,11 Milyar ₺)".to_string(),
-                "SVGYO" => "1.100.000.000 TL (1,1 Milyar ₺)".to_string(),
-                "SARAE" => "3.500.000.000 TL (3,5 Milyar ₺)".to_string(),
-                "SSAAT" => "1.680.000.000 TL (1,68 Milyar ₺)".to_string(),
-                "ISVEA" => "836.000.000 TL (836 Milyon ₺)".to_string(),
-                "EKIM" => "1.513.000.000 TL (1,51 Milyar ₺)".to_string(),
-                "GOLDA" => "920.000.000 TL (920 Milyon ₺)".to_string(),
-                "ENPRA" => "4.750.000.000 TL (4,75 Milyar ₺)".to_string(),
-                _ => {
-                    let calc = (ipo.price * 45_000_000.0) as i64;
-                    if calc > 1_000_000_000 {
-                        format!("{} TL ({:.2} Milyar ₺)", calc, calc as f64 / 1_000_000_000.0)
-                    } else {
-                        format!("{} TL ({} Milyon ₺)", calc, calc / 1_000_000)
-                    }
-                }
-            };
-            ipo.ipo_size = Some(size);
-            changed = true;
-        }
-
-        // 5. Fon Kullanım Amacı
-        if ipo.fund_usage.is_none() || ipo.fund_usage.as_deref().unwrap_or("").contains("izahnamede") {
-            let fund = match ipo.ticker.as_str() {
-                "AAGYO" => "%50 Gayrimenkul Projeleri Geliştirme, %35 Portföy Yatırımları, %15 İşletme Sermayesi",
-                "SVGYO" => "%25-40 Kandilli Projesi maliyetlerinin finansmanı, %60-75 Yeni gayrimenkul yatırımları, %0-15 İşletme sermayesi",
-                "SARAE" => "%50 Üretim ve Fabrika Yatırımları, %30 İhracat İşletme Sermayesi, %20 Yenilenebilir GES Yatırımı",
-                "SSAAT" => "%40 Mağaza Ağı Genişletme & Lojistik, %40 Dijital ve E-Ticaret Altyapısı, %20 Finansman Borç Ödemesi",
-                "ISVEA" => "%60 Yeni Fırın ve Üretim Tesisi Kapasite Artışı, %25 GES Güneş Enerjisi Yatırımı, %15 İşletme Sermayesi",
-                _ => "%45 Üretim Kapasitesi Artırımı ve Tesis Yatırımları, %35 İşletme Sermayesi Finansmanı, %20 Yenilenebilir Enerji Yatırımları",
-            };
-            ipo.fund_usage = Some(fund.to_string());
-            changed = true;
-        }
-
-        // 6. Pay Yapısı
-        if ipo.share_structure.is_none() || ipo.share_structure.as_deref().unwrap_or("").contains("izahnamede") {
-            let shares = match ipo.ticker.as_str() {
-                "AAGYO" => "100.000.000 Lot (%22,50 Halka Açıklık Oranı)",
-                "SVGYO" => "295.400.000 Lot (%27,28 Halka Açıklık Oranı)",
-                "SARAE" => "50.000.000 Lot Sermaye Artırımı (%20 Halka Açıklık)",
-                "ISVEA" => "40.000.000 Lot Sermaye Artırımı (%25 Halka Açıklık)",
-                _ => "45.000.000 Lot Sermaye Artırımı - Ortak Satışı Yok (%20 Halka Açıklık)",
-            };
-            ipo.share_structure = Some(shares.to_string());
-            changed = true;
-        }
-
-        // 7. Tahsisat Oranları
-        if ipo.distribution_ratios.is_none() || ipo.distribution_ratios.as_deref().unwrap_or("").contains("bulunmuyor") {
-            ipo.distribution_ratios = Some("Yurt İçi Bireysel: %80 (Eşit Dağıtım) - Yurt İçi Kurumsal: %20 (Orantısal)".to_string());
-            changed = true;
-        }
-
-        // 8. Katılımcı Sayısı (Tamamlandıysa)
-        if (ipo.status == "TAMAMLANDI" || ipo.status == "SONUÇLANDI") && (ipo.participant_count.is_none() || ipo.participant_count.as_deref() == Some("")) {
-            ipo.participant_count = Some("854.320 Katılımcı".to_string());
-            changed = true;
-        }
-
-        // 9. Talep Toplama Tarihleri
-        if ipo.book_building_dates.is_none() || ipo.book_building_dates.as_deref() == Some("") {
-            ipo.book_building_dates = Some(format!("{} Dönemi", ipo.ipo_date));
-            changed = true;
+        // Uydurma büyüklük fiyattan türetiliyordu: fiyat × 45.000.000.
+        if ipo.price > 0.0 {
+            let fabricated = (ipo.price * 45_000_000.0) as i64;
+            if ipo
+                .ipo_size
+                .as_deref()
+                .is_some_and(|value| value.starts_with(&format!("{fabricated} TL")))
+            {
+                ipo.ipo_size = None;
+                changed = true;
+            }
         }
     }
+
     changed
 }
 
@@ -431,6 +495,80 @@ mod tests {
             spk_approval_date: None,
             kap_disclosure_index: None,
         }
+    }
+
+    /// Regresyon: bozuk SPK ayrıştırması arşive "1", "2" adlı kayıtlar yazmıştı;
+    /// yükleme bunları kendiliğinden temizlemeli, gerçek kayıtlara dokunmamalı.
+    #[test]
+    fn corrupt_numeric_names_are_dropped_on_load() {
+        let mut archive = vec![persisted("AAAA", 10.0)];
+        let mut junk = persisted("", 0.0);
+        junk.name = "17".into();
+        archive.push(junk);
+
+        assert!(drop_corrupt_records(&mut archive));
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].ticker, "AAAA");
+    }
+
+    #[test]
+    fn clean_archive_is_left_untouched() {
+        let mut archive = vec![persisted("AAAA", 10.0), persisted("BBBB", 20.0)];
+        assert!(!drop_corrupt_records(&mut archive));
+        assert_eq!(archive.len(), 2);
+    }
+
+    /// Regresyon: her tamamlanmış arza "854.320 Katılımcı", her şirkete aynı
+    /// tahsisat oranı ve `fiyat × 45.000.000` arz büyüklüğü yazılıyordu.
+    #[test]
+    fn fabricated_values_are_purged_on_load() {
+        let mut ipo = persisted("AAAA", 20.0);
+        ipo.participant_count = Some("854.320 Katılımcı".into());
+        ipo.distribution_ratios =
+            Some("Yurt İçi Bireysel: %80 (Eşit Dağıtım) - Yurt İçi Kurumsal: %20 (Orantısal)".into());
+        ipo.consortium_lead = Some("İş Yatırım / Garanti BBVA Yatırım".into());
+        ipo.ipo_size = Some("900000000 TL (0,90 Milyar ₺)".into()); // 20,0 × 45.000.000
+        ipo.book_building_dates = Some("2026-05-01 Dönemi".into());
+        let mut archive = vec![ipo];
+
+        assert!(drop_fabricated_values(&mut archive));
+        let cleaned = &archive[0];
+        assert!(cleaned.participant_count.is_none());
+        assert!(cleaned.distribution_ratios.is_none());
+        assert!(cleaned.consortium_lead.is_none());
+        assert!(cleaned.ipo_size.is_none());
+        assert!(cleaned.book_building_dates.is_none());
+    }
+
+    #[test]
+    fn real_values_survive_the_purge() {
+        let mut ipo = persisted("AAAA", 20.0);
+        ipo.participant_count = Some("1.234.567 Katılımcı".into());
+        ipo.consortium_lead = Some("Ak Yatırım Menkul Değerler A.Ş.".into());
+        let mut archive = vec![ipo];
+
+        assert!(!drop_fabricated_values(&mut archive));
+        assert!(archive[0].participant_count.is_some());
+        assert!(archive[0].consortium_lead.is_some());
+    }
+
+    /// Listede olmayan hisseye varsayılan yazılmamalı — boş alan, uydurma
+    /// değerden iyidir.
+    #[test]
+    fn enrichment_only_touches_curated_tickers() {
+        let mut archive = vec![persisted("ZZZZ", 10.0), persisted("AAGYO", 10.0)];
+        for ipo in archive.iter_mut() {
+            ipo.consortium_lead = None;
+            ipo.ipo_size = None;
+        }
+
+        assert!(enrich_all_ipos(&mut archive));
+        assert!(archive[0].consortium_lead.is_none(), "listede olmayan koda yazıldı");
+        assert!(archive[0].ipo_size.is_none(), "listede olmayan koda yazıldı");
+        assert_eq!(
+            archive[1].consortium_lead.as_deref(),
+            Some("Tacirler Yatırım Menkul Değerler A.Ş.")
+        );
     }
 
     #[test]

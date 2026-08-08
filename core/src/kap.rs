@@ -51,6 +51,10 @@ struct DisclosureRow {
     summary: Option<String>,
     #[serde(rename = "disclosureIndex")]
     disclosure_index: u64,
+    /// Bildirimi yapan şirketin KAP'taki tam unvanı. Yanıtta `companyName`
+    /// **yoktur**; unvan yalnız bu alanda gelir.
+    #[serde(rename = "kapTitle")]
+    kap_title: Option<String>,
     /// Bildirime ekli dosya sayısı (IR sunum, finansal rapor PDF'leri vb.).
     #[serde(rename = "attachmentCount", default)]
     attachment_count: u32,
@@ -190,6 +194,52 @@ fn fetch_window<'a>(
             _ => Ok(rows),
         }
     })
+}
+
+/// Modüller arası paylaşılan ham bildirim satırı.
+///
+/// `DisclosureRow` özeldir çünkü serde adlandırmaları uca bağlıdır; halka arz
+/// tarafı gibi başka modüller uçla değil bu sadeleşmiş görünümle konuşur.
+#[derive(Clone, Debug)]
+pub(crate) struct RawDisclosure {
+    pub publish_date: String,
+    pub subject: String,
+    pub disclosure_index: u64,
+    /// Bildirimi yapan şirketin KAP unvanı.
+    pub kap_title: String,
+    /// Bildirimle ilişkili pay kodları; bildirimi yapan yoksa ilgili paylar.
+    pub stock_codes: Vec<String>,
+}
+
+impl From<&DisclosureRow> for RawDisclosure {
+    fn from(row: &DisclosureRow) -> Self {
+        RawDisclosure {
+            publish_date: row.publish_date.clone(),
+            subject: row.subject.clone().unwrap_or_default(),
+            disclosure_index: row.disclosure_index,
+            kap_title: row.kap_title.clone().unwrap_or_default(),
+            stock_codes: row
+                .stock_code_list()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+}
+
+/// Verilen tarih aralığındaki **tüm** şirket bildirimlerini getirir.
+///
+/// `member_rows` yalnız son ~4 haftayı önbellekler; geçmişe dönük tarama
+/// (halka arz arşivi gibi) buradan geçer. Aralık tek istekle 2000 satır
+/// sınırına dayanırsa `fetch_window` özyinelemeli olarak böler, yani uzun
+/// aralıklarda da kayıt düşmez. Önbelleklenmez: çağıran kendi ritmini kurar.
+pub(crate) async fn disclosures_in_range(
+    client: &Client,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<RawDisclosure>, String> {
+    let rows = fetch_window(client, "members", from, to).await?;
+    Ok(rows.iter().map(RawDisclosure::from).collect())
 }
 
 /// "16.07.2026 15:50:23" → "16.07.2026 15:50". Beklenmedik biçim aynen kalır.
