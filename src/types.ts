@@ -432,6 +432,33 @@ export interface IpoRecord {
   consortium_lead?: string | null;
   t1_t2_available?: string | null;
   distribution_ratios?: string | null;
+  /** "76,60 TL" ya da "20,00 - 22,00 TL" — ham fiyat/aralık metni. */
+  price_range?: string | null;
+  /** Arza konu toplam pay: "48.312.950 Lot". */
+  lot_amount?: string | null;
+  market?: string | null;
+  index_name?: string | null;
+  free_float_lots?: string | null;
+  free_float_ratio?: string | null;
+  sale_method?: string | null;
+  /** Katılımcı sayısına göre beklenen/gerçekleşen lot dağılımı. */
+  expected_lots?: string | null;
+  financials?: string | null;
+  price_stability?: string | null;
+  public_float_ratio?: string | null;
+  discount?: string | null;
+  results_table?: IpoResultRow[] | null;
+  major_shareholders?: string | null;
+  data_sources?: string[];
+  spk_bulletin_no?: string | null;
+}
+
+/** Tamamlanmış bir arzın yatırımcı grubu bazında dağıtım satırı. */
+export interface IpoResultRow {
+  group: string;
+  people: string;
+  lots: string;
+  ratio: string;
 }
 
 export interface UpcomingDividend {

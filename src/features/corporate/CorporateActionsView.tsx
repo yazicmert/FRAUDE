@@ -150,25 +150,28 @@ function renderVisualDistributionRatios(rawText?: string | null) {
   }
 
   const groupPatterns = [
-    { regex: /(?:Yurt\s*İçi\s*Bireysel|Bireysel)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '👨‍💼 Yurt İçi Bireysel', color: '#388bfd' },
-    { regex: /(?:Yüksek\s*Başvurulu|Nitelikli)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '💎 Yüksek Başvurulu', color: '#a371f7' },
-    { regex: /(?:Yurt\s*İçi\s*Kurumsal|Kurumsal)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏛️ Yurt İçi Kurumsal', color: '#58a6ff' },
-    { regex: /(?:Yurt\s*Dışı\s*Kurumsal|Yurt\s*Dışı)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🌍 Yurt Dışı Kurumsal', color: '#3fb950' },
-    { regex: /(?:Şirket\s*Çalışanları|Çalışan)[^\d%]*(\d+(?:[.,]\d+)?\s*%|%\s*\d+(?:[.,]\d+)?)/i, group: '🏢 Şirket Çalışanları', color: '#d29922' },
+    { regex: /Yurt\s*İçi\s*Bireysel|Bireysel/i, group: '👨‍💼 Yurt İçi Bireysel', color: '#388bfd' },
+    { regex: /Yüksek\s*Başvurulu|Nitelikli/i, group: '💎 Yüksek Başvurulu', color: '#a371f7' },
+    { regex: /Yurt\s*İçi\s*Kurumsal/i, group: '🏛️ Yurt İçi Kurumsal', color: '#58a6ff' },
+    { regex: /Yurt\s*Dışı\s*Kurumsal|Yurt\s*Dışı/i, group: '🌍 Yurt Dışı Kurumsal', color: '#3fb950' },
+    { regex: /Şirket\s*Çalışanları|Çalışan/i, group: '🏢 Şirket Çalışanları', color: '#d29922' },
   ];
 
   const parsedItems: Array<{ group: string; percent: number; color: string }> = [];
 
+  // Yüzde grup adının önünde de ("9.548.761 Lot (%10) Yüksek Başvurulu")
+  // arkasında da ("Yüksek Başvurulu %10") gelebilir; bu yüzden önce grubun
+  // geçtiği satır bulunur, yüzde o satırın tamamından okunur.
+  const segments = mainText.split(/[\n;]|\s-\s+/).map((s) => s.trim()).filter(Boolean);
+
   for (const p of groupPatterns) {
-    const match = mainText.match(p.regex);
-    if (match) {
-      const numMatch = match[1].match(/(\d+(?:[.,]\d+)?)/);
-      if (numMatch) {
-        const pct = parseFloat(numMatch[1].replace(',', '.'));
-        if (!isNaN(pct) && pct > 0 && pct <= 100) {
-          parsedItems.push({ group: p.group, percent: pct, color: p.color });
-        }
-      }
+    const segment = segments.find((s) => p.regex.test(s));
+    if (!segment) continue;
+    const numMatch = segment.match(/%\s*(\d+(?:[.,]\d+)?)/) || segment.match(/(\d+(?:[.,]\d+)?)\s*%/);
+    if (!numMatch) continue;
+    const pct = parseFloat(numMatch[1].replace(',', '.'));
+    if (!isNaN(pct) && pct > 0 && pct <= 100) {
+      parsedItems.push({ group: p.group, percent: pct, color: p.color });
     }
   }
 
@@ -219,6 +222,156 @@ function renderVisualDistributionRatios(rawText?: string | null) {
               background: item.color, borderRadius: '3px', transition: 'width 0.4s ease-in-out'
             }} />
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Değeri olan alanları etiket/değer satırı olarak dizer; boş alan atlanır. */
+function renderFactRows(facts: Array<[string, string | null | undefined]>) {
+  const filled = facts.filter(([, value]) => value);
+  if (filled.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.84rem' }}>
+      {filled.map(([label, value]) => (
+        <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'baseline' }}>
+          <span style={{ color: '#8b949e', whiteSpace: 'nowrap' }}>{label}</span>
+          <span style={{ color: '#f0f6fc', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * halkarz.com'daki resmi dağıtım tablosunu olduğu gibi gösterir: yatırımcı
+ * grubu × (kişi, lot, oran). Tablo yoksa null döner; çağıran tarafta
+ * tahmine dayalı eski görselleştirmeye düşülür.
+ */
+function renderIpoResultsTable(ipo: IpoRecord) {
+  const rows = ipo.results_table;
+  if (!rows || rows.length === 0) return null;
+
+  const cell: React.CSSProperties = { padding: '7px 10px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' };
+  const head: React.CSSProperties = {
+    ...cell,
+    color: '#8b949e',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+    fontFamily: 'inherit',
+    fontSize: '0.72rem',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '320px' }}>
+          <thead>
+            <tr>
+              <th style={{ ...head, textAlign: 'left' }}>Yatırımcı Grubu</th>
+              <th style={{ ...head, textAlign: 'right' }}>Kişi</th>
+              <th style={{ ...head, textAlign: 'right' }}>Lot</th>
+              <th style={{ ...head, textAlign: 'right' }}>Oran</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const isTotal = row.group.includes('Toplam');
+              return (
+                <tr key={row.group} style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <td style={{ ...cell, fontFamily: 'inherit', color: isTotal ? '#f0f6fc' : '#c9d1d9', fontWeight: isTotal ? 700 : 500 }}>
+                    {row.group}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'right', color: isTotal ? '#f0f6fc' : '#c9d1d9', fontWeight: isTotal ? 700 : 400 }}>{row.people}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: isTotal ? '#f0f6fc' : '#c9d1d9', fontWeight: isTotal ? 700 : 400 }}>{row.lots}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: '#3fb950', fontWeight: isTotal ? 700 : 600 }}>{row.ratio}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {ipo.major_shareholders && (
+        <div style={{ fontSize: '0.74rem', color: '#8b949e', lineHeight: 1.5, fontStyle: 'italic' }}>
+          * {ipo.major_shareholders}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Dönem | Hasılat | Brüt Kâr" biçimindeki düz metni tabloya çevirir. */
+function renderFinancials(financials?: string | null) {
+  if (!financials) return null;
+  const rows = financials.split('\n').map((line) => line.split('|').map((c) => c.trim()));
+  if (rows.length < 2) return null;
+
+  const [header, ...body] = rows;
+  const cell: React.CSSProperties = { padding: '6px 10px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '300px' }}>
+        <thead>
+          <tr>
+            {header.map((h, i) => (
+              <th
+                key={h || i}
+                style={{
+                  ...cell,
+                  fontFamily: 'inherit',
+                  fontSize: '0.72rem',
+                  color: '#8b949e',
+                  fontWeight: 700,
+                  textAlign: i === 0 ? 'left' : 'right',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                }}
+              >
+                {i === 0 ? 'Kalem' : h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row) => (
+            <tr key={row[0]} style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              {row.map((value, i) => (
+                <td
+                  key={i}
+                  style={{
+                    ...cell,
+                    fontFamily: i === 0 ? 'inherit' : 'var(--font-mono)',
+                    color: i === 0 ? '#8b949e' : value.includes('(-)') ? '#f85149' : '#c9d1d9',
+                    textAlign: i === 0 ? 'left' : 'right',
+                  }}
+                >
+                  {value}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Çok satırlı metni madde listesi olarak gösterir. */
+function renderBulletList(text?: string | null, color = '#c9d1d9') {
+  if (!text) return null;
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {lines.map((line) => (
+        <div key={line} style={{ display: 'flex', gap: '8px', fontSize: '0.82rem', lineHeight: 1.5 }}>
+          <span style={{ color: '#8b949e' }}>•</span>
+          <span style={{ color, wordBreak: 'break-word' }}>{line}</span>
         </div>
       ))}
     </div>
@@ -1758,6 +1911,31 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                     {renderVisualDistributionRatios(ipo.distribution_ratios)}
                                   </div>
 
+                                  {/* Künye — halka arz bilgileri tablosu */}
+                                  {(() => {
+                                    const facts = renderFactRows([
+                                      ['Halka Arz Tarihi', ipo.book_building_dates],
+                                      ['Fiyat / Aralık', ipo.price_range],
+                                      ['Pay', ipo.lot_amount],
+                                      ['Pazar', ipo.market],
+                                      ['Endeks', ipo.index_name],
+                                      ['Bist İlk İşlem', ipo.trading_start_date],
+                                      ['Fiili Dolaşımdaki Pay', ipo.free_float_lots],
+                                      ['Fiili Dolaşım Oranı', ipo.free_float_ratio],
+                                      ['Halka Açıklık', ipo.public_float_ratio],
+                                      ['Halka Arz İskontosu', ipo.discount],
+                                    ]);
+                                    if (!facts) return null;
+                                    return (
+                                      <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                        <div style={{ fontSize: '0.75rem', color: '#d29922', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          📋 Halka Arz Künyesi
+                                        </div>
+                                        {facts}
+                                      </div>
+                                    );
+                                  })()}
+
                                   {/* İşlem & Konsorsiyum Kuralları */}
                                   <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                                     <div style={{ fontSize: '0.75rem', color: '#a371f7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1770,17 +1948,33 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                           <span style={{ color: '#c9d1d9', fontWeight: 500 }}>{ipo.t1_t2_available}</span>
                                         </div>
                                       )}
+                                      {ipo.sale_method && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                          <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>Satış Yöntemi:</span>
+                                          {renderBulletList(ipo.sale_method)}
+                                        </div>
+                                      )}
                                       {ipo.consortium_lead && (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px', background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: '6px' }}>
-                                          <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>Konsorsiyum Liderleri:</span>
+                                          <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>Aracı Kurum / Konsorsiyum:</span>
                                           <span style={{ color: '#f0f6fc', fontWeight: 600, wordBreak: 'break-word', lineHeight: '1.4' }}>{ipo.consortium_lead}</span>
                                         </div>
                                       )}
-                                      {!ipo.t1_t2_available && !ipo.consortium_lead && (
-                                        <span style={{ color: '#8b949e', fontStyle: 'italic' }}>Bireysel eşit dağıtım kuralları geçerlidir.</span>
+                                      {!ipo.t1_t2_available && !ipo.consortium_lead && !ipo.sale_method && (
+                                        <span style={{ color: '#8b949e', fontStyle: 'italic' }}>Bu arz için satış ve aracılık bilgisi yayımlanmadı.</span>
                                       )}
                                     </div>
                                   </div>
+
+                                  {/* Finansal Tablo */}
+                                  {ipo.financials && (
+                                    <div style={{ background: 'rgba(13, 17, 23, 0.6)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                                      <div style={{ fontSize: '0.75rem', color: '#e3b341', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        📈 Finansal Tablo (İzahname)
+                                      </div>
+                                      {renderFinancials(ipo.financials)}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Right Side Column: Fon Kullanım Amacı & Sonuçlar */}
@@ -1804,38 +1998,71 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                     gap: '10px',
                                   }}>
                                     <div style={{ fontSize: '0.78rem', color: '#58a6ff', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📜 SPK Onaylı İzahname & Bülten Analizi</span>
-                                      <span style={{
-                                        fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px',
-                                        background: 'rgba(63, 185, 80, 0.15)', color: '#3fb950', border: '1px solid rgba(63, 185, 80, 0.3)',
-                                        fontWeight: 700, fontFamily: 'var(--font-mono)'
-                                      }}>
-                                        SPK Karar Numaralı
-                                      </span>
+                                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📜 İzahname Özeti</span>
+                                      {ipo.spk_bulletin_no && (
+                                        <span style={{
+                                          fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px',
+                                          background: 'rgba(63, 185, 80, 0.15)', color: '#3fb950', border: '1px solid rgba(63, 185, 80, 0.3)',
+                                          fontWeight: 700, fontFamily: 'var(--font-mono)'
+                                        }}>
+                                          SPK Onaylı
+                                        </span>
+                                      )}
                                     </div>
-                                    <div style={{ fontSize: '0.82rem', color: '#c9d1d9', lineHeight: '1.5' }}>
-                                      Bu halka arzın tüm büyüklük, lot dağılımı ve satış fiyatı verileri **Sermaye Piyasası Kurulu (SPK)** onaylı izahnamesi ve haftalık bülteni ile tam uyumludur.
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                        🔒 1 Yıl İhraççı & Ortak Satmama Taahhüdü
-                                      </span>
-                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                        🛡️ Fiyat İstikrarı Sağlayıcı İşlemler
-                                      </span>
-                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                        ⚖️ SPK Bireysele Eşit Dağıtım İlkesi
-                                      </span>
-                                    </div>
+                                    {/* Bu bölüm yalnız kaynaktan okunan değerleri gösterir; alan
+                                        boşsa satır hiç çizilmez. Her arza aynı sabit metni basmak
+                                        (eskiden "1 Yıl İhraççı Taahhüdü" gibi) gerçek veriden
+                                        ayırt edilemiyordu. */}
+                                    {ipo.lockup_period && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>🔒 Satmama Taahhüdü</span>
+                                        {renderBulletList(ipo.lockup_period)}
+                                      </div>
+                                    )}
+                                    {ipo.price_stability && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>🛡️ Fiyat İstikrarı</span>
+                                        {renderBulletList(ipo.price_stability)}
+                                      </div>
+                                    )}
+                                    {ipo.expected_lots && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>
+                                          📦 {ipo.status === 'TAMAMLANDI' ? 'Dağıtılan' : 'Dağıtılacak'} Pay Miktarı (Bireysel)
+                                        </span>
+                                        {renderBulletList(ipo.expected_lots)}
+                                      </div>
+                                    )}
+                                    {!ipo.lockup_period && !ipo.price_stability && !ipo.expected_lots && (
+                                      <div style={{ fontSize: '0.82rem', color: '#8b949e', lineHeight: '1.5', fontStyle: 'italic' }}>
+                                        Bu arz için izahname özeti henüz yayımlanmadı.
+                                      </div>
+                                    )}
+                                    {(ipo.spk_bulletin_no || (ipo.data_sources?.length ?? 0) > 0) && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '2px' }}>
+                                        {ipo.spk_bulletin_no && (
+                                          <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.72rem', border: '1px solid rgba(255, 255, 255, 0.08)', fontFamily: 'var(--font-mono)' }}>
+                                            SPK Bülteni {ipo.spk_bulletin_no}
+                                          </span>
+                                        )}
+                                        {ipo.data_sources?.map((source) => (
+                                          <span key={source} style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.72rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                            {source}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
 
-                                  {/* Gerçekleşen Dağıtım Sonuçları (Tamamlandıysa) */}
+                                  {/* Gerçekleşen Dağıtım Sonuçları (Tamamlandıysa).
+                                      Resmi tablo varsa olduğu gibi gösterilir; yoksa katılımcı
+                                      sayısından türetilen tahmini görselleştirmeye düşülür. */}
                                   {(ipo.status === 'TAMAMLANDI' || ipo.status === 'SONUÇLANDI' || ipo.participant_count) && (
                                     <div style={{ background: 'rgba(35, 134, 54, 0.08)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(63, 185, 80, 0.3)' }}>
                                       <div style={{ fontSize: '0.75rem', color: '#3fb950', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         🎉 Resmi Halka Arz Sonuçları (Gerçekleşen Dağıtım)
                                       </div>
-                                      {renderVisualIpoResults(ipo)}
+                                      {renderIpoResultsTable(ipo) ?? renderVisualIpoResults(ipo)}
                                     </div>
                                   )}
                                 </div>

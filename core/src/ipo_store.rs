@@ -1,4 +1,4 @@
-use crate::ipo_scraper::ScrapedIpo;
+use crate::ipo_scraper::{IpoResultRow, ScrapedIpo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -59,6 +59,40 @@ pub struct PersistedIpo {
     pub spk_approval_date: Option<String>,
     #[serde(default)]
     pub kap_disclosure_index: Option<String>,
+    /// "76,60 TL" veya "20,00 - 22,00 TL" — ham fiyat/aralık metni.
+    #[serde(default)]
+    pub price_range: Option<String>,
+    /// Arza konu toplam pay: "48.312.950 Lot".
+    #[serde(default)]
+    pub lot_amount: Option<String>,
+    #[serde(default)]
+    pub market: Option<String>,
+    #[serde(default)]
+    pub index_name: Option<String>,
+    #[serde(default)]
+    pub free_float_lots: Option<String>,
+    #[serde(default)]
+    pub free_float_ratio: Option<String>,
+    #[serde(default)]
+    pub sale_method: Option<String>,
+    /// Talep toplama öncesi "dağıtılacak", sonrasında "dağıtılan" pay miktarı
+    /// tahmin tablosu (katılım sayısına göre lot).
+    #[serde(default)]
+    pub expected_lots: Option<String>,
+    #[serde(default)]
+    pub financials: Option<String>,
+    #[serde(default)]
+    pub price_stability: Option<String>,
+    #[serde(default)]
+    pub public_float_ratio: Option<String>,
+    #[serde(default)]
+    pub discount: Option<String>,
+    /// Tamamlanmış arzlarda yatırımcı grubu bazında dağıtım tablosu.
+    #[serde(default)]
+    pub results_table: Option<Vec<IpoResultRow>>,
+    /// Payların %5'inden fazlasını alan gerçek/tüzel kişilere dair dipnot.
+    #[serde(default)]
+    pub major_shareholders: Option<String>,
 }
 
 fn archive_path() -> Option<std::path::PathBuf> {
@@ -85,12 +119,184 @@ pub fn load() -> Vec<PersistedIpo> {
     };
 
     let mut changed = drop_corrupt_records(&mut ipos);
+    changed |= merge_duplicate_records(&mut ipos);
     changed |= drop_fabricated_values(&mut ipos);
     changed |= enrich_all_ipos(&mut ipos);
     if changed {
         save(&ipos);
     }
     ipos
+}
+
+/// Aynı şirketin farklı kaynaklardan gelmiş iki kaydını tek kayda indirir.
+///
+/// SPK başvuru listesi ile halkarz.com taslak listesi aynı şirketi biraz
+/// farklı yazıyor ("Joy Game" / "Joygame", "Tarım Hayvancılık" / "Tarım ve
+/// Hayvancılık"); kod atanmadığı için isim dışında eşleşecek bir anahtar da
+/// yok. Sonuçta tabloda aynı şirket iki satır, biri kodsuz ve boş sütunlarla
+/// görünüyordu. Kodlu/dolu kayıt taban alınır, eksik alanları diğerinden
+/// tamamlanır.
+fn merge_duplicate_records(ipos: &mut Vec<PersistedIpo>) -> bool {
+    let before = ipos.len();
+    let mut kept: Vec<PersistedIpo> = Vec::with_capacity(before);
+
+    for ipo in std::mem::take(ipos) {
+        let key = normalized_company_key(&ipo.name);
+        // Anahtar anlamlı uzunlukta değilse eşleştirme yapılmaz
+        let existing = (key.len() >= 6)
+            .then(|| kept.iter().position(|k| normalized_company_key(&k.name) == key))
+            .flatten();
+
+        match existing {
+            Some(idx) => {
+                let (base, extra) = if record_rank(&kept[idx]) >= record_rank(&ipo) {
+                    (kept[idx].clone(), ipo)
+                } else {
+                    (ipo, kept[idx].clone())
+                };
+                kept[idx] = combine_records(base, extra);
+            }
+            None => kept.push(ipo),
+        }
+    }
+
+    let merged_any = kept.len() != before;
+    *ipos = kept;
+    merged_any
+}
+
+/// Çakışmada hangi kaydın taban alınacağını belirler: kodu olan, tarihi
+/// çözülmüş ve daha çok alanı dolu olan kayıt kazanır.
+fn record_rank(ipo: &PersistedIpo) -> u32 {
+    let mut rank = 0;
+    if !ipo.ticker.is_empty() {
+        rank += 100;
+    }
+    if looks_like_iso_date(&ipo.ipo_date) {
+        rank += 50;
+    }
+    if ipo.price > 0.0 {
+        rank += 10;
+    }
+    rank + filled_field_count(ipo)
+}
+
+fn filled_field_count(ipo: &PersistedIpo) -> u32 {
+    [
+        &ipo.book_building_dates,
+        &ipo.trading_start_date,
+        &ipo.distribution_type,
+        &ipo.participant_count,
+        &ipo.fund_usage,
+        &ipo.share_structure,
+        &ipo.ipo_size,
+        &ipo.consortium_lead,
+        &ipo.distribution_ratios,
+        &ipo.market,
+        &ipo.lot_amount,
+    ]
+    .iter()
+    .filter(|f| f.is_some())
+    .count() as u32
+}
+
+/// `base` kaydını korur, yalnız boş alanlarını `extra`dan doldurur.
+fn combine_records(mut base: PersistedIpo, extra: PersistedIpo) -> PersistedIpo {
+    if base.ticker.is_empty() {
+        base.ticker = extra.ticker;
+    }
+    if base.price <= 0.0 {
+        base.price = extra.price;
+    }
+    if !looks_like_iso_date(&base.ipo_date) && looks_like_iso_date(&extra.ipo_date) {
+        base.ipo_date = extra.ipo_date;
+    }
+
+    let pairs: [(&mut Option<String>, Option<String>); 24] = [
+        (&mut base.book_building_dates, extra.book_building_dates),
+        (&mut base.trading_start_date, extra.trading_start_date),
+        (&mut base.distribution_type, extra.distribution_type),
+        (&mut base.participant_count, extra.participant_count),
+        (&mut base.fund_usage, extra.fund_usage),
+        (&mut base.share_structure, extra.share_structure),
+        (&mut base.ipo_size, extra.ipo_size),
+        (&mut base.katilim_index, extra.katilim_index),
+        (&mut base.lockup_period, extra.lockup_period),
+        (&mut base.consortium_lead, extra.consortium_lead),
+        (&mut base.t1_t2_available, extra.t1_t2_available),
+        (&mut base.distribution_ratios, extra.distribution_ratios),
+        (&mut base.spk_bulletin_no, extra.spk_bulletin_no),
+        (&mut base.spk_approval_date, extra.spk_approval_date),
+        (&mut base.kap_disclosure_index, extra.kap_disclosure_index),
+        (&mut base.price_range, extra.price_range),
+        (&mut base.lot_amount, extra.lot_amount),
+        (&mut base.market, extra.market),
+        (&mut base.index_name, extra.index_name),
+        (&mut base.free_float_lots, extra.free_float_lots),
+        (&mut base.free_float_ratio, extra.free_float_ratio),
+        (&mut base.sale_method, extra.sale_method),
+        (&mut base.expected_lots, extra.expected_lots),
+        (&mut base.financials, extra.financials),
+    ];
+    for (target, source) in pairs {
+        if target.is_none() {
+            *target = source;
+        }
+    }
+
+    if base.price_stability.is_none() {
+        base.price_stability = extra.price_stability;
+    }
+    if base.public_float_ratio.is_none() {
+        base.public_float_ratio = extra.public_float_ratio;
+    }
+    if base.discount.is_none() {
+        base.discount = extra.discount;
+    }
+    if base.results_table.is_none() {
+        base.results_table = extra.results_table;
+    }
+    if base.major_shareholders.is_none() {
+        base.major_shareholders = extra.major_shareholders;
+    }
+    if base.split_factor.is_none() {
+        base.split_factor = extra.split_factor;
+    }
+
+    for source in extra.data_sources {
+        if !base.data_sources.contains(&source) {
+            base.data_sources.push(source);
+        }
+    }
+
+    base
+}
+
+/// Şirket unvanını karşılaştırılabilir bir anahtara indirir: küçük harf,
+/// hukuki form ekleri ("A.Ş.", "Anonim Şirketi") ve bağlaçlar atılır,
+/// harf/rakam dışındaki her şey silinir.
+fn normalized_company_key(name: &str) -> String {
+    let lowered = name.to_lowercase().replace('İ', "i").replace('I', "ı");
+    let mut key = String::with_capacity(lowered.len());
+
+    for word in lowered.split_whitespace() {
+        let cleaned: String = word
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
+        // Neredeyse her unvanda geçen ekler ayırt edici değil; "Joy Game" ile
+        // "Joygame" gibi boşluk farkları da anahtarda kaybolur.
+        if matches!(
+            cleaned.as_str(),
+            "aş" | "as" | "anonim" | "şirketi" | "sirketi" | "ve" | "ile" | "sanayi"
+                | "san" | "ticaret" | "tic" | "tıc" | "limited" | "ltd" | "şti" | "sti"
+        ) {
+            continue;
+        }
+        key.push_str(&cleaned);
+    }
+
+    key
 }
 
 /// Unvanı hiç harf içermeyen kayıtları düşürür ve düşürdüyse `true` döner.
@@ -369,6 +575,22 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
             if ipo.distribution_ratios.is_some() {
                 existing.distribution_ratios = ipo.distribution_ratios.clone();
             }
+            overwrite_if_present(&mut existing.price_range, &ipo.price_range);
+            overwrite_if_present(&mut existing.lot_amount, &ipo.lot_amount);
+            overwrite_if_present(&mut existing.market, &ipo.market);
+            overwrite_if_present(&mut existing.index_name, &ipo.index_name);
+            overwrite_if_present(&mut existing.free_float_lots, &ipo.free_float_lots);
+            overwrite_if_present(&mut existing.free_float_ratio, &ipo.free_float_ratio);
+            overwrite_if_present(&mut existing.sale_method, &ipo.sale_method);
+            overwrite_if_present(&mut existing.expected_lots, &ipo.expected_lots);
+            overwrite_if_present(&mut existing.financials, &ipo.financials);
+            overwrite_if_present(&mut existing.price_stability, &ipo.price_stability);
+            overwrite_if_present(&mut existing.public_float_ratio, &ipo.public_float_ratio);
+            overwrite_if_present(&mut existing.discount, &ipo.discount);
+            overwrite_if_present(&mut existing.major_shareholders, &ipo.major_shareholders);
+            if ipo.results_table.is_some() {
+                existing.results_table = ipo.results_table.clone();
+            }
             existing.last_seen = Some(today.clone());
         } else {
             archive.push(PersistedIpo {
@@ -396,12 +618,34 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
                 spk_bulletin_no: None,
                 spk_approval_date: None,
                 kap_disclosure_index: None,
+                price_range: ipo.price_range.clone(),
+                lot_amount: ipo.lot_amount.clone(),
+                market: ipo.market.clone(),
+                index_name: ipo.index_name.clone(),
+                free_float_lots: ipo.free_float_lots.clone(),
+                free_float_ratio: ipo.free_float_ratio.clone(),
+                sale_method: ipo.sale_method.clone(),
+                expected_lots: ipo.expected_lots.clone(),
+                financials: ipo.financials.clone(),
+                price_stability: ipo.price_stability.clone(),
+                public_float_ratio: ipo.public_float_ratio.clone(),
+                discount: ipo.discount.clone(),
+                results_table: ipo.results_table.clone(),
+                major_shareholders: ipo.major_shareholders.clone(),
             });
         }
         changed = true;
     }
 
     changed
+}
+
+/// Scrape'ten dolu bir değer geldiyse arşivdekini günceller; boş geldiyse
+/// mevcut değere dokunmaz (detay sayfası çekilmemiş olabilir).
+fn overwrite_if_present(target: &mut Option<String>, source: &Option<String>) {
+    if source.is_some() {
+        *target = source.clone();
+    }
 }
 
 fn recent_cutoff() -> String {
@@ -453,19 +697,106 @@ mod tests {
             ipo_date: "2027-01-15".into(),
             price,
             status: status.into(),
-            book_building_dates: None,
-            trading_start_date: None,
-            distribution_type: None,
-            participant_count: None,
-            fund_usage: None,
-            share_structure: None,
-            ipo_size: None,
-            katilim_index: None,
-            lockup_period: None,
-            consortium_lead: None,
-            t1_t2_available: None,
-            distribution_ratios: None,
+            ..Default::default()
         }
+    }
+
+    /// Aynı şirket, iki kaynaktan iki yazımla: SPK başvuru listesi ("Joy Game
+    /// Oyun ve Teknoloji A.Ş.") ile halkarz.com taslağı ("Joygame Oyun ve
+    /// Teknoloji A.Ş.") tek satırda birleşmeli.
+    #[test]
+    fn same_company_from_two_sources_becomes_one_record() {
+        let mut ipos = vec![
+            PersistedIpo {
+                name: "Joygame Oyun ve Teknoloji A.Ş.".into(),
+                ipo_date: "Hazırlanıyor...".into(),
+                status: "TASLAK".into(),
+                data_sources: vec!["halkarz.com".into()],
+                ..Default::default()
+            },
+            PersistedIpo {
+                name: "Joy Game Oyun ve Teknoloji A.Ş.".into(),
+                ipo_date: "2025-08-08".into(),
+                status: "TASLAK".into(),
+                spk_bulletin_no: Some("2025/40".into()),
+                data_sources: vec!["SPK".into()],
+                ..Default::default()
+            },
+        ];
+
+        assert!(merge_duplicate_records(&mut ipos));
+        assert_eq!(ipos.len(), 1);
+        // Tarihi çözülmüş kayıt taban alınır, diğerinin kaynağı eklenir
+        assert_eq!(ipos[0].ipo_date, "2025-08-08");
+        assert_eq!(ipos[0].spk_bulletin_no.as_deref(), Some("2025/40"));
+        assert_eq!(ipos[0].data_sources.len(), 2);
+    }
+
+    /// Kodlu kayıt taban alınmalı ve kodsuz kaydın doldurduğu alanlar
+    /// korunmalı — ekrandaki "—" satırının kaynağı buydu.
+    #[test]
+    fn coded_record_wins_and_absorbs_missing_fields() {
+        let mut ipos = vec![
+            PersistedIpo {
+                name: "Teknika Plast Teknik Plastik San. ve Tic. A.Ş.".into(),
+                ipo_date: "2026-08-14".into(),
+                status: "TASLAK".into(),
+                consortium_lead: Some("Ahlatcı Yatırım".into()),
+                ..Default::default()
+            },
+            PersistedIpo {
+                ticker: "TKNKA".into(),
+                name: "Teknika Plast Teknik Plastik Sanayi ve Ticaret A.Ş.".into(),
+                ipo_date: "2026-08-14".into(),
+                price: 85.4,
+                status: "AKTİF".into(),
+                market: Some("Yıldız Pazar".into()),
+                ..Default::default()
+            },
+        ];
+
+        assert!(merge_duplicate_records(&mut ipos));
+        assert_eq!(ipos.len(), 1);
+        assert_eq!(ipos[0].ticker, "TKNKA");
+        assert_eq!(ipos[0].price, 85.4);
+        assert_eq!(ipos[0].market.as_deref(), Some("Yıldız Pazar"));
+        assert_eq!(ipos[0].consortium_lead.as_deref(), Some("Ahlatcı Yatırım"));
+    }
+
+    /// Farklı şirketler birleşmemeli; anahtar yalnız hukuki form eklerini atar.
+    #[test]
+    fn different_companies_are_left_alone() {
+        let mut ipos = vec![
+            PersistedIpo {
+                ticker: "AAAAA".into(),
+                name: "Akfen İnşaat Turizm ve Ticaret A.Ş.".into(),
+                ..Default::default()
+            },
+            PersistedIpo {
+                ticker: "BBBBB".into(),
+                name: "Akfen Yenilenebilir Enerji A.Ş.".into(),
+                ..Default::default()
+            },
+        ];
+
+        assert!(!merge_duplicate_records(&mut ipos));
+        assert_eq!(ipos.len(), 2);
+    }
+
+    #[test]
+    fn company_key_ignores_legal_form_and_spacing() {
+        assert_eq!(
+            normalized_company_key("Joy Game Oyun ve Teknoloji A.Ş."),
+            normalized_company_key("Joygame Oyun ve Teknoloji A.Ş."),
+        );
+        assert_eq!(
+            normalized_company_key("Hastavuk Gıda Tarım Hayvancılık A.Ş."),
+            normalized_company_key("Hastavuk Gıda Tarım ve Hayvancılık A.Ş."),
+        );
+        assert_ne!(
+            normalized_company_key("Akfen İnşaat A.Ş."),
+            normalized_company_key("Akfen Enerji A.Ş."),
+        );
     }
 
     fn persisted(ticker: &str, price: f64) -> PersistedIpo {
@@ -476,24 +807,7 @@ mod tests {
             price,
             status: "TAMAMLANDI".into(),
             book_building_dates: Some("1-2 Mayıs 2026".into()),
-            trading_start_date: None,
-            distribution_type: None,
-            participant_count: None,
-            last_seen: None,
-            split_factor: None,
-            split_checked: None,
-            fund_usage: None,
-            share_structure: None,
-            ipo_size: None,
-            katilim_index: None,
-            lockup_period: None,
-            consortium_lead: None,
-            t1_t2_available: None,
-            distribution_ratios: None,
-            data_sources: Vec::new(),
-            spk_bulletin_no: None,
-            spk_approval_date: None,
-            kap_disclosure_index: None,
+            ..Default::default()
         }
     }
 

@@ -225,12 +225,19 @@ pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> 
 /// Talep toplama / işlem tarihi geçmişte kalan arzları okuma anında
 /// TAMAMLANDI'ya çevirir; böylece site rozeti gecikse bile durum bayatlamaz.
 fn effective_status(status: &str, ipo_date: &str, today: &str) -> String {
-    let is_open = matches!(status, "TALEP TOPLAMA" | "AKTİF");
-    if is_open && crate::ipo_store::looks_like_iso_date(ipo_date) && ipo_date < today {
-        "TAMAMLANDI".to_string()
-    } else {
-        status.to_string()
+    let dated = crate::ipo_store::looks_like_iso_date(ipo_date);
+
+    if matches!(status, "TALEP TOPLAMA" | "AKTİF") && dated && ipo_date < today {
+        return "TAMAMLANDI".to_string();
     }
+    // Tarihi gelecekte olan bir arz tamamlanmış olamaz. Yıl arşivi sayfalarında
+    // durum rozeti bulunmadığı için o kayıtlar TAMAMLANDI varsayılıyor; içinde
+    // bulunulan yılın arşivi henüz talep toplayan arzları da taşıyor.
+    if status == "TAMAMLANDI" && dated && ipo_date > today {
+        return "AKTİF".to_string();
+    }
+
+    status.to_string()
 }
 
 fn archive_to_records(archive: Vec<crate::ipo_store::PersistedIpo>) -> Vec<IpoRecord> {
@@ -259,6 +266,22 @@ fn archive_to_records(archive: Vec<crate::ipo_store::PersistedIpo>) -> Vec<IpoRe
             consortium_lead: p.consortium_lead,
             t1_t2_available: p.t1_t2_available,
             distribution_ratios: p.distribution_ratios,
+            price_range: p.price_range,
+            lot_amount: p.lot_amount,
+            market: p.market,
+            index_name: p.index_name,
+            free_float_lots: p.free_float_lots,
+            free_float_ratio: p.free_float_ratio,
+            sale_method: p.sale_method,
+            expected_lots: p.expected_lots,
+            financials: p.financials,
+            price_stability: p.price_stability,
+            public_float_ratio: p.public_float_ratio,
+            discount: p.discount,
+            results_table: p.results_table,
+            major_shareholders: p.major_shareholders,
+            data_sources: p.data_sources,
+            spk_bulletin_no: p.spk_bulletin_no,
         })
         .collect();
 
@@ -305,18 +328,47 @@ pub async fn refresh_ipo_base(client: &reqwest::Client) -> (Vec<IpoRecord>, bool
 }
 
 /// Geçmiş yıl arşivlerinin taranacağı başlangıç yılı ve tekrar aralığı.
-const BACKFILL_START_YEAR: i32 = 2023;
+///
+/// 2021'e kadar inilir: tohum dosyasındaki eski kayıtların bir kısmı uydurma
+/// tarih taşıyor (Boğaziçi Beton 2021'de arz edildiği hâlde "2024-02-22"
+/// yazıyordu) ve yalnız kendi yılının arşivinde bulunabildikleri için ancak
+/// pencere o yıla uzandığında gerçek veriyle düzeliyorlar.
+const BACKFILL_START_YEAR: i32 = 2021;
 const BACKFILL_INTERVAL_DAYS: i64 = 7;
 
 fn backfill_meta_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".fraude_ipos_meta.json"))
 }
 
-fn backfill_due() -> bool {
-    let Some(path) = backfill_meta_path() else { return false };
-    let last = std::fs::read_to_string(&path)
+/// Bir sonraki backfill'in ne yapacağı.
+enum BackfillPlan {
+    /// Sıra gelmedi.
+    Skip,
+    /// Takvim gereği: yalnız arşivde eksik olan kayıtların detayı çekilir.
+    Incremental,
+    /// Ayrıştırıcı değişti: her kaydın detay sayfası yeniden okunur.
+    ///
+    /// Sürüm damgası yalnız "çalış" demeye yetmiyor — eksiksiz görünen eski
+    /// kayıtlar atlandığı için düzeltmeler (ayraçsız konsorsiyum unvanları,
+    /// yanlış TAMAMLANDI durumu) onlara hiç ulaşmıyordu.
+    Full,
+}
+
+fn backfill_plan() -> BackfillPlan {
+    let Some(path) = backfill_meta_path() else { return BackfillPlan::Skip };
+    let meta = std::fs::read_to_string(&path)
         .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+
+    let version = meta
+        .as_ref()
+        .and_then(|v| v.get("parser_version").and_then(serde_json::Value::as_u64));
+    if version != Some(DETAIL_PARSER_VERSION) {
+        return BackfillPlan::Full;
+    }
+
+    let last = meta
+        .as_ref()
         .and_then(|v| v.get("last_backfill").and_then(|d| d.as_str().map(String::from)));
 
     match last {
@@ -324,9 +376,13 @@ fn backfill_due() -> bool {
             let cutoff = (chrono::Local::now() - chrono::Duration::days(BACKFILL_INTERVAL_DAYS))
                 .format("%Y-%m-%d")
                 .to_string();
-            date.as_str() < cutoff.as_str()
+            if date.as_str() < cutoff.as_str() {
+                BackfillPlan::Incremental
+            } else {
+                BackfillPlan::Skip
+            }
         }
-        None => true,
+        None => BackfillPlan::Full,
     }
 }
 
@@ -334,9 +390,35 @@ fn mark_backfill_done() {
     if let Some(path) = backfill_meta_path() {
         let meta = serde_json::json!({
             "last_backfill": chrono::Local::now().format("%Y-%m-%d").to_string(),
+            "parser_version": DETAIL_PARSER_VERSION,
         });
         let _ = std::fs::write(&path, meta.to_string());
     }
+}
+
+/// Detay ayrıştırıcısının sürümü. Yeni alan eklendiğinde artırılır; arşivdeki
+/// kayıtlar bir kez daha detay sayfasından tazelenir.
+const DETAIL_PARSER_VERSION: u64 = 3;
+
+/// Bir kaydın detay sayfasının tekrar çekilmesine gerek olmadığını söyler.
+///
+/// Eskiden ölçüt yalnız `book_building_dates` idi: talep toplama tarihi olan
+/// her kayıt "tam" sayılıp atlanıyor, pazar/tahsisat/dağıtım tablosu gibi
+/// alanlar hiç dolmuyordu. Artık tamamlanmış bir arzda beklenen çekirdek
+/// alanların hepsi aranır.
+fn detail_is_complete(ipo: &crate::ipo_store::PersistedIpo) -> bool {
+    let core_filled = ipo.book_building_dates.is_some()
+        && ipo.distribution_type.is_some()
+        && ipo.market.is_some()
+        && ipo.lot_amount.is_some()
+        && ipo.consortium_lead.is_some()
+        && ipo.distribution_ratios.is_some();
+
+    // Tamamlanmış arzlarda ayrıca ilk işlem tarihi ve dağıtım tablosu beklenir.
+    if ipo.status == "TAMAMLANDI" {
+        return core_filled && ipo.trading_start_date.is_some() && ipo.results_table.is_some();
+    }
+    core_filled
 }
 
 /// Yıl arşivi sayfalarını (halkarz.com/k/halka-arz/{yıl}/) tarayarak ana
@@ -345,22 +427,27 @@ fn mark_backfill_done() {
 /// tamamlar. Haftada bir kez çalışır; detayları zaten tam olan kayıtların
 /// detay sayfası tekrar çekilmez. Arşiv değiştiyse true döner.
 pub async fn backfill_ipo_history(client: &reqwest::Client) -> bool {
-    if !backfill_due() {
-        return false;
-    }
+    let plan = match backfill_plan() {
+        BackfillPlan::Skip => return false,
+        plan => plan,
+    };
 
     let mut archive = crate::ipo_store::load();
-    let skip_details: std::collections::HashSet<String> = archive
-        .iter()
-        .filter(|p| p.book_building_dates.is_some())
-        .map(|p| p.ticker.clone())
-        .collect();
+    let skip_details: std::collections::HashSet<String> = match plan {
+        BackfillPlan::Full => std::collections::HashSet::new(),
+        _ => archive
+            .iter()
+            .filter(|p| detail_is_complete(p))
+            .map(|p| p.ticker.clone())
+            .collect(),
+    };
 
     let current_year = chrono::Datelike::year(&chrono::Local::now());
     let mut changed = false;
 
     for year in BACKFILL_START_YEAR..=current_year {
         let scraped = crate::ipo_scraper::scrape_year_archive(client, year, &skip_details).await;
+        eprintln!("[ipo] {year} arşivi: {} kayıt tarandı", scraped.len());
         if !scraped.is_empty() {
             changed |= crate::ipo_store::merge_scraped(&mut archive, &scraped);
         }
@@ -728,6 +815,59 @@ async fn fetch_upcoming_dividends(
 
 #[cfg(test)]
 mod tests {
+    use super::effective_status;
+
+    #[test]
+    fn past_dated_open_offering_is_reported_completed() {
+        assert_eq!(effective_status("AKTİF", "2026-07-31", "2026-08-08"), "TAMAMLANDI");
+        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-31", "2026-08-08"), "TAMAMLANDI");
+    }
+
+    /// Yıl arşivi rozetsiz olduğu için içindeki her kaydı TAMAMLANDI sayıyor;
+    /// talep toplaması sürenler böyle "bitmiş" görünüyordu.
+    #[test]
+    fn future_dated_offering_is_never_reported_completed() {
+        assert_eq!(effective_status("TAMAMLANDI", "2026-08-14", "2026-08-08"), "AKTİF");
+    }
+
+    #[test]
+    fn undated_drafts_keep_their_status() {
+        assert_eq!(effective_status("TASLAK", "Hazırlanıyor...", "2026-08-08"), "TASLAK");
+        assert_eq!(effective_status("TAMAMLANDI", "2026-08-08", "2026-08-08"), "TAMAMLANDI");
+    }
+
+    /// Bir yıl arşivinin tamamını gerçekten gezip detayları doldurduğunu
+    /// doğrular. Kapsam (kaç arz) ve zenginlik (kaç alan dolu) birlikte
+    /// ölçülür — sayfalama koptuğunda kayıt sayısı, ayrıştırıcı koptuğunda
+    /// alan doluluğu düşer.
+    #[tokio::test]
+    #[ignore = "canlı halkarz.com erişimi gerektirir"]
+    async fn live_year_archive_is_fully_scraped() {
+        let client = reqwest::Client::new();
+        let empty = std::collections::HashSet::new();
+
+        for year in [2023, 2024, 2025] {
+            let scraped = crate::ipo_scraper::scrape_year_archive(&client, year, &empty).await;
+            let with_market = scraped.iter().filter(|s| s.market.is_some()).count();
+            let with_results = scraped.iter().filter(|s| s.results_table.is_some()).count();
+            let with_alloc = scraped.iter().filter(|s| s.distribution_ratios.is_some()).count();
+            println!(
+                "{year}: {} arz | pazar {} | dağıtım tablosu {} | tahsisat {}",
+                scraped.len(),
+                with_market,
+                with_results,
+                with_alloc
+            );
+
+            assert!(scraped.len() >= 18, "{year}: yalnız {} kayıt", scraped.len());
+            assert!(
+                with_market * 10 >= scraped.len() * 8,
+                "{year}: kayıtların %80'inde pazar bilgisi olmalı ({with_market}/{})",
+                scraped.len()
+            );
+        }
+    }
+
     #[test]
     fn installments_are_numbered_within_year() {
         use crate::domain::DividendRecord;
