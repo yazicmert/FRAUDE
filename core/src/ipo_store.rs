@@ -86,9 +86,31 @@ fn enrich_consortium_leads(ipos: &mut [PersistedIpo]) -> bool {
     let mut changed = false;
     for ipo in ipos.iter_mut() {
         let is_savur = ipo.ticker == "SVGYO" || ipo.name.contains("Savur");
-        if is_savur && (ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("")) {
-            ipo.consortium_lead = Some("Tera Yatırım Menkul Değerler A.Ş.".to_string());
-            changed = true;
+        if is_savur {
+            if ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("") {
+                ipo.consortium_lead = Some("Tera Yatırım Menkul Değerler A.Ş.".to_string());
+                changed = true;
+            }
+            if ipo.ipo_size.is_none() || ipo.ipo_size.as_deref().unwrap_or("").contains("İzahname") {
+                ipo.ipo_size = Some("1.100.000.000 TL (1,1 Milyar ₺)".to_string());
+                changed = true;
+            }
+            if ipo.fund_usage.is_none() || ipo.fund_usage.as_deref().unwrap_or("").contains("izahnamede") {
+                ipo.fund_usage = Some("%25-40 Kandilli Projesi maliyetlerinin finansmanı, %60-75 Yeni gayrimenkul yatırımları, %0-15 İşletme sermayesi".to_string());
+                changed = true;
+            }
+            if ipo.share_structure.is_none() || ipo.share_structure.as_deref().unwrap_or("").contains("izahnamede") {
+                ipo.share_structure = Some("295.400.000 Lot (%27,28 Halka Açıklık Oranı)".to_string());
+                changed = true;
+            }
+            if ipo.distribution_ratios.is_none() || ipo.distribution_ratios.as_deref().unwrap_or("").contains("bulunmuyor") {
+                ipo.distribution_ratios = Some("Yurt İçi Bireysel: Bireysele Eşit Dağıtım (%80)".to_string());
+                changed = true;
+            }
+            if ipo.katilim_index.is_none() || ipo.katilim_index.as_deref().unwrap_or("").contains("İzahname") {
+                ipo.katilim_index = Some("Katılım Endeksine Uygun Değil".to_string());
+                changed = true;
+            }
         }
         if ipo.consortium_lead.is_none() || ipo.consortium_lead.as_deref() == Some("") {
             let lead = match ipo.ticker.as_str() {
