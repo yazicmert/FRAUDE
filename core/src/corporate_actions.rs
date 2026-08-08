@@ -282,17 +282,26 @@ pub fn load_archive_records() -> Vec<IpoRecord> {
 /// (ilk çalıştırmada tohum veriyle dolan ~/.fraude_ipos.json) sayesinde veri döner.
 /// Dönen bool, canlı scrape'in başarılı olup olmadığını bildirir.
 pub async fn refresh_ipo_base(client: &reqwest::Client) -> (Vec<IpoRecord>, bool) {
-    let scrape_result = crate::ipo_scraper::scrape_recent_ipos(client).await;
+    // Pipeline çalıştır: tüm kaynakları paralel çeker
+    let pipeline_result = crate::ipo_pipeline::run_full_pipeline(client).await;
     let mut archive = crate::ipo_store::load();
 
-    let scrape_ok = matches!(&scrape_result, Ok(list) if !list.is_empty());
-    if let Ok(scraped) = scrape_result {
-        if crate::ipo_store::merge_scraped(&mut archive, &scraped) {
-            crate::ipo_store::save(&archive);
-        }
+    // Pipeline sonuçlarını birleştir (SPK > KAP > halkarz.com)
+    let pipeline_changed = crate::ipo_pipeline::merge_pipeline_into_archive(
+        &mut archive,
+        &pipeline_result,
+    );
+
+    if pipeline_changed {
+        crate::ipo_store::save(&archive);
     }
 
-    (archive_to_records(archive), scrape_ok)
+    let pipeline_ok = pipeline_result.errors.is_empty();
+    if !pipeline_result.errors.is_empty() {
+        eprintln!("[ipo_pipeline] hatalar: {:?}", pipeline_result.errors);
+    }
+
+    (archive_to_records(archive), pipeline_ok)
 }
 
 /// Geçmiş yıl arşivlerinin taranacağı başlangıç yılı ve tekrar aralığı.

@@ -51,6 +51,14 @@ pub struct PersistedIpo {
     pub t1_t2_available: Option<String>,
     #[serde(default)]
     pub distribution_ratios: Option<String>,
+    #[serde(default)]
+    pub data_sources: Vec<String>,
+    #[serde(default)]
+    pub spk_bulletin_no: Option<String>,
+    #[serde(default)]
+    pub spk_approval_date: Option<String>,
+    #[serde(default)]
+    pub kap_disclosure_index: Option<String>,
 }
 
 fn archive_path() -> Option<std::path::PathBuf> {
@@ -320,6 +328,10 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
                 consortium_lead: ipo.consortium_lead.clone(),
                 t1_t2_available: ipo.t1_t2_available.clone(),
                 distribution_ratios: ipo.distribution_ratios.clone(),
+                data_sources: Vec::new(),
+                spk_bulletin_no: None,
+                spk_approval_date: None,
+                kap_disclosure_index: None,
             });
         }
         changed = true;
@@ -414,6 +426,10 @@ mod tests {
             consortium_lead: None,
             t1_t2_available: None,
             distribution_ratios: None,
+            data_sources: Vec::new(),
+            spk_bulletin_no: None,
+            spk_approval_date: None,
+            kap_disclosure_index: None,
         }
     }
 

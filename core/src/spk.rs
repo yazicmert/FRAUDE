@@ -16,6 +16,49 @@ pub struct SpkBulletin {
 }
 
 #[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct SpkApplication {
+    pub company_name: String,
+    pub application_date: String,
+    pub status: String,
+    pub source: String,
+}
+
+pub async fn fetch_spk_applications(client: &Client) -> Result<Vec<SpkApplication>, Box<dyn Error + Send + Sync>> {
+    let url = "https://spk.gov.tr/istatistikler/basvurular/ilk-halka-arz-basvurusu";
+    let resp = client
+        .get(url)
+        .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Ok(Vec::new());
+    }
+
+    let html = resp.text().await?;
+    let mut applications = Vec::new();
+    let re_row = regex::Regex::new(
+        r#"(?is)<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>"#
+    ).unwrap();
+
+    for cap in re_row.captures_iter(&html) {
+        let name = decode_entities(&cap[1]).trim().to_string();
+        let date = decode_entities(&cap[2]).trim().to_string();
+        if name.contains("Şirket") || name.contains("Unvan") || name.is_empty() {
+            continue;
+        }
+        applications.push(SpkApplication {
+            company_name: name,
+            application_date: date,
+            status: "SPK_APPLICATION".to_string(),
+            source: "SPK".to_string(),
+        });
+    }
+
+    Ok(applications)
+}
+
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 pub struct SpkIpoApproval {
     pub company_name: String,
     pub ticker: Option<String>,
@@ -61,6 +104,21 @@ pub fn parse_spk_ipo_table(html: &str, bulletin_no: &str, approval_date: &str) -
         }
     }
     approvals
+}
+
+/// Türkçe karakterleri ASCII eşdeğerlerine dönüştürür (fuzzy matching için).
+pub fn normalize_turkish(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'ç' | 'Ç' => 'c',
+            'ğ' | 'Ğ' => 'g',
+            'ı' | 'İ' => 'i',
+            'ö' | 'Ö' => 'o',
+            'ş' | 'Ş' => 's',
+            'ü' | 'Ü' => 'u',
+            _ => c,
+        })
+        .collect()
 }
 
 fn parse_turkish_num(s: &str) -> f64 {
