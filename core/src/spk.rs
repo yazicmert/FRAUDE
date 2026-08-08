@@ -8,11 +8,64 @@ use serde::Serialize;
 use reqwest::Client;
 use std::error::Error;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 pub struct SpkBulletin {
     pub title: String,
     pub date: String,
     pub url: String,
+}
+
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct SpkIpoApproval {
+    pub company_name: String,
+    pub ticker: Option<String>,
+    pub capital_increase_lots: f64,
+    pub share_sale_lots: f64,
+    pub total_lots: f64,
+    pub price: f64,
+    pub ipo_size_tl: f64,
+    pub consortium_lead: Option<String>,
+    pub bulletin_no: String,
+    pub approval_date: String,
+}
+
+pub fn parse_spk_ipo_table(html: &str, bulletin_no: &str, approval_date: &str) -> Vec<SpkIpoApproval> {
+    let mut approvals = Vec::new();
+    let re_row = regex::Regex::new(
+        r#"(?is)<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>"#
+    ).unwrap();
+
+    for cap in re_row.captures_iter(html) {
+        let col1 = decode_entities(&cap[1]).trim().to_string();
+        if col1.contains("Şirket") || col1.contains("Unvan") || col1.is_empty() {
+            continue;
+        }
+        let cap_increase = parse_turkish_num(&cap[3]);
+        let share_sale = parse_turkish_num(&cap[4]);
+        let price = parse_turkish_num(&cap[5]);
+        if price > 0.0 || cap_increase > 0.0 || share_sale > 0.0 {
+            let total_lots = cap_increase + share_sale;
+            let ipo_size_tl = total_lots * price;
+            approvals.push(SpkIpoApproval {
+                company_name: col1,
+                ticker: None,
+                capital_increase_lots: cap_increase,
+                share_sale_lots: share_sale,
+                total_lots,
+                price,
+                ipo_size_tl,
+                consortium_lead: None,
+                bulletin_no: bulletin_no.to_string(),
+                approval_date: approval_date.to_string(),
+            });
+        }
+    }
+    approvals
+}
+
+fn parse_turkish_num(s: &str) -> f64 {
+    let clean = decode_entities(s).replace(".", "").replace(",", ".").replace("TL", "").replace("₺", "").trim().to_string();
+    clean.parse::<f64>().unwrap_or(0.0)
 }
 
 /// Listede tutulan en fazla bülten.

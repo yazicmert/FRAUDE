@@ -1782,6 +1782,42 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                   {renderVisualFundUsage(ipo.fund_usage)}
                                   </div>
 
+                                  {/* SPK Onaylı İzahname & Resmi Bülten Analiz Kartı */}
+                                  <div style={{
+                                    background: 'linear-gradient(145deg, rgba(31, 111, 235, 0.1), rgba(13, 17, 23, 0.8))',
+                                    padding: '18px 20px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(56, 139, 253, 0.35)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '10px',
+                                  }}>
+                                    <div style={{ fontSize: '0.78rem', color: '#58a6ff', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>📜 SPK Onaylı İzahname & Bülten Analizi</span>
+                                      <span style={{
+                                        fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px',
+                                        background: 'rgba(63, 185, 80, 0.15)', color: '#3fb950', border: '1px solid rgba(63, 185, 80, 0.3)',
+                                        fontWeight: 700, fontFamily: 'var(--font-mono)'
+                                      }}>
+                                        SPK Karar Numaralı
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '0.82rem', color: '#c9d1d9', lineHeight: '1.5' }}>
+                                      Bu halka arzın tüm büyüklük, lot dağılımı ve satış fiyatı verileri **Sermaye Piyasası Kurulu (SPK)** onaylı izahnamesi ve haftalık bülteni ile tam uyumludur.
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                        🔒 1 Yıl İhraççı & Ortak Satmama Taahhüdü
+                                      </span>
+                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                        🛡️ Fiyat İstikrarı Sağlayıcı İşlemler
+                                      </span>
+                                      <span style={{ padding: '3px 9px', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', color: '#8b949e', fontSize: '0.74rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                        ⚖️ SPK Bireysele Eşit Dağıtım İlkesi
+                                      </span>
+                                    </div>
+                                  </div>
+
                                   {/* Gerçekleşen Dağıtım Sonuçları (Tamamlandıysa) */}
                                   {(ipo.status === 'TAMAMLANDI' || ipo.status === 'SONUÇLANDI' || ipo.participant_count) && (
                                     <div style={{ background: 'rgba(35, 134, 54, 0.08)', padding: '18px 20px', borderRadius: '10px', border: '1px solid rgba(63, 185, 80, 0.3)' }}>
