@@ -840,6 +840,59 @@ function IpoAllocationSimulator({ price, ipoSize, shareStructure, distributionRa
   );
 }
 
+function parseIpoSizeTL(ipo: IpoRecord): number {
+  if (ipo.ipo_size) {
+    const text = ipo.ipo_size;
+    const match = text.match(/(\d+(?:[.,]\d+)?)\s*(Milyar|Milyon|Bin)?/i);
+    if (match) {
+      let num = parseFloat(match[1].replace(',', '.'));
+      const unit = (match[2] || '').toLowerCase();
+      if (unit.includes('milyar')) num *= 1_000_000_000;
+      else if (unit.includes('milyon')) num *= 1_000_000;
+      else if (unit.includes('bin')) num *= 1_000;
+      if (!isNaN(num) && num > 0) return num;
+    }
+  }
+  const totalLots = parseTotalLots(ipo);
+  if (typeof ipo.price === 'number' && ipo.price > 0 && totalLots > 0) {
+    return ipo.price * totalLots;
+  }
+  return 0;
+}
+
+function parseTotalLots(ipo: IpoRecord): number {
+  if (ipo.share_structure) {
+    let sum = 0;
+    const matches = ipo.share_structure.matchAll(/(\d+(?:\.\d+)*(?:,\d+)?)\s*Lot/gi);
+    for (const m of matches) {
+      const parsed = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(parsed) && parsed > 0) sum += parsed;
+    }
+    if (sum > 0) return sum;
+  }
+  if (typeof ipo.lot_size === 'number' && ipo.lot_size > 0) {
+    return ipo.lot_size;
+  }
+  return 0;
+}
+
+function parseRetailRatio(ipo: IpoRecord): { percent: number; lots: number } {
+  const totalLots = parseTotalLots(ipo);
+  let percent = 70;
+
+  if (ipo.distribution_ratios) {
+    const match = ipo.distribution_ratios.match(/(?:Bireysel|Yurt\s*İçi\s*Bireysel)[^\d%]*(\d+(?:[.,]\d+)?)\s*%/i) ||
+                  ipo.distribution_ratios.match(/%\s*(\d+(?:[.,]\d+)?)[^\d%]*(?:Bireysel|Yurt\s*İçi\s*Bireysel)/i);
+    if (match) {
+      const p = parseFloat(match[1].replace(',', '.'));
+      if (!isNaN(p) && p > 0 && p <= 100) percent = p;
+    }
+  }
+
+  const lots = totalLots > 0 ? (totalLots * percent) / 100 : 0;
+  return { percent, lots };
+}
+
 export default function CorporateActionsView({ onSelectTicker, initialTab = 'dividends' }: CorporateActionsViewProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
@@ -852,7 +905,78 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
   const [ipoRefreshing, setIpoRefreshing] = useState(false);
   const [expandedIpoIndex, setExpandedIpoIndex] = useState<number | null>(null);
 
+  // Halka Arz Filtreleme State'leri
+  const [ipoSearchQuery, setIpoSearchQuery] = useState('');
+  const [ipoSizeFilter, setIpoSizeFilter] = useState('all');
+  const [ipoLotFilter, setIpoLotFilter] = useState('all');
+  const [ipoKatilimFilter, setIpoKatilimFilter] = useState('all');
+  const [ipoRetailFilter, setIpoRetailFilter] = useState('all');
+  const [ipoConsortiumFilter, setIpoConsortiumFilter] = useState('all');
+
   const ipos = ipoData?.records ?? [];
+
+  const consortiumLeaders = Array.from(
+    new Set(
+      ipos
+        .map(i => (i.consortium_lead || '').trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'tr'));
+
+  const filteredIpos = ipos.filter(ipo => {
+    if (ipoSubTab === 'taslak') {
+      if (ipo.status !== 'TASLAK') return false;
+    } else {
+      if (ipo.status === 'TASLAK') return false;
+    }
+
+    if (ipoSearchQuery) {
+      const q = ipoSearchQuery.trim().toLowerCase();
+      const matchesTicker = (ipo.ticker || '').toLowerCase().includes(q);
+      const matchesName = (ipo.company_name || '').toLowerCase().includes(q);
+      const matchesLead = (ipo.consortium_lead || '').toLowerCase().includes(q);
+      if (!matchesTicker && !matchesName && !matchesLead) return false;
+    }
+
+    if (ipoSizeFilter !== 'all') {
+      const sizeTL = parseIpoSizeTL(ipo);
+      if (sizeTL > 0) {
+        if (ipoSizeFilter === 'small' && sizeTL >= 500_000_000) return false;
+        if (ipoSizeFilter === 'mid' && (sizeTL < 500_000_000 || sizeTL > 2_000_000_000)) return false;
+        if (ipoSizeFilter === 'large' && sizeTL <= 2_000_000_000) return false;
+      }
+    }
+
+    if (ipoLotFilter !== 'all') {
+      const totalLots = parseTotalLots(ipo);
+      if (totalLots > 0) {
+        if (ipoLotFilter === 'small' && totalLots >= 20_000_000) return false;
+        if (ipoLotFilter === 'mid' && (totalLots < 20_000_000 || totalLots > 50_000_000)) return false;
+        if (ipoLotFilter === 'large' && totalLots <= 50_000_000) return false;
+      }
+    }
+
+    if (ipoKatilimFilter !== 'all') {
+      const katilimText = (ipo.katilim_index || '').toLowerCase();
+      const isSuitable = katilimText.includes('uygun') && !katilimText.includes('değil');
+      if (ipoKatilimFilter === 'suitable' && !isSuitable) return false;
+      if (ipoKatilimFilter === 'unsuitable' && isSuitable) return false;
+    }
+
+    if (ipoRetailFilter !== 'all') {
+      const retail = parseRetailRatio(ipo);
+      if (ipoRetailFilter === 'pct70' && retail.percent < 70) return false;
+      if (ipoRetailFilter === 'pct80' && retail.percent < 80) return false;
+      if (ipoRetailFilter === 'high_lot' && retail.lots <= 25_000_000) return false;
+    }
+
+    if (ipoConsortiumFilter !== 'all') {
+      const lead = (ipo.consortium_lead || '').toLowerCase();
+      if (!lead.includes(ipoConsortiumFilter.toLowerCase())) return false;
+    }
+
+    return true;
+  });
 
   const normalizedFilter = filter.trim().toUpperCase();
   const filteredDividends = (events?.dividends ?? []).filter(
@@ -1153,28 +1277,31 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
               </div>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '15px', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
-              <button
-                onClick={() => setIpoSubTab('tamamlanan')}
-                style={{
-                  ...tabStyle('ipo'),
-                  padding: '6px 12px',
-                  borderBottom: ipoSubTab === 'tamamlanan' ? '2px solid #58a6ff' : '2px solid transparent',
-                  color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
-                }}
-              >
-                {t('caIpoDone')}
-              </button>
-              <button
-                onClick={() => setIpoSubTab('taslak')}
-                style={{
-                  ...tabStyle('ipo'),
-                  padding: '6px 12px',
-                  borderBottom: ipoSubTab === 'taslak' ? '2px solid #58a6ff' : '2px solid transparent',
-                  color: ipoSubTab === 'taslak' ? '#58a6ff' : '#8b949e',
-                }}
-              >
-                {t('caIpoDraft')}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setIpoSubTab('tamamlanan')}
+                  style={{
+                    ...tabStyle('ipo'),
+                    padding: '6px 12px',
+                    borderBottom: ipoSubTab === 'tamamlanan' ? '2px solid #58a6ff' : '2px solid transparent',
+                    color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
+                  }}
+                >
+                  {t('caIpoDone')}
+                </button>
+                <button
+                  onClick={() => setIpoSubTab('taslak')}
+                  style={{
+                    ...tabStyle('ipo'),
+                    padding: '6px 12px',
+                    borderBottom: ipoSubTab === 'taslak' ? '2px solid #58a6ff' : '2px solid transparent',
+                    color: ipoSubTab === 'taslak' ? '#58a6ff' : '#8b949e',
+                  }}
+                >
+                  {t('caIpoDraft')}
+                </button>
+              </div>
+
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {ipoData?.last_updated && (
                   <span style={{ color: '#8b949e', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
@@ -1196,8 +1323,147 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                 </button>
               </div>
             </div>
-            <div style={{ marginBottom: '12px', color: '#8b949e', fontSize: '0.8rem' }}>
-              {t('caIpoCount', { n: ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length })}
+
+            {/* Halka Arz Akıllı Filtreleme Paneli */}
+            <div style={{
+              background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.95), rgba(13, 17, 23, 0.9))',
+              border: '1px solid rgba(88, 166, 255, 0.2)',
+              borderRadius: '12px',
+              padding: '14px 18px',
+              marginBottom: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxSizing: 'border-box',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ fontSize: '0.8rem', color: '#58a6ff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  ⚡ Halka Arz Filtre Paneli
+                </div>
+                {(ipoSearchQuery || ipoSizeFilter !== 'all' || ipoLotFilter !== 'all' || ipoKatilimFilter !== 'all' || ipoRetailFilter !== 'all' || ipoConsortiumFilter !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIpoSearchQuery('');
+                      setIpoSizeFilter('all');
+                      setIpoLotFilter('all');
+                      setIpoKatilimFilter('all');
+                      setIpoRetailFilter('all');
+                      setIpoConsortiumFilter('all');
+                    }}
+                    style={{
+                      padding: '4px 10px', background: 'rgba(248, 81, 73, 0.15)', color: '#f85149',
+                      border: '1px solid rgba(248, 81, 73, 0.3)', borderRadius: '6px', cursor: 'pointer',
+                      fontSize: '0.74rem', fontWeight: 600, transition: 'all 0.15s'
+                    }}
+                  >
+                    ✕ Tüm Filtreleri Temizle
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                {/* Search Input */}
+                <input
+                  type="text"
+                  placeholder="Şirket, kod veya konsorsiyum ara..."
+                  value={ipoSearchQuery}
+                  onChange={(e) => setIpoSearchQuery(e.target.value)}
+                  style={{
+                    padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    minWidth: '200px', flex: '1 1 180px', fontFamily: 'var(--font-mono)'
+                  }}
+                />
+
+                {/* 1. Halka Arz Büyüklüğü */}
+                <select
+                  value={ipoSizeFilter}
+                  onChange={(e) => setIpoSizeFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">💰 Halka Arz Büyüklüğü (Tümü)</option>
+                  <option value="small">Küçük (&lt; 500 Milyon ₺)</option>
+                  <option value="mid">Orta (500M ₺ - 2 Milyar ₺)</option>
+                  <option value="large">Büyük (&gt; 2 Milyar ₺)</option>
+                </select>
+
+                {/* 2. Toplam Arz Edilecek Lot */}
+                <select
+                  value={ipoLotFilter}
+                  onChange={(e) => setIpoLotFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">📊 Arz Edilecek Lot (Tümü)</option>
+                  <option value="small">&lt; 20 Milyon Lot</option>
+                  <option value="mid">20M - 50 Milyon Lot</option>
+                  <option value="large">&gt; 50 Milyon Lot</option>
+                </select>
+
+                {/* 3. Katılım Endeksi */}
+                <select
+                  value={ipoKatilimFilter}
+                  onChange={(e) => setIpoKatilimFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">☪️ Katılım Endeksi (Tümü)</option>
+                  <option value="suitable">✓ Katılım Endeksine Uygun</option>
+                  <option value="unsuitable">✕ Katılım Endeksine Uygun Değil</option>
+                </select>
+
+                {/* 4. Bireysele Ayrılan Lot / Tahsisat */}
+                <select
+                  value={ipoRetailFilter}
+                  onChange={(e) => setIpoRetailFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="all">👨‍💼 Bireysel Tahsisat (Tümü)</option>
+                  <option value="pct70">%70 ve Üzeri Bireysel</option>
+                  <option value="pct80">%80 ve Üzeri Bireysel</option>
+                  <option value="high_lot">&gt; 25 Milyon Bireysel Lot</option>
+                </select>
+
+                {/* 5. Konsorsiyum Lideri */}
+                <select
+                  value={ipoConsortiumFilter}
+                  onChange={(e) => setIpoConsortiumFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px', fontSize: '0.78rem', borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', background: 'rgba(13, 17, 23, 0.8)', color: '#f0f6fc',
+                    cursor: 'pointer', maxWidth: '200px'
+                  }}
+                >
+                  <option value="all">🏛️ Konsorsiyum Lideri (Tümü)</option>
+                  {consortiumLeaders.map(lead => (
+                    <option key={lead} value={lead}>{lead}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '12px', color: '#8b949e', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>{t('caIpoCount', { n: filteredIpos.length })}</span>
+              {filteredIpos.length < ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length && (
+                <span style={{ fontSize: '0.72rem', color: '#58a6ff', background: 'rgba(88, 166, 255, 0.12)', padding: '2px 8px', borderRadius: '10px' }}>
+                  Filtrelendi ({ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length} toplam içerisinden)
+                </span>
+              )}
             </div>
             <div
               style={{ overflowX: 'auto', overflowY: 'visible', width: '100%', touchAction: 'pan-y' }}
@@ -1227,7 +1493,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                   </tr>
                 </thead>
               <tbody>
-                {ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').map((ipo, i) => {
+                {filteredIpos.map((ipo, i) => {
                   const retColor = (ipo.return_pct ?? 0) >= 0 ? '#3fb950' : '#f85149';
                   const isExpanded = expandedIpoIndex === i;
                   return (
