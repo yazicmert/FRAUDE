@@ -6,6 +6,28 @@ import PriceChart from '../ticker/PriceChart';
 
 type ActiveTab = 'dividends' | 'capital' | 'ipo';
 
+/**
+ * Geniş tabloyu saran yatay kaydırıcı.
+ *
+ * `overflow-y` açıkça `hidden` verilmeli. CSS'te bir eksen `visible` değilken
+ * diğerindeki `visible` **`auto`ya dönüşür**: `{overflowX:'auto', overflowY:'visible'}`
+ * yazınca kutu istemeden dikey kaydırma konteynerine dönüşüyor, fare tekerleği
+ * içeride kilitleniyor ve sayfa aşağı inmiyordu. Kutunun yüksekliği içeriğe
+ * göre büyüdüğü için `hidden` hiçbir şeyi kırpmaz.
+ *
+ * `overscroll-behavior-x: contain` yatay kaydırma sona erdiğinde hareketin
+ * sayfaya/geri navigasyona sıçramasını engeller.
+ */
+const HORIZONTAL_SCROLLER: React.CSSProperties = {
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  overscrollBehaviorX: 'contain',
+  touchAction: 'pan-y',
+};
+
+/** Yatay kaydırmayı içteki sarmalayıcıya bırakan dış kap. */
+const HORIZONTAL_SCROLL_HOST: React.CSSProperties = { overflowX: 'clip' };
+
 interface CorporateActionsViewProps {
   onSelectTicker?: (ticker: string) => void;
   initialTab?: ActiveTab;
@@ -1445,18 +1467,10 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
         ipos.length === 0 ? (
           <div className="empty-state">{t('caNoIpo')}</div>
         ) : (
-          <div
-            className="panel"
-            onWheel={(e) => {
-              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                const scrollParent = e.currentTarget.closest('.workspace-tab-pane') || e.currentTarget.closest('.workspace') || document.documentElement;
-                if (scrollParent) {
-                  scrollParent.scrollTop += e.deltaY;
-                }
-              }
-            }}
-            style={{ overflowX: 'auto', overflowY: 'visible', touchAction: 'pan-y' }}
-          >
+          // Yatay kaydırma yalnız tablonun kendi sarmalayıcısında kalır;
+          // buradaki ikinci bir yatay kaydırıcı iç içe geçip tekerleği
+          // kilitliyordu.
+          <div className="panel" style={HORIZONTAL_SCROLL_HOST}>
             {ipoData && !ipoData.scrape_ok && (
               <div style={{
                 marginBottom: '12px', padding: '8px 14px', borderRadius: '6px',
@@ -1672,17 +1686,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                 </span>
               )}
             </div>
-            <div
-              style={{ overflowX: 'auto', overflowY: 'visible', width: '100%', touchAction: 'pan-y' }}
-              onWheel={(e) => {
-                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                  const scrollParent = e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
-                  if (scrollParent) {
-                    scrollParent.scrollTop += e.deltaY;
-                  }
-                }
-              }}
-            >
+            <div style={{ ...HORIZONTAL_SCROLLER, width: '100%' }}>
               <table style={{ width: '100%', minWidth: '960px', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -1783,14 +1787,6 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                         <tr style={{ background: 'rgba(13, 17, 23, 0.7)' }}>
                           <td colSpan={11} style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', boxSizing: 'border-box' }}>
                             <div
-                              onWheel={(e) => {
-                                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                                  const scrollParent = e.currentTarget.closest('.workspace-tab-pane') || e.currentTarget.closest('.workspace') || e.currentTarget.closest('.view') || document.documentElement;
-                                  if (scrollParent) {
-                                    scrollParent.scrollTop += e.deltaY;
-                                  }
-                                }
-                              }}
                               style={{
                                 background: 'linear-gradient(145deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.95))',
                                 border: '1px solid rgba(88, 166, 255, 0.25)',
