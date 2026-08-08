@@ -1194,14 +1194,15 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     (c) => !normalizedFilter || c.ticker.startsWith(normalizedFilter)
   );
 
-  const loadEvents = async () => {
-    setEventsLoading(true);
+  // İlk yüklemede iskelet gösterilir; sekmeye her dönüşte sessizce tazelenir.
+  const loadEvents = async ({ silent }: { silent: boolean }) => {
+    if (!silent) setEventsLoading(true);
     try {
       setEvents(await getCorporateEvents());
     } catch (err) {
       console.error(err);
     } finally {
-      setEventsLoading(false);
+      if (!silent) setEventsLoading(false);
     }
   };
 
@@ -1221,9 +1222,14 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
   useEffect(() => {
     if (activeTab === 'ipo') {
       loadIpos();
-    } else if (events === null) {
-      loadEvents();
+      return;
     }
+    // Sekmeye her dönüşte yeniden okunur. Eskiden yalnız `events === null`
+    // iken çekiliyordu: arka plan görevi veriyi sonradan tazelediğinde
+    // (SPK sermaye artırımı taraması dakikalar sürebiliyor) ekran oturum
+    // boyunca eski payload'da kalıyor, kaynak "Yahoo Finance" görünmeye
+    // devam ediyordu. Komut yalnızca yerel bir JSON dosyası okuyor.
+    loadEvents({ silent: events !== null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
