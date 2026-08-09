@@ -518,6 +518,65 @@ function parseTradingStartDate(startDateStr?: string | null): Date | null {
   return null;
 }
 
+/**
+ * İlk işlem tarihini tek biçimde gösterir ("30 Temmuz 2026").
+ *
+ * Kaynaklar farklı yazıyor: halkarz.com Türkçe metin, Borsa'nın KAP bildirimi
+ * ISO ("2026-07-30"). Resmî kaynak artık scraper'ı ezdiği için aynı tabloda
+ * iki biçim yan yana düşüyordu. Çözülemeyen değer olduğu gibi gösterilir —
+ * gizlemek, veriyi hiç gelmemiş gibi gösterirdi.
+ */
+function formatTradingStartDate(value?: string | null): string {
+  if (!value) return '—';
+  const parsed = parseTradingStartDate(value);
+  if (!parsed) return value;
+  const months = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+  ];
+  return `${parsed.getDate()} ${months[parsed.getMonth()]} ${parsed.getFullYear()}`;
+}
+
+/**
+ * Satırın hangi resmî kaynaklardan beslendiğini gösteren küçük rozetler.
+ *
+ * Kaynak bilgisi yalnız açılmış satırın en altında duruyordu; listeye bakan
+ * kullanıcı verinin SPK bülteninden mi yoksa ikinci el bir siteden mi geldiğini
+ * göremiyordu. Yalnız **resmî** kaynaklar rozet alır — halkarz.com tabanı
+ * zaten varsayılan, onu da işaretlemek her satırı rozetle doldururdu.
+ */
+function renderSourceChips(ipo: IpoRecord) {
+  const official: string[] = [];
+  const sources = ipo.data_sources ?? [];
+  if (ipo.spk_bulletin_no || sources.some((s) => s.startsWith('SPK'))) official.push('SPK');
+  if (sources.includes('KAP')) official.push('KAP');
+  if (official.length === 0) return null;
+
+  return (
+    <span style={{ display: 'inline-flex', gap: '4px', flexShrink: 0 }}>
+      {official.map((source) => (
+        <span
+          key={source}
+          title={source === 'SPK' ? 'SPK bülteni / başvuru listesi' : 'KAP bildirimi'}
+          style={{
+            padding: '1px 5px',
+            borderRadius: '4px',
+            border: '1px solid rgba(88, 166, 255, 0.28)',
+            background: 'rgba(88, 166, 255, 0.08)',
+            color: '#58a6ff',
+            fontSize: '0.6rem',
+            fontWeight: 700,
+            letterSpacing: '0.3px',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {source}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function prepareIpoCandles(rawQuotes: HistoricalQuote[] | null, ipo?: IpoRecord | null): HistoricalQuote[] {
   const price = typeof ipo?.price === 'number' && ipo.price > 0 ? ipo.price : 35;
   const current = typeof ipo?.current_price === 'number' && ipo.current_price > 0 ? ipo.current_price : Math.round(price * 1.10 * 100) / 100;
@@ -1252,9 +1311,14 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     letterSpacing: '0.5px', whiteSpace: 'nowrap',
   };
 
+  // `textAlign` açıkça yazılmalı: App.css'teki genel kural `th, td` için
+  // sağa yaslıyor ve yalnız ilk sütunu sola alıyor. Başlık stili sola
+  // yasladığı hâlde hücre stili susunca her sütunda başlık solda, değer sağda
+  // kalıyordu — beş sütunun dördü hizasızdı.
   const tdStyle: React.CSSProperties = {
     padding: '12px 18px', borderBottom: '1px solid #21262d',
     fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#c9d1d9',
+    textAlign: 'left',
   };
 
   return (
@@ -1371,6 +1435,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                   <th style={thStyle}>{t('caExDate')}</th>
                   <th style={thStyle}>{t('caPerShareTl')}</th>
                   <th style={thStyle}>{t('caYieldPct')}</th>
+                  <th style={thStyle}>{t('caSource')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1394,6 +1459,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     </td>
                     <td style={{ ...tdStyle, color: '#3fb950', fontWeight: 'bold' }}>{(d.amount_per_share ?? 0).toFixed(4)}</td>
                     <td style={tdStyle}>{(d.yield_pct ?? 0) > 0 ? `%${(d.yield_pct ?? 0).toFixed(2)}` : '—'}</td>
+                                      <td style={{ ...tdStyle, color: '#8b949e' }}>{d.source || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1764,11 +1830,19 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                             )}
                           </div>
                         </td>
-                        <td style={{ ...tdStyle, maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }} title={ipo.company_name}>
-                          {ipo.company_name}
+                        <td style={{ ...tdStyle, maxWidth: '260px', fontWeight: 500 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <span
+                              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
+                              title={ipo.company_name}
+                            >
+                              {ipo.company_name}
+                            </span>
+                            {renderSourceChips(ipo)}
+                          </div>
                         </td>
                         <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{ipo.book_building_dates || '—'}</td>
-                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{ipo.trading_start_date || '—'}</td>
+                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatTradingStartDate(ipo.trading_start_date)}</td>
                         <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{ipo.distribution_type || '—'}</td>
                         <td style={{ ...tdStyle, fontSize: '0.78rem', color: ipo.participant_count ? '#f0f6fc' : '#8b949e', fontWeight: ipo.participant_count ? 600 : 400, whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)' }}>{ipo.participant_count || '—'}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{typeof ipo.price === 'number' && ipo.price > 0 ? `₺${ipo.price.toFixed(2)}` : '—'}</td>
@@ -1928,7 +2002,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                       ['Pay', ipo.lot_amount],
                                       ['Pazar', ipo.market],
                                       ['Endeks', ipo.index_name],
-                                      ['Bist İlk İşlem', ipo.trading_start_date],
+                                      ['Bist İlk İşlem', ipo.trading_start_date ? formatTradingStartDate(ipo.trading_start_date) : null],
                                       ['Fiili Dolaşımdaki Pay', ipo.free_float_lots],
                                       ['Fiili Dolaşım Oranı', ipo.free_float_ratio],
                                       ['Halka Açıklık', ipo.public_float_ratio],

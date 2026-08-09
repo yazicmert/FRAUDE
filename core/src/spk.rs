@@ -114,23 +114,32 @@ pub struct SpkIpoApproval {
     /// dahil değildir.
     pub extra_sale_lots: f64,
     pub total_lots: f64,
+    /// Sabit fiyatla onaylandıysa pay fiyatı; aralıkla onaylandıysa 0.
     pub price: f64,
     pub ipo_size_tl: f64,
+    /// Talep toplamalı arzlarda onaylanan taban-tavan aralığı ("8,50 - 9,90 TL").
+    /// Kesin fiyat talep toplama sonrası belli olur.
+    #[serde(default)]
+    pub price_range: Option<String>,
     pub consortium_lead: Option<String>,
     pub bulletin_no: String,
     pub approval_date: String,
 }
 
 /// Türkçe karakterleri ASCII eşdeğerlerine dönüştürür (fuzzy matching için).
+///
+/// Şapkalı harfler de indirgenir: bülten tablolarının başlığında "Kâr
+/// Payından" geçiyor ve 'â' ASCII'ye inmezse başlık sözlüğüyle eşleşmiyor.
 pub fn normalize_turkish(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             'ç' | 'Ç' => 'c',
             'ğ' | 'Ğ' => 'g',
-            'ı' | 'İ' => 'i',
+            'ı' | 'İ' | 'î' | 'Î' => 'i',
             'ö' | 'Ö' => 'o',
             'ş' | 'Ş' => 's',
-            'ü' | 'Ü' => 'u',
+            'ü' | 'Ü' | 'û' | 'Û' => 'u',
+            'â' | 'Â' => 'a',
             _ => c,
         })
         .collect()
@@ -180,8 +189,14 @@ pub async fn fetch_year_bulletins(
             return Ok(bulletins);
         }
 
-        // Blok yapısı yoksa (2021 ve öncesi) düz bağlantı listesine düşülür.
+        // Blok yapısı yoksa (2021 ve öncesi) tablo düzenine, o da tutmazsa düz
+        // bağlantı listesine düşülür. Sıra önemli: tablo hem tarihi hem bülten
+        // numarasını verir ve PDF adı anlamsız olsa da satırı yakalar.
         let html = fetch_page_html(client, &base).await?;
+        let rows = parse_bulletin_rows(&html, year);
+        if !rows.is_empty() {
+            return Ok(rows);
+        }
         let links = parse_bulletin_links(&html, year);
         if !links.is_empty() {
             return Ok(links);
@@ -310,6 +325,49 @@ fn parse_bulletin_links(html: &str, year: i32) -> Vec<SpkBulletin> {
     bulletins
 }
 
+/// Eski arşiv sayfalarının tablo düzeni için ayrıştırıcı.
+///
+/// 2021 arşivi bültenleri üç hücrelik gruplar hâlinde bir tabloda verir ve
+/// PDF adları **anlamsızdır** (`8d06cd9d947815143db2e1c0efef1804.pdf`):
+///
+/// ```html
+/// <tr>
+///   <td>14.10.2021</td><td>2021 / 51</td><td><a href=".../5896753e….pdf">…
+///   <td>21.10.2021</td><td>2021 / 52</td><td><a href=".../0194410c….pdf">…
+/// </tr>
+/// ```
+///
+/// Dosya adından yıl okuyan `parse_bulletin_links` bunları göremiyordu: 2021'in
+/// 67 bülteninden yalnız 40'ı taranıyor, kalan 27'sindeki sermaye artırımı ve
+/// halka arz onayları hiç görülmüyordu. Tablo ayrıca tarihi de taşır, bu yüzden
+/// PDF başlığına düşmeye gerek kalmaz.
+fn parse_bulletin_rows(html: &str, year: i32) -> Vec<SpkBulletin> {
+    let re = regex::Regex::new(
+        r#"(?is)<td[^>]*>\s*(\d{2})\.(\d{2})\.(\d{4})\s*</td>\s*<td[^>]*>\s*(\d{4})\s*/\s*(\d+)\s*</td>\s*<td[^>]*>\s*<a\s+href="([^"]+\.pdf)""#,
+    )
+    .expect("geçerli regex");
+
+    let mut seen = std::collections::HashSet::new();
+    let mut bulletins = Vec::new();
+    for capture in re.captures_iter(html) {
+        // Sayfa yalnız kendi yılını listelemeli; farklı yıl satırı sızarsa
+        // o yılın taramasında ikinci kez sayılır.
+        if capture[4].parse::<i32>().ok() != Some(year) {
+            continue;
+        }
+        let url = capture[6].to_string();
+        if !seen.insert(url.clone()) {
+            continue;
+        }
+        bulletins.push(SpkBulletin {
+            title: format!("Bülten No : {}/{}", &capture[4], &capture[5]),
+            date: format!("{}-{}-{}", &capture[3], &capture[2], &capture[1]),
+            url,
+        });
+    }
+    bulletins
+}
+
 /// PDF başlığındaki "2020/50    13/08/2020" satırından bülten numarası ve
 /// ISO tarihi okur. Eski arşiv sayfaları tarih vermediği için tek kaynak budur.
 fn bulletin_header(text: &str) -> Option<(String, String)> {
@@ -393,7 +451,7 @@ fn extract_ipo_approvals_from_text(
 
     section
         .split(|line| line.trim().is_empty())
-        .filter_map(|block| parse_approval_block(block, bulletin_no, approval_date))
+        .flat_map(|block| parse_approval_block(block, bulletin_no, approval_date))
         .collect()
 }
 
@@ -410,7 +468,7 @@ fn ipo_section<'a>(lines: &[&'a str]) -> Option<Vec<&'a str>> {
         if is_section_heading(line) || is_footnote(line) {
             break;
         }
-        if !is_page_furniture(line) {
+        if !is_page_furniture(line) && !is_table_header(line) {
             section.push(*line);
         }
     }
@@ -453,6 +511,14 @@ fn is_footnote(line: &str) -> bool {
         return false;
     }
 
+    // Dipnot işaretinden sonra yeni bir şirketin tablo satırı başlayabiliyor
+    // (2021/49: "(5) Anatolia Tanı ve Biyoteknoloji Ürünleri AŞ 100.000.000
+    // …"). Bunu dipnot sayan bölüm ayrıştırıcısı tabloyu orada kesiyor ve
+    // kalan arzların hepsini düşürüyordu.
+    if looks_like_table_row(trimmed) {
+        return false;
+    }
+
     // Ölçüt harf **sayısı** değil kelime sayısıdır. Sermaye artırımı
     // tablosunun son sütunu metindir ve satır sarınca dipnot işaretiyle
     // başlayan bir hücre satırı doğuyor:
@@ -468,6 +534,60 @@ fn is_footnote(line: &str) -> bool {
         .filter(|token| token.chars().filter(|c| c.is_alphabetic()).count() >= 3)
         .count()
         >= MIN_FOOTNOTE_WORDS
+}
+
+/// Tablo sütun başlığı satırı mı?
+///
+/// Başlık iki-üç satıra sarar ve gövdeden **boş satırla ayrılmayabilir**; o
+/// zaman ilk şirketin bloğuna karışır ve unvanın başına yapışır. Arşivde
+/// "Ortaklık Mevcut Sermaye Yeni Sermaye Bedelli Sermaye Artırımı Bedelsiz
+/// Sermaye Artırımı Satış Türü İç Kaynaklardan Kâr Payından Global Yatırım
+/// Holding AŞ" adlı kayıt böyle oluştu: unvan tanınmaz hâle geldiği için
+/// BIST koduna da bağlanamıyordu.
+///
+/// Ölçüt satırdaki **her** kelimenin başlık sözlüğünde geçmesidir. Tek kelime
+/// eşleşmesi yetmez: şirket unvanları da "Sermaye", "Yatırım", "Pay" taşıyor
+/// ("Vişne Madencilik", "İş Girişim Sermayesi Yatırım Ortaklığı").
+fn is_table_header(line: &str) -> bool {
+    const HEADER_WORDS: &[&str] = &[
+        "ortaklik", "mevcut", "yeni", "sermaye", "artirimi", "bedelli", "bedelsiz",
+        "ic", "kaynaklardan", "kar", "payindan", "satis", "satisi", "turu", "pay",
+        "ek", "fiyati",
+    ];
+
+    let mut matched = 0usize;
+    for word in line.split_whitespace() {
+        let key: String = normalize_turkish(word)
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
+        if key.is_empty() {
+            continue;
+        }
+        if !HEADER_WORDS.contains(&key.as_str()) {
+            return false;
+        }
+        matched += 1;
+    }
+    matched > 0
+}
+
+/// Satır bir şirketin tablo satırı mı?
+///
+/// Ölçüt: bağımsız bir hukuki form eki ("AŞ") ve ardından en az iki sayı.
+/// Gerçek dipnot metni şirket adını çekimli anıyor ("AŞ'ye ait") — bu bağımsız
+/// jeton sayılmaz — ve tek sayı taşıyor.
+fn looks_like_table_row(line: &str) -> bool {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    let Some(suffix) = tokens.iter().position(|token| is_company_suffix(token)) else {
+        return false;
+    };
+    tokens[suffix + 1..]
+        .iter()
+        .filter(|token| parse_turkish_number(token).is_some())
+        .count()
+        >= 2
 }
 
 /// Sayfa başlığı/altlığı mı? Bunlar tablonun ortasına girebilir.
@@ -518,7 +638,30 @@ const CAPITAL_TOLERANCE: f64 = 1.0;
 /// hücresine kayarsa kayıt sessizce geçmesin diye üst sınır konur.
 const PRICE_CEILING: f64 = 10_000.0;
 
-/// Tek bir şirket bloğunu onay kaydına çevirir.
+/// Tablo hücresi.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Cell {
+    /// Boş hücre; metinde tire olarak görünür.
+    Empty,
+    Number(f64),
+    /// Fiyat aralığı — talep toplamalı arzlarda sabit fiyat yerine bu onaylanır.
+    Range(f64, f64),
+}
+
+impl Cell {
+    fn number(self) -> Option<f64> {
+        match self {
+            Cell::Number(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn number_or_zero(self) -> f64 {
+        self.number().unwrap_or(0.0)
+    }
+}
+
+/// Bir bloktaki **her** şirketi onay kaydına çevirir.
 ///
 /// Unvan birden çok satıra sarar ve sayısal hücreler unvanın bittiği "AŞ"
 /// ekinden sonra başlayıp sonraki satırlara taşar:
@@ -529,54 +672,180 @@ const PRICE_CEILING: f64 = 10_000.0;
 /// (1)  -  73,70
 /// (2)
 /// ```
+///
+/// Blok **birden çok şirket taşıyabilir**: `pdf_extract` iki satırın arasına
+/// her zaman boş satır koymuyor ve ikinci unvan birincinin fiyat hücresinin
+/// hemen ardından başlıyor (2021/49'da Gelecek Varlık ile Anatolia Tanı,
+/// 2022/7'de Hun Enerji ile DAP Gayrimenkul). Tek şirket varsayan eski
+/// ayrıştırıcı böyle bloklarda **iki arzı birden** düşürüyordu; burada jeton
+/// akışı sayısal olmayan ilk jetonda kesilip yeni unvan oradan başlatılır.
 fn parse_approval_block(
     block: &[&str],
     bulletin_no: &str,
     approval_date: &str,
+) -> Vec<SpkIpoApproval> {
+    let normalized = normalize_row_text(&block.join(" "));
+    let tokens: Vec<&str> = normalized.split_whitespace().collect();
+
+    let mut approvals = Vec::new();
+    let mut index = 0usize;
+    while index < tokens.len() {
+        // 1. Unvan: "AŞ" ekine kadar olan jetonlar.
+        let start = index;
+        while index < tokens.len() && !is_company_suffix(tokens[index]) {
+            index += 1;
+        }
+        if index == tokens.len() {
+            break; // Blokta unvan sonu yok; şirket satırı değil.
+        }
+        let company_name = tokens[start..=index].join(" ");
+        index += 1;
+
+        // 2. Hücreler: sayısal olmayan ilk jetona kadar.
+        let cells_start = index;
+        let mut cells = Vec::new();
+        while index < tokens.len() {
+            let Some(cell) = parse_cell(tokens[index]) else { break };
+            cells.push(cell);
+            index += 1;
+        }
+
+        if company_name.chars().filter(|c| c.is_alphabetic()).count() < 3 {
+            continue;
+        }
+        // Hiç hücre okunamadıysa unvan sanılan şey tablo satırı değildir.
+        if index == cells_start {
+            eprintln!(
+                "[spk] {bulletin_no}: {company_name} — hücreler çözülemedi ({:?}); atlandı",
+                tokens[cells_start..].join(" ")
+            );
+            continue;
+        }
+
+        if let Some(approval) = approval_from_cells(
+            company_name,
+            &cells,
+            bulletin_no,
+            approval_date,
+        ) {
+            approvals.push(approval);
+        }
+    }
+
+    approvals
+}
+
+/// Jeton unvanı bitiren hukuki form eki mi?
+///
+/// `pdf_extract` noktaları kimi bültende düşürüyor: "T.A.Ş." → **"TAŞ"**.
+/// Yalnız "AŞ" biçimlerini tanıyan eski sürüm, unvanı "Türk Anonim Şirketi"
+/// olan her şirketi göremiyordu — Ereğli, Tüpraş, Hektaş, Türk Traktör,
+/// Eczacıbaşı, Bizim… hepsinin sermaye artırımı sessizce düşüyor ve listede
+/// Yahoo kaynaklı görünüyordu.
+///
+/// Karşılaştırma **büyük/küçük harfe duyarlı**: bültende unvanlar başlık
+/// düzeninde yazılır, dolayısıyla "Taş" (kelime) ile "TAŞ" (ek) ayrışır —
+/// "Akıllı Taş Madencilik AŞ" ekini yanlış yerde bitirmez.
+fn is_company_suffix(token: &str) -> bool {
+    matches!(
+        token,
+        "AŞ" | "A.Ş." | "A.Ş"
+            | "TAŞ" | "T.A.Ş." | "T.A.Ş"
+            | "AO" | "A.O." | "A.O"
+            | "TAO" | "T.A.O." | "T.A.O"
+    )
+}
+
+/// Hücre jetonlarını çözer; sayı, tire ve fiyat aralığı dışındaki her şey
+/// `None` — orada tablo satırı bitmiştir.
+fn parse_cell(token: &str) -> Option<Cell> {
+    if token == "-" {
+        return Some(Cell::Empty);
+    }
+    if let Some(value) = parse_turkish_number(token) {
+        return Some(Cell::Number(value));
+    }
+    parse_price_range(token)
+}
+
+/// "8-9", "15,50-17", "11,50-12,50" → fiyat aralığı.
+///
+/// Talep toplamalı arzlarda SPK sabit fiyat değil **taban-tavan aralığı**
+/// onaylıyor; kesin fiyat talep sonrası açıklanıyor. Aralığı sayı sanmayan
+/// eski ayrıştırıcı bu satırların tamamını düşürüyordu — 2018-2022 arası
+/// arzların çoğu böyle onaylandığı için o yıllardan bültende yalnız 5-6 arz
+/// görünüyordu.
+fn parse_price_range(token: &str) -> Option<Cell> {
+    let (low, high) = token.split_once('-')?;
+    let low = parse_turkish_number(low)?;
+    let high = parse_turkish_number(high)?;
+    // Sıralı olmayan bir "aralık" aralık değildir; büyük olasılıkla başka bir
+    // biçim yanlış çözülmüştür.
+    (low > 0.0 && high >= low).then_some(Cell::Range(low, high))
+}
+
+/// Satır metnini jetonlanmaya hazırlar.
+///
+/// İki temizlik yapılır:
+///
+/// * **Dipnot işaretleri atılır.** Hücrelerin arasına serpiştiriliyorlar.
+///   Numaralıların yanında yıldız da kullanılıyor: unvanın hemen ardından
+///   gelen `(*)`, yalnız numaralı işaretleri silen bir desende çözülemeyen bir
+///   belirteç olarak kalıp satırın tamamını düşürüyordu (Bahadır Kimya,
+///   2024/37).
+/// * **Boşluklu uzun tire kapatılır.** Fiyat aralığı kimi bültende
+///   "11,50 – 12,50" diye yazılıyor ve üç ayrı jetona bölünüyordu. Yalnız uzun
+///   tire (U+2013) kapatılır; ASCII tire boş hücre imidir ve dokunulmazsa
+///   "150.000.000 - 6.500.000" yanlışlıkla aralık sanılırdı.
+fn normalize_row_text(text: &str) -> String {
+    static RE: std::sync::OnceLock<(regex::Regex, regex::Regex)> = std::sync::OnceLock::new();
+    let (footnote, en_dash) = RE.get_or_init(|| {
+        (
+            regex::Regex::new(r"\((?:\d+|\*+)\)").expect("geçerli regex"),
+            regex::Regex::new(r"\s*\u{2013}\s*").expect("geçerli regex"),
+        )
+    });
+
+    let without_footnotes = footnote.replace_all(text, " ");
+    collapse_spaces(&en_dash.replace_all(&without_footnotes, "-"))
+}
+
+/// Çözülmüş hücrelerden onay kaydı üretir; sütun düzeni beklenenden farklıysa
+/// uyarı bırakıp `None` döner.
+fn approval_from_cells(
+    company_name: String,
+    cells: &[Cell],
+    bulletin_no: &str,
+    approval_date: &str,
 ) -> Option<SpkIpoApproval> {
-    let anchor = block
-        .iter()
-        .position(|line| find_company_as_boundary(line.trim()).is_some())?;
-    let anchor_line = block[anchor].trim();
-    let name_end = find_company_as_boundary(anchor_line)?;
-
-    let mut name_parts: Vec<&str> = block[..anchor].iter().map(|line| line.trim()).collect();
-    name_parts.push(anchor_line[..name_end].trim());
-    let company_name = collapse_spaces(&name_parts.join(" "));
-    if company_name.chars().filter(|c| c.is_alphabetic()).count() < 3 {
-        return None;
-    }
-
-    let mut cell_text = anchor_line[name_end..].to_string();
-    for line in &block[anchor + 1..] {
-        cell_text.push(' ');
-        cell_text.push_str(line.trim());
-    }
-
     // Her düşen satır uyarı bırakır: sessiz kayıp, ayrıştırıcı bozulduğunda
     // "bu hafta halka arz yokmuş" gibi görünüyor ve fark edilmiyordu.
-    let Some(cells) = parse_row_cells(&cell_text) else {
-        eprintln!("[spk] {bulletin_no}: {company_name} — hücreler çözülemedi ({cell_text:?}); atlandı");
-        return None;
-    };
     if !(MIN_COLUMNS..=MAX_COLUMNS).contains(&cells.len()) {
         eprintln!(
-            "[spk] {bulletin_no}: {company_name} — {}-{} sütun bekleniyordu, {} bulundu; atlandı",
-            MIN_COLUMNS,
-            MAX_COLUMNS,
+            "[spk] {bulletin_no}: {company_name} — {MIN_COLUMNS}-{MAX_COLUMNS} sütun bekleniyordu, \
+             {} bulundu ({cells:?}); atlandı",
             cells.len()
         );
         return None;
     }
 
-    // Fiyat son sütundur; okunamıyorsa satır ayrıştırılamamış demektir ve
-    // uydurmak yerine atlanır.
-    let price = cells[cells.len() - 1].filter(|p| *p > 0.0 && *p < PRICE_CEILING)?;
+    // Fiyat son sütundur: ya sabit fiyat ya taban-tavan aralığı. Okunamıyorsa
+    // satır ayrıştırılamamış demektir ve uydurmak yerine atlanır.
+    let (price, price_range) = match cells[cells.len() - 1] {
+        Cell::Number(price) if price > 0.0 && price < PRICE_CEILING => (price, None),
+        Cell::Range(low, high) if high < PRICE_CEILING => {
+            // Aralık ortası ya da ucu **fiyat değildir**; kesin fiyat talep
+            // toplama sonrası belli olur ve halkarz.com/KAP'tan gelir. Uydurma
+            // bir sayı, arz büyüklüğünü ve getiriyi sessizce bozardı.
+            (0.0, Some(format_price_range(low, high)))
+        }
+        _ => return None,
+    };
 
-    let existing_capital = cells[COL_EXISTING_CAPITAL]?;
-    let new_capital = cells[COL_NEW_CAPITAL]?;
-    let capital_increase_lots = cells[COL_PAID_INCREASE].unwrap_or(0.0);
-    let bonus_increase = cells[COL_BONUS_INCREASE].unwrap_or(0.0);
+    let existing_capital = cells[COL_EXISTING_CAPITAL].number()?;
+    let new_capital = cells[COL_NEW_CAPITAL].number()?;
+    let capital_increase_lots = cells[COL_PAID_INCREASE].number_or_zero();
+    let bonus_increase = cells[COL_BONUS_INCREASE].number_or_zero();
 
     // Sermaye özdeşliği baştaki dört sütunun doğru okunduğunu kanıtlar:
     // boş hücre yüzünden sütunlar kaymışsa bu sınamada yakalanır.
@@ -591,8 +860,8 @@ fn parse_approval_block(
 
     // Sermaye sütunlarıyla fiyat arasında kalanlar pay satışı sütunlarıdır.
     let sale_columns = &cells[COL_FIRST_SALE..cells.len() - 1];
-    let share_sale_lots = sale_columns.first().copied().flatten().unwrap_or(0.0);
-    let extra_sale_lots = sale_columns.get(1).copied().flatten().unwrap_or(0.0);
+    let share_sale_lots = sale_columns.first().copied().map(Cell::number_or_zero).unwrap_or(0.0);
+    let extra_sale_lots = sale_columns.get(1).copied().map(Cell::number_or_zero).unwrap_or(0.0);
 
     // Halka arz edilen pay = bedelli artırım + mevcut ortakların pay satışı.
     // Bedelsiz artırım mevcut ortaklara dağıtılır, arza konu değildir; ek pay
@@ -610,32 +879,19 @@ fn parse_approval_block(
         extra_sale_lots,
         total_lots,
         price,
+        // Fiyat aralıkla onaylandıysa arz büyüklüğü de henüz belli değildir.
         ipo_size_tl: total_lots * price,
+        price_range,
         consortium_lead: None,
         bulletin_no: bulletin_no.to_string(),
         approval_date: approval_date.to_string(),
     })
 }
 
-/// Satırın sayısal bölümünü hücrelere ayırır; boş hücre (`-`) `None` olur.
-///
-/// Dipnot işaretleri hücrelerin arasına serpiştiği için atılır. Numaralıların
-/// yanında yıldız da kullanılıyor: unvanın hemen ardından gelen `(*)`, yalnız
-/// numaralı işaretleri silen bir desende çözülemeyen bir belirteç olarak kalıp
-/// satırın tamamını düşürüyordu (Bahadır Kimya, 2024/37).
-///
-/// Hücrelerden biri sayı da tire de değilse ayrıştırma başarısız sayılır —
-/// yarım okunmuş bir satırı yanlış sütuna yazmaktansa kaydı hiç üretmemek yeğdir.
-fn parse_row_cells(text: &str) -> Option<Vec<Option<f64>>> {
-    let re_footnote = regex::Regex::new(r"\((?:\d+|\*+)\)").expect("geçerli regex");
-    re_footnote
-        .replace_all(text, " ")
-        .split_whitespace()
-        .map(|token| match token {
-            "-" => Some(None),
-            _ => parse_turkish_number(token).map(Some),
-        })
-        .collect()
+/// "8,50 - 9,90 TL" — arayüzün beklediği ham aralık metni.
+fn format_price_range(low: f64, high: f64) -> String {
+    let render = |value: f64| format!("{value:.2}").replace('.', ",");
+    format!("{} - {} TL", render(low), render(high))
 }
 
 /// "150.000.000" → 150000000, "73,70" → 73.7. Biçime uymayan metin `None`.
@@ -667,33 +923,6 @@ fn parse_turkish_number(token: &str) -> Option<f64> {
 /// Ardışık boşlukları teke indirir; PDF metni sütun hizası için çok boşluk taşır.
 fn collapse_spaces(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// "AŞ" ekinin şirket adını bitirdiği konumu (ekten hemen sonrası) verir.
-///
-/// Yalnız bağımsız kelime olarak aranır; "AŞ'ye", "AŞ'nin" gibi çekimli
-/// kullanımlar dipnot metnindedir ve unvan sonu değildir.
-fn find_company_as_boundary(line: &str) -> Option<usize> {
-    for form in ["AŞ", "A.Ş.", "A.Ş"] {
-        let mut from = 0;
-        while let Some(offset) = line[from..].find(form) {
-            let start = from + offset;
-            let end = start + form.len();
-            // Unvan bir üst satıra sarmışsa ek satır başında olabilir
-            // ("AŞ  100.000.000  …"), bu yüzden başlangıç da sınır sayılır.
-            let opens_word = start == 0
-                || line[..start]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_whitespace);
-            let closes_word = line[end..].chars().next().is_none_or(char::is_whitespace);
-            if opens_word && closes_word {
-                return Some(end);
-            }
-            from = end;
-        }
-    }
-    None
 }
 
 // ---------- Bölüm: Halka Açık Ortaklıkların Pay İhraçları ----------
@@ -802,7 +1031,7 @@ fn extract_capital_increases_from_text(
 
     section
         .split(|line| line.trim().is_empty())
-        .filter_map(|block| parse_capital_block(block, bulletin_no, approval_date))
+        .flat_map(|block| parse_capital_block(block, bulletin_no, approval_date))
         .collect()
 }
 
@@ -819,7 +1048,7 @@ fn capital_increase_section<'a>(lines: &[&'a str]) -> Option<Vec<&'a str>> {
         if is_section_heading(line) || is_footnote(line) {
             break;
         }
-        if !is_page_furniture(line) {
+        if !is_page_furniture(line) && !is_table_header(line) {
             section.push(*line);
         }
     }
@@ -834,7 +1063,24 @@ fn is_capital_heading(line: &str) -> bool {
             .contains("pay ihraclari")
 }
 
-/// Tek bir şirket bloğunu sermaye artırımı kaydına çevirir.
+/// Son sütunda geçen satış türleri. Uzun kalıp önce denenir.
+///
+/// Vokabüler yalnız **yapışık satırları ayırmak** için gerekli: iki şirket tek
+/// bloğa düştüğünde ilkinin satış türüyle ikincinin unvanı yan yana geliyor
+/// ("… Halka Arz Hürriyet Gazetecilik ve Matbaacılık A.Ş. 552.000.000 …") ve
+/// nerede birinin bitip diğerinin başladığını başka türlü söylemek mümkün
+/// değil. Yapışma yoksa bu liste hiç kullanılmaz, dolayısıyla listede olmayan
+/// bir satış türü normal satırlarda olduğu gibi okunur.
+const SALE_TYPES: &[&str] = &[
+    "Tahsisli/Nitelikli Yatırımcı",
+    "Nitelikli Yatırımcı",
+    "Halka Arz",
+    "Tahsisli",
+    "Birleşme",
+    "Bedelsiz",
+];
+
+/// Bir bloktaki **her** şirketi sermaye artırımı kaydına çevirir.
 ///
 /// Unvan birden çok satıra sarar, sayısal hücreler unvanın bittiği "AŞ"
 /// ekinden sonra başlar:
@@ -843,37 +1089,118 @@ fn is_capital_heading(line: &str) -> bool {
 /// Katılımevim  Tasarruf
 /// Finansman AŞ  2.070.000.000  7.000.000.000  -  -  4.930.000.000  -
 /// ```
+///
+/// Halka arz tablosunda olduğu gibi burada da iki şirket tek bloğa
+/// yapışabiliyor. Eski ayrıştırıcı bunu **sessizce** yanlış okuyordu: ikinci
+/// şirketin unvanı ve rakamları birincinin `sale_type` alanına yazılıyor
+/// ("Halka Arz Tuğçelik Alüminyum … 180.000.000 …"), ikinci artırım ise hiç
+/// kaydedilmiyordu.
 fn parse_capital_block(
     block: &[&str],
     bulletin_no: &str,
     approval_date: &str,
-) -> Option<SpkCapitalIncrease> {
-    let mut company_name = String::new();
-    let mut cell_text = String::new();
+) -> Vec<SpkCapitalIncrease> {
+    let normalized = normalize_row_text(&block.join(" "));
+    let tokens: Vec<&str> = normalized.split_whitespace().collect();
 
-    for line in block {
-        if cell_text.is_empty() {
-            if let Some(boundary) = find_company_as_boundary(line) {
-                company_name.push(' ');
-                company_name.push_str(line[..boundary].trim());
-                cell_text.push_str(line[boundary..].trim());
-                continue;
+    let mut increases = Vec::new();
+    let mut index = 0usize;
+    while index < tokens.len() {
+        // 1. Unvan: "AŞ" ekine kadar.
+        let start = index;
+        while index < tokens.len() && !is_company_suffix(tokens[index]) {
+            index += 1;
+        }
+        if index == tokens.len() {
+            break;
+        }
+        let company_name = tokens[start..=index].join(" ");
+        index += 1;
+
+        // 2. Beş sayısal sütun.
+        let mut cells = [None::<f64>; CAPITAL_COLUMNS];
+        let mut filled = 0usize;
+        while filled < CAPITAL_COLUMNS && index < tokens.len() {
+            match parse_cell(tokens[index]) {
+                Some(Cell::Empty) => filled += 1,
+                Some(Cell::Number(value)) => {
+                    cells[filled] = Some(value);
+                    filled += 1;
+                }
+                // Sayısal sütunlar dolmadan metin geldiyse satır bozuktur.
+                _ => break,
             }
-            company_name.push(' ');
-            company_name.push_str(line.trim());
+            index += 1;
+        }
+        if filled < CAPITAL_COLUMNS {
             continue;
         }
-        cell_text.push(' ');
-        cell_text.push_str(line.trim());
+
+        // 3. Son sütun metindir; ardından yeni bir şirket başlayabilir.
+        let (sale_type, next) = split_sale_type(&tokens, index);
+        index = next;
+
+        if let Some(increase) = capital_from_cells(
+            company_name,
+            &cells,
+            sale_type,
+            bulletin_no,
+            approval_date,
+        ) {
+            increases.push(increase);
+        }
     }
 
-    let company_name = collapse_spaces(&company_name);
-    if company_name.is_empty() || cell_text.is_empty() {
-        return None;
+    increases
+}
+
+/// Sayısal sütunlardan sonraki metin dizisini satış türü ile (varsa) bir
+/// sonraki şirketin unvanına böler; ikinci değer taramanın süreceği konumdur.
+fn split_sale_type(tokens: &[&str], from: usize) -> (Option<String>, usize) {
+    let mut end = from;
+    while end < tokens.len() && parse_cell(tokens[end]).is_none() {
+        end += 1;
+    }
+    let run = &tokens[from..end];
+
+    // Metin dizisinde hukuki form eki varsa bir sonraki şirketin unvanı bu
+    // dizinin içinde başlıyor demektir.
+    let name_starts_here = run.iter().any(|token| is_company_suffix(token));
+    if !name_starts_here {
+        return (clean_sale_type(&run.join(" ")), end);
     }
 
-    let (cells, sale_type) = parse_capital_cells(&cell_text)?;
+    let text = run.join(" ");
+    for sale_type in SALE_TYPES {
+        if let Some(rest) = text.strip_prefix(sale_type) {
+            if rest.is_empty() || rest.starts_with(' ') {
+                // Kalan, sonraki şirketin unvanının başıdır.
+                let consumed = sale_type.split_whitespace().count();
+                return (clean_sale_type(sale_type), from + consumed);
+            }
+        }
+    }
 
+    // Bilinmeyen satış türü: unvanın nerede başladığı söylenemez. Satış türünü
+    // uydurmaktansa boş bırakılır ve dizinin tamamı unvan olarak taranır.
+    (None, from)
+}
+
+fn clean_sale_type(text: &str) -> Option<String> {
+    match collapse_spaces(text) {
+        s if s.is_empty() || s == "-" => None,
+        s => Some(s),
+    }
+}
+
+/// Çözülmüş hücrelerden sermaye artırımı kaydı üretir.
+fn capital_from_cells(
+    company_name: String,
+    cells: &[Option<f64>; CAPITAL_COLUMNS],
+    sale_type: Option<String>,
+    bulletin_no: &str,
+    approval_date: &str,
+) -> Option<SpkCapitalIncrease> {
     let existing = cells[COL_EXISTING]?;
     let new_capital = cells[COL_NEW]?;
     let rights = cells[COL_RIGHTS].unwrap_or(0.0);
@@ -908,81 +1235,122 @@ fn parse_capital_block(
     })
 }
 
-/// Hücre metnini beş sayısal sütun + satış türü olarak çözer.
-///
-/// `parse_row_cells` burada kullanılamaz: o, her tokenin sayı ya da tire
-/// olmasını bekler ve "Halka Arz" gibi metin sütunu görünce tüm satırı
-/// düşürür.
-fn parse_capital_cells(text: &str) -> Option<([Option<f64>; CAPITAL_COLUMNS], Option<String>)> {
-    let re_footnote = regex::Regex::new(r"\((?:\d+|\*+)\)").expect("geçerli regex");
-    let cleaned = re_footnote.replace_all(text, " ");
-
-    let mut cells: [Option<f64>; CAPITAL_COLUMNS] = [None; CAPITAL_COLUMNS];
-    let mut filled = 0usize;
-    let mut rest: Vec<&str> = Vec::new();
-
-    for token in cleaned.split_whitespace() {
-        if filled < CAPITAL_COLUMNS {
-            if token == "-" {
-                filled += 1;
-                continue;
-            }
-            match parse_turkish_number(token) {
-                Some(value) => {
-                    cells[filled] = Some(value);
-                    filled += 1;
-                }
-                // Sayısal sütunlar dolmadan metin geldiyse satır bozuktur.
-                None => return None,
-            }
-            continue;
-        }
-        rest.push(token);
-    }
-
-    if filled < CAPITAL_COLUMNS {
-        return None;
-    }
-
-    let sale_type = match collapse_spaces(&rest.join(" ")) {
-        s if s.is_empty() || s == "-" => None,
-        s => Some(s),
-    };
-    Some((cells, sale_type))
-}
-
 /// Bülten başlığından numarayı çıkarır: "Bülten No : 2026/47" → "2026/47".
 fn bulletin_number(title: &str) -> String {
     title.split(':').next_back().unwrap_or(title).trim().to_string()
 }
 
-/// Sermaye artırımı arşivinin kaç yıl geriye taranacağı.
+/// Bülten arşivinin kaç yıl geriye taranacağı.
+///
+/// Aralık `(bu yıl - N)..=bu yıl`, yani N+1 takvim yılı. Fazladan yıl bilerek
+/// var: akış son 10 **yılı** (bugünden 3650 gün geriye) gösteriyor, o pencere
+/// takvim yılının ortasına düşüyor. Aralık `bu yıl - N + 1` ile başlarsa
+/// pencerenin ilk aylarının resmî karşılığı hiç indirilmez ve o aylar kalıcı
+/// olarak Yahoo kaynaklı görünür.
 const CAPITAL_BACKFILL_YEARS: i32 = 10;
 
 /// Aynı anda indirilecek bülten PDF'i sayısı. SPK sunucusu yavaş; yüksek
 /// eşzamanlılık bağlantı hatası üretiyor.
 const CAPITAL_FETCH_CONCURRENCY: usize = 4;
 
-/// Son on yılın bültenlerini tarayarak bedelli/bedelsiz sermaye artırımı
-/// arşivini kurar. Eklenen kayıt sayısını döner.
+/// Bülten ayrıştırıcısının sürümü.
+///
+/// Artırıldığında işlenmiş bülten kümesi sıfırlanır ve arşiv baştan kurulur.
+/// Bu olmadan bir ayrıştırıcı düzeltmesi yalnız **yeni** bültenlere uygulanır;
+/// arşivdeki bozuk kayıt (yanlış okunmuş unvan, kaçırılmış satır) kalıcı olur.
+///
+/// 2: bülten başına iki bölüm okunmaya başlandı — halka arz onayları da
+///    arşivleniyor; tablo başlığı artık unvana yapışmıyor.
+/// 3: fiyat aralığıyla onaylanan arzlar (2018-2022'nin çoğu) ve tek bloğa
+///    yapışmış ikinci şirketler artık düşmüyor.
+/// 4: sermaye artırımı tablosunda da yapışık satırlar ayrılıyor — ikinci
+///    şirket birincinin satış türüne yutulmuyordu.
+/// 5: noktasız "TAŞ" eki tanınıyor — "Türk Anonim Şirketi" unvanlı şirketlerin
+///    (Ereğli, Tüpraş, Hektaş, Türk Traktör…) artırımları hiç okunmuyordu.
+pub const BULLETIN_PARSER_VERSION: u32 = 5;
+
+/// Bir bültenden çıkan iki tablo.
+struct ParsedBulletin {
+    increases: Vec<SpkCapitalIncrease>,
+    approvals: Vec<SpkIpoApproval>,
+    bulletin_no: String,
+}
+
+/// Bülten metninden **her iki** tabloyu çıkarır.
+///
+/// Tek geçiş olması ölçülebilir bir kazanç: eskiden sermaye artırımı için
+/// indirilen ~680 PDF'in halka arz bölümü hiç okunmuyor, halka arz onayları
+/// için aynı PDF'lerin son dördü ikinci kez indiriliyordu. Arşivdeki 457 halka
+/// arz kaydının yalnız 6'sı SPK bülteninden gelen fiyat/lot verisini
+/// taşıyordu; gerisi kazınmış siteye kalmıştı.
+fn parse_bulletin_text(text: &str, listing_no: &str, listing_date: &str) -> Option<ParsedBulletin> {
+    // Eski arşiv sayfaları tarih vermiyor; PDF başlığı hem numarayı hem
+    // tarihi taşıdığı için önceliklidir.
+    let (no, date) = bulletin_header(text)
+        .unwrap_or_else(|| (listing_no.to_string(), listing_date.to_string()));
+
+    // Tarih arşivde "arz sonrası mı" kıyasının anahtarı; bozuk bir tarih
+    // bedelsizi yanlış tarafa düşürüp getiriyi sessizce kaydırır. Liste
+    // sayfasından gelen metin bazen "2026-03-2022" gibi çözülüyordu — böyle
+    // bir bülten yarım veri yazmaktansa atlanır.
+    if !crate::ipo_store::looks_like_iso_date(&date) {
+        eprintln!("[spk] {no}: tarih çözülemedi ({date:?}); bülten atlandı");
+        return None;
+    }
+
+    Some(ParsedBulletin {
+        increases: extract_capital_increases_from_text(text, &no, &date),
+        approvals: extract_ipo_approvals_from_text(text, &no, &date),
+        bulletin_no: no,
+    })
+}
+
+/// Son on yılın bültenlerini tarayarak sermaye artırımı ve halka arz onayı
+/// arşivini kurar. Eklenen `(artırım, halka arz onayı)` sayısını döner.
 ///
 /// İşlenen bültenlerin adresleri arşivde tutulur; ikinci çalıştırmada yalnız
 /// yeni bültenler indirilir. Her yıl bitiminde arşiv diske yazılır, böylece
 /// yarıda kesilen bir tarama baştan başlamaz.
-pub async fn backfill_capital_increases(client: &Client) -> usize {
+pub async fn backfill_spk_bulletins(client: &Client) -> (usize, usize) {
     use futures::future::join_all;
     use std::sync::Arc;
     use tokio::sync::Semaphore;
 
     let mut archive = crate::capital_store::load();
-    let current_year = chrono::Datelike::year(&chrono::Local::now());
-    let mut total_added = 0usize;
 
-    for year in (current_year - CAPITAL_BACKFILL_YEARS + 1)..=current_year {
+    // Ayrıştırıcı değiştiyse her bülten yeniden okunur. Kayıtlar silinmez:
+    // `merge_bulletin` her bülteni işlerken o bültenin eski kayıtlarının
+    // yerine yenilerini koyar, böylece tarama sürerken arşiv kullanılabilir
+    // kalır ve yarıda kesilse bile veri kaybı olmaz.
+    if archive.parser_version != BULLETIN_PARSER_VERSION {
+        eprintln!(
+            "[spk] ayrıştırıcı sürümü {} → {}; {} bülten yeniden taranacak",
+            archive.parser_version,
+            BULLETIN_PARSER_VERSION,
+            archive.processed_bulletins.len()
+        );
+        archive.processed_bulletins.clear();
+    }
+
+    // Kodu boş kalmış kayıtlar önce yeniden denenir: şirket sonradan
+    // listelenmiş ya da eşleştirici düzelmiş olabilir. Ağ erişimi yok.
+    let filled = crate::capital_store::refresh_tickers(&mut archive);
+    if filled > 0 {
+        eprintln!("[spk] {filled} kaydın BIST kodu yeniden çözüldü");
+        crate::capital_store::save(&archive);
+    }
+
+    let current_year = chrono::Datelike::year(&chrono::Local::now());
+    let mut total_increases = 0usize;
+    let mut total_approvals = 0usize;
+    let mut scanned_all_years = true;
+
+    for year in (current_year - CAPITAL_BACKFILL_YEARS)..=current_year {
         let bulletins = match fetch_year_bulletins(client, year).await {
             Ok(list) => list,
             Err(e) => {
                 eprintln!("[spk] {year} bülten listesi alınamadı: {e}");
+                scanned_all_years = false;
                 continue;
             }
         };
@@ -1008,55 +1376,100 @@ pub async fn backfill_capital_increases(client: &Client) -> usize {
                 let listing_date = crate::ipo_scraper::parse_turkish_date(&bulletin.date);
 
                 // pdf_extract işlemciye bağlıdır; çalışma zamanını bloklamasın.
-                let increases = tokio::task::spawn_blocking(move || {
+                let parsed = tokio::task::spawn_blocking(move || {
                     let text = match pdf_extract::extract_text_from_mem(&bytes) {
                         Ok(text) => text,
                         Err(e) => {
                             eprintln!("[spk] {listing_no}: PDF metni çıkarılamadı: {e}");
-                            return Vec::new();
+                            return None;
                         }
                     };
-                    // Eski arşiv sayfaları tarih vermiyor; PDF başlığı hem
-                    // numarayı hem tarihi taşıdığı için önceliklidir.
-                    let (no, date) = bulletin_header(&text)
-                        .unwrap_or((listing_no.clone(), listing_date.clone()));
-
-                    // Tarih arşivde "arz sonrası mı" kıyasının anahtarı; bozuk
-                    // bir tarih bedelsizi yanlış tarafa düşürüp getiriyi
-                    // sessizce kaydırır. Liste sayfasından gelen metin bazen
-                    // "2026-03-2022" gibi çözülüyordu — böyle bir bülten
-                    // yarım veri yazmaktansa atlanır.
-                    if !crate::ipo_store::looks_like_iso_date(&date) {
-                        eprintln!("[spk] {no}: tarih çözülemedi ({date:?}); bülten atlandı");
-                        return Vec::new();
-                    }
-
-                    extract_capital_increases_from_text(&text, &no, &date)
+                    parse_bulletin_text(&text, &listing_no, &listing_date)
                 })
                 .await
                 .ok()?;
 
-                Some((bulletin.url, increases))
+                Some((bulletin.url, parsed))
             }));
         }
 
-        let mut year_added = 0usize;
+        let mut year_increases = 0usize;
+        let mut year_approvals = 0usize;
         let mut year_bulletins = 0usize;
         for res in join_all(tasks).await {
-            let Ok(Some((url, increases))) = res else { continue };
+            let Ok(Some((url, parsed))) = res else { continue };
             year_bulletins += 1;
-            year_added += crate::capital_store::merge(&mut archive, increases);
+            if let Some(parsed) = parsed {
+                let (increases, approvals) = crate::capital_store::merge_bulletin(
+                    &mut archive,
+                    crate::capital_store::BulletinExtract {
+                        bulletin_no: parsed.bulletin_no,
+                        increases: parsed.increases,
+                        approvals: parsed.approvals,
+                    },
+                );
+                year_increases += increases;
+                year_approvals += approvals;
+            }
+            // Metni çözülemeyen bülten de işlenmiş sayılır: her turda yeniden
+            // indirmek aynı hatayı tekrarlar, ağ yükünü boşuna büyütür.
             archive.processed_bulletins.insert(url);
         }
 
-        total_added += year_added;
-        eprintln!("[spk] {year}: {year_bulletins} bülten tarandı, {year_added} sermaye artırımı eklendi");
+        total_increases += year_increases;
+        total_approvals += year_approvals;
+        eprintln!(
+            "[spk] {year}: {year_bulletins} bülten tarandı, {year_increases} sermaye artırımı, \
+             {year_approvals} halka arz onayı"
+        );
 
         archive.last_updated = Some(chrono::Local::now().format("%Y-%m-%d").to_string());
         crate::capital_store::save(&archive);
     }
 
-    total_added
+    // Sürüm damgası ancak **tüm** yıllar taranabildiğinde ilerler; yarım
+    // tarama tamamlanmış sayılırsa eksik yıllar bir daha hiç okunmaz.
+    if scanned_all_years && archive.parser_version != BULLETIN_PARSER_VERSION {
+        archive.parser_version = BULLETIN_PARSER_VERSION;
+        crate::capital_store::save(&archive);
+    }
+
+    (total_increases, total_approvals)
+}
+
+/// Bilinen **tüm** halka arz onayları: arşiv geçmişi + son bültenlerin canlı
+/// taraması.
+///
+/// Arşiv haftalık backfill'de dolar ve 2017'ye kadar iner; canlı tarama son
+/// haftaların onaylarını backfill'i beklemeden getirir. İkisi
+/// `(bülten no, unvan)` üzerinden tekilleştirilir.
+pub async fn fetch_all_approvals(
+    client: &Client,
+) -> Result<Vec<SpkIpoApproval>, Box<dyn Error + Send + Sync>> {
+    let archived = crate::capital_store::ipo_approvals(&crate::capital_store::load());
+
+    // Canlı tarama başarısız olsa bile arşiv verisi dönmeli: geçmiş onaylar
+    // ağ hatasına bağlı olmamalı.
+    let live = match fetch_and_parse_latest_approvals(client).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("[spk] son bültenler taranamadı, arşivle yetiniliyor: {e}");
+            Vec::new()
+        }
+    };
+
+    let mut seen: std::collections::HashSet<(String, String)> = archived
+        .iter()
+        .map(|a| (a.bulletin_no.clone(), a.company_name.clone()))
+        .collect();
+
+    let mut all = archived;
+    for approval in live {
+        if seen.insert((approval.bulletin_no.clone(), approval.company_name.clone())) {
+            all.push(approval);
+        }
+    }
+    Ok(all)
 }
 
 /// En son SPK bültenlerini tarayarak halka arz onaylarını çıkarır.
@@ -1210,6 +1623,172 @@ AŞ  100.000.000  500.000.000  -  200.000.000  -  -
     #[test]
     fn missing_section_yields_nothing() {
         assert!(extract_capital_increases_from_text("boş bülten", "t", "d").is_empty());
+    }
+
+    /// Regresyon: iki şirket tek bloğa yapıştığında eski ayrıştırıcı bunu
+    /// **sessizce** yanlış okuyordu — ikincinin unvanı ve rakamları birincinin
+    /// `sale_type` alanına yazılıyor, ikinci artırım hiç kaydedilmiyordu.
+    /// Arşivde satış türü olarak duran metin buydu.
+    #[test]
+    fn two_companies_glued_into_one_capital_block_are_both_read() {
+        let text = "\
+  2.  Halka Açık Ortaklıkların Pay İhraçları
+
+Hürriyet  Gazetecilik  ve
+Matbaacılık AŞ  552.000.000  592.000.000  40.000.000  -  -  Tahsisli
+Tuğçelik  Alüminyum  ve  Metal  Mamülleri  Sanayi  ve  Ticaret  AŞ  180.000.000  360.000.000  180.000.000  -  -  Halka Arz
+
+  3.  Borçlanma Araçları
+";
+        let rows = extract_capital_increases_from_text(text, "2023/12", "2023-03-16");
+        assert_eq!(rows.len(), 2, "{rows:#?}");
+
+        assert_eq!(rows[0].company_name, "Hürriyet Gazetecilik ve Matbaacılık AŞ");
+        assert_eq!(rows[0].rights_amount, 40_000_000.0);
+        assert_eq!(rows[0].sale_type.as_deref(), Some("Tahsisli"));
+
+        assert_eq!(
+            rows[1].company_name,
+            "Tuğçelik Alüminyum ve Metal Mamülleri Sanayi ve Ticaret AŞ"
+        );
+        assert_eq!(rows[1].rights_amount, 180_000_000.0);
+        assert_eq!(rows[1].sale_type.as_deref(), Some("Halka Arz"));
+    }
+
+    /// Regresyon: `pdf_extract` "T.A.Ş."yi "TAŞ" olarak veriyor. Yalnız "AŞ"
+    /// biçimlerini tanıyan ayrıştırıcı, unvanı "Türk Anonim Şirketi" olan her
+    /// şirketin artırımını düşürüyordu — Hektaş'ın 5,9 milyarlık bedellisi
+    /// (2024/47) böyle kayboldu ve listede Yahoo kaynaklı görünüyordu.
+    #[test]
+    fn dotless_tas_suffix_is_recognised() {
+        let text = "\
+  1.  Halka Açık Ortaklıkların Pay İhraçları
+
+Hektaş Ticaret TAŞ  2.530.000.000  8.430.000.000  5.900.000.000  -  -  Halka Arz
+Ereğli Demir ve Çelik Fabrikaları T.A.Ş.  3.500.000.000  7.000.000.000  -  3.500.000.000  -  -
+
+  2.  Borçlanma Araçları
+";
+        let rows = extract_capital_increases_from_text(text, "2024/47", "2024-11-20");
+        assert_eq!(rows.len(), 2, "{rows:#?}");
+        assert_eq!(rows[0].company_name, "Hektaş Ticaret TAŞ");
+        assert_eq!(rows[0].rights_amount, 5_900_000_000.0);
+        assert_eq!(rows[1].company_name, "Ereğli Demir ve Çelik Fabrikaları T.A.Ş.");
+        assert_eq!(rows[1].bonus_internal, 3_500_000_000.0);
+    }
+
+    /// Bilinmeyen bir satış türü yapışmayla birlikte gelirse unvanın nerede
+    /// başladığı söylenemez; satış türü uydurulmaz.
+    #[test]
+    fn an_unknown_sale_type_is_left_empty_rather_than_guessed() {
+        let text = "\
+  1.  Halka Açık Ortaklıkların Pay İhraçları
+
+Örnek Bir AŞ  100.000.000  200.000.000  100.000.000  -  -  Yepyeni Bir Yöntem
+Diğer Örnek AŞ  50.000.000  75.000.000  25.000.000  -  -  Halka Arz
+
+  2.  Borçlanma Araçları
+";
+        let rows = extract_capital_increases_from_text(text, "2026/1", "2026-01-07");
+        assert_eq!(rows.len(), 2, "{rows:#?}");
+        assert_eq!(rows[0].company_name, "Örnek Bir AŞ");
+        assert_eq!(rows[0].sale_type, None, "bilinmeyen tür uydurulmamalı");
+        assert_eq!(rows[1].company_name, "Yepyeni Bir Yöntem Diğer Örnek AŞ");
+    }
+
+    /// Regresyon: sütun başlığı gövdeden boş satırla ayrılmadığında ilk
+    /// şirketin bloğuna karışıyor ve unvanın başına yapışıyordu. Arşivde
+    /// "Ortaklık Mevcut Sermaye … Global Yatırım Holding AŞ" adlı kayıt böyle
+    /// oluştu; unvan tanınmaz hâle geldiği için BIST koduna da bağlanamıyordu.
+    #[test]
+    fn column_headers_do_not_stick_to_the_company_name() {
+        let text = "\
+  1.  Halka Açık Ortaklıkların Pay İhraçları
+Ortaklık  Mevcut
+Sermaye  Yeni
+Sermaye  Bedelli Sermaye Artırımı  Bedelsiz Sermaye Artırımı  Satış Türü
+İç Kaynaklardan  Kâr Payından
+Global Yatırım Holding AŞ  100.000.000  200.000.000  -  100.000.000  -  -
+
+  2.  Borçlanma Araçları
+";
+        let rows = extract_capital_increases_from_text(text, "2025/6", "2025-02-06");
+        assert_eq!(rows.len(), 1, "{rows:#?}");
+        assert_eq!(rows[0].company_name, "Global Yatırım Holding AŞ");
+        assert_eq!(rows[0].bonus_internal, 100_000_000.0);
+    }
+
+    /// Aynı ayıklama halka arz tablosunda da gerekli.
+    #[test]
+    fn ipo_column_headers_are_stripped_too() {
+        let text = "\
+1.  İlk Halka Arzlar
+Ortaklık  Mevcut
+Sermaye  Yeni
+Sermaye
+Sermaye Artırımı  Mevcut
+Pay Satışı  Ek Pay
+Satışı  Satış
+Fiyatı
+Bedelli  Bedelsiz
+Kapeks  Kimya  Sanayi
+AŞ  100.000.000  125.100.000  25.100.000  -  -  -  94,00
+
+2.  Borçlanma Araçları
+";
+        let rows = extract_ipo_approvals_from_text(text, "2026/49", "2026-08-05");
+        assert_eq!(rows.len(), 1, "{rows:#?}");
+        assert_eq!(rows[0].company_name, "Kapeks Kimya Sanayi AŞ");
+        assert_eq!(rows[0].price, 94.0);
+    }
+
+    /// Başlık sözlüğündeki kelimeler şirket unvanlarında da geçiyor; tek
+    /// kelime eşleşmesi satırı başlık saymamalı.
+    #[test]
+    fn company_names_sharing_header_words_survive() {
+        assert!(is_table_header("Ortaklık  Mevcut"));
+        assert!(is_table_header("İç Kaynaklardan  Kâr Payından"));
+        assert!(is_table_header("Bedelli  Bedelsiz"));
+        assert!(!is_table_header("İş Girişim Sermayesi Yatırım Ortaklığı AŞ"));
+        assert!(!is_table_header("Vişne  Madencilik  Üretim"));
+        assert!(!is_table_header("Sermaye  100.000.000"));
+        assert!(!is_table_header(""));
+    }
+
+    /// 2021 arşivi bültenleri bir tabloda verir ve PDF adları anlamsızdır;
+    /// dosya adından yıl okuyan ayrıştırıcı bunları hiç göremiyordu.
+    /// Canlı sayfadan alınmış kalıp.
+    const OLD_TABLE_PAGE: &str = r#"
+        <tr>
+            <td>14.10.2021</td>
+            <td>2021 / 51</td>
+            <td><a href="https://spk.gov.tr/data/61e0/5896753e2d8f2c9449dd6c438ddfa5f4.pdf" target="_blank"><img src="pdf.png" /></a></td>
+            <td>21.10.2021</td>
+            <td>2021 / 52</td>
+            <td><a href="https://spk.gov.tr/data/61e0/0194410c76b0f82919f28976d1eac73a.pdf" target="_blank"><img src="pdf.png" /></a></td>
+        </tr>
+        <tr>
+            <td>27.10.2021</td>
+            <td>2021 / 53</td>
+            <td><a href="https://spk.gov.tr/data/61e0/8d06cd9d947815143db2e1c0efef1804.pdf" target="_blank"><img src="pdf.png" /></a></td>
+        </tr>"#;
+
+    #[test]
+    fn old_archive_table_rows_are_parsed() {
+        let rows = parse_bulletin_rows(OLD_TABLE_PAGE, 2021);
+        assert_eq!(rows.len(), 3, "{rows:#?}");
+        assert_eq!(rows[0].title, "Bülten No : 2021/51");
+        // Tablo tarihi de taşır; PDF başlığına düşmeye gerek kalmaz.
+        assert_eq!(rows[0].date, "2021-10-14");
+        assert!(rows[0].url.ends_with("5896753e2d8f2c9449dd6c438ddfa5f4.pdf"));
+        assert_eq!(rows[2].title, "Bülten No : 2021/53");
+    }
+
+    /// Sayfa başka bir yılın satırını taşırsa o yılın taramasında ikinci kez
+    /// sayılmamalı.
+    #[test]
+    fn old_archive_table_ignores_other_years() {
+        assert!(parse_bulletin_rows(OLD_TABLE_PAGE, 2020).is_empty());
     }
 
     /// 2021 ve öncesi arşiv sayfaları blok yapısı taşımaz, düz bağlantı verir.
@@ -1520,6 +2099,94 @@ Bahadır Kimya Sanayi ve Ticaret AŞ  (*)  45.000.000  55.000.000  10.000.000  -
         assert_eq!(approvals[0].price, 51.00);
     }
 
+    /// Regresyon: talep toplamalı arzlarda SPK sabit fiyat değil taban-tavan
+    /// aralığı onaylıyor. Aralığı sayı sanmayan ayrıştırıcı satırın tamamını
+    /// düşürüyordu — 2018-2022 arası arzların çoğu böyle onaylandığı için o
+    /// yıllardan bültende yalnız 5-6 arz görünüyordu.
+    #[test]
+    fn price_ranges_are_kept_instead_of_dropping_the_row() {
+        let text = "1.  İlk Halka Arzlar
+
+Biotrend  Çevre  ve  Enerji  Yatırımları  AŞ  128.000.000  150.000.000  22.000.000  -  14.666.666
+(1)  5.000.000
+(2)   16,50-18
+(3)
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2021/20", "2021-04-15");
+        assert_eq!(approvals.len(), 1, "{approvals:#?}");
+
+        let row = &approvals[0];
+        assert_eq!(row.company_name, "Biotrend Çevre ve Enerji Yatırımları AŞ");
+        assert_eq!(row.capital_increase_lots, 22_000_000.0);
+        assert_eq!(row.share_sale_lots, 14_666_666.0);
+        assert_eq!(row.extra_sale_lots, 5_000_000.0);
+        // Kesin fiyat talep toplama sonrası belli olur; uydurulmaz.
+        assert_eq!(row.price, 0.0);
+        assert_eq!(row.ipo_size_tl, 0.0);
+        assert_eq!(row.price_range.as_deref(), Some("16,50 - 18,00 TL"));
+    }
+
+    /// Aralık kimi bültende boşluklu uzun tireyle yazılıyor ve üç jetona
+    /// bölünüyordu.
+    #[test]
+    fn spaced_en_dash_ranges_are_closed_up() {
+        let text = "1.  İlk Halka Arzlar
+
+Hitit Bilgisayar Hizmetleri AŞ  100.000.000  127.500.000  27.500.000  -  7.692.308
+(1)  -  11,50 – 12,50
+(2)
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2022/8", "2022-02-17");
+        assert_eq!(approvals.len(), 1, "{approvals:#?}");
+        assert_eq!(approvals[0].price_range.as_deref(), Some("11,50 - 12,50 TL"));
+    }
+
+    /// ASCII tire boş hücre imidir; aralık sanılıp iki sütun birleşmemeli.
+    #[test]
+    fn empty_cells_are_not_mistaken_for_a_range() {
+        let text = "1.  İlk Halka Arzlar
+
+Kapeks  Kimya  Sanayi
+AŞ  100.000.000  125.100.000  25.100.000  -  -  -  94,00
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2026/49", "2026-08-05");
+        assert_eq!(approvals.len(), 1, "{approvals:#?}");
+        assert_eq!(approvals[0].price, 94.0);
+        assert_eq!(approvals[0].price_range, None);
+        assert_eq!(approvals[0].total_lots, 25_100_000.0);
+    }
+
+    /// Regresyon: `pdf_extract` iki şirketin arasına her zaman boş satır
+    /// koymuyor; ikinci unvan birincinin fiyat hücresinin hemen ardından
+    /// başlıyor. Tek şirket varsayan ayrıştırıcı böyle bloklarda iki arzı
+    /// birden düşürüyordu (2021/49, 2022/7, 2022/28).
+    #[test]
+    fn two_companies_glued_into_one_block_are_both_read() {
+        let text = "1.  İlk Halka Arzlar
+
+Gelecek  Varlık  Yönetimi  AŞ  126.500.000  139.700.000  13.200.000  -  8.800.000
+(3)  4.400.000
+(4)  13,65
+(5) Anatolia  Tanı  ve Biyoteknoloji  Ürünleri AŞ  100.000.000  110.000.000  10.000.000  -  10.000.000
+(6)  3.000.000
+(7)  21,00-22,50
+(8)
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2021/49", "2021-10-07");
+        assert_eq!(approvals.len(), 2, "{approvals:#?}");
+
+        assert_eq!(approvals[0].company_name, "Gelecek Varlık Yönetimi AŞ");
+        assert_eq!(approvals[0].price, 13.65);
+        assert_eq!(approvals[0].total_lots, 22_000_000.0);
+
+        assert_eq!(
+            approvals[1].company_name,
+            "Anatolia Tanı ve Biyoteknoloji Ürünleri AŞ"
+        );
+        assert_eq!(approvals[1].price_range.as_deref(), Some("21,00 - 22,50 TL"));
+        assert_eq!(approvals[1].total_lots, 20_000_000.0);
+    }
+
     /// Sermaye özdeşliği (`yeni = mevcut + bedelli + bedelsiz`) tutmuyorsa
     /// sütunlar kaymış demektir; kayıt üretilmemeli.
     #[test]
@@ -1669,11 +2336,13 @@ mod capital_backfill_live {
             .build()
             .unwrap();
         let t0 = std::time::Instant::now();
-        let added = super::backfill_capital_increases(&client).await;
+        let (increases, approvals) = super::backfill_spk_bulletins(&client).await;
         let archive = crate::capital_store::load();
         println!(
-            "\ntoplam {added} yeni kayıt, arşivde {} kayıt, {} bülten işlendi ({:?})",
+            "\n{increases} sermaye artırımı + {approvals} halka arz onayı işlendi; \
+             arşivde {} artırım, {} onay, {} bülten ({:?})",
             archive.records.len(),
+            archive.ipo_approvals.len(),
             archive.processed_bulletins.len(),
             t0.elapsed()
         );
