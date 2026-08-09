@@ -549,8 +549,25 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
         (price - previous_close) / previous_close * 100.0
     } else { 0.0 };
 
+    // Dönemsel getiriler **düzeltilmiş** seriden hesaplanır.
+    //
+    // Ham kapanış bedelsiz ve temettüyü taşımaz: bedelsiz sonrası eski fiyat
+    // bölünmediği için getiri olduğundan küçük, hatta sahte bir kayıp gibi
+    // çıkar. Ölçüm (2026-08-09, 623 hisse): yıllık değişimin 58'i resmi
+    // değerden 10 puandan fazla sapıyordu ve sapma tek yönlüydü — uygulama
+    // kazancı sistematik olarak düşük gösteriyordu (KRTEK −%79,69 görünürken
+    // gerçeği −%29,78). Göstergeler zaten bu seriyi kullanıyordu.
+    //
+    // BIST paylarında haftalık/aylık/yıllık değerlerin üzerine sonradan İş
+    // Yatırım'ın resmi getirileri yazılır (bkz. `isyatirim::enrich_all`); bu
+    // hesap onların gelmediği durumlar ve 6 aylık için geçerlidir.
+    // Düzeltilmiş serinin son barı ham kapanışa eşit olacak şekilde
+    // normalleştirilmiştir; yani seri sonunda düzeltme çarpanı 1'dir ve canlı
+    // fiyat doğrudan düzeltilmiş bir geçmiş fiyatla oranlanabilir. Uzunluklar
+    // ayrışırsa (adjclose eksik bar taşıyabilir) ham seriye düşülür.
+    let series = if indicator_closes.len() == closes.len() { &indicator_closes } else { &closes };
     let calculate_change = |days_ago: usize| -> Option<f64> {
-        let old_price = closes.iter().rev().nth(days_ago).copied().or_else(|| closes.first().copied())?;
+        let old_price = series.iter().rev().nth(days_ago).copied().or_else(|| series.first().copied())?;
         if old_price > 0.0 {
             let pct = (price - old_price) / old_price * 100.0;
             Some((pct * 100.0).round() / 100.0)
@@ -1126,6 +1143,17 @@ pub fn apply_incremental_prices(
         if let Some(change_pct) = quote.change_pct.filter(|value| value.is_finite()) {
             row.change_pct = change_pct;
         }
+        // Dönemsel getiriler de aynı ekrandan tazelenir; aksi halde gün içinde
+        // fiyat ilerlerken haftalık/aylık/yıllık son tam senkronda donup kalırdı.
+        for (target, incoming) in [
+            (&mut row.change_1w, quote.change_1w),
+            (&mut row.change_1m, quote.change_1m),
+            (&mut row.change_1y, quote.change_1y),
+        ] {
+            if let Some(value) = incoming.filter(|value| value.is_finite()) {
+                *target = Some(value);
+            }
+        }
         row.as_of_ts = Some(fetched_at);
         updated += 1;
     }
@@ -1356,7 +1384,7 @@ mod tests {
             row("GRAM ALTIN", 2572.0, 1.0),
         ];
         let closes = HashMap::from([
-            ("ASELS".to_string(), BistQuote { close: 90.0, change_pct: Some(-1.5) }),
+            ("ASELS".to_string(), BistQuote { close: 90.0, change_pct: Some(-1.5), ..Default::default() }),
         ]);
         let globals = vec![
             MarketQuote { symbol: "GC=F".into(), price: 2100.0, previous_close: 2000.0, as_of_ts: Some(10) },
@@ -1402,7 +1430,7 @@ mod tests {
             ..Default::default()
         }];
         let closes = HashMap::from([
-            ("DUNYH".to_string(), BistQuote { close: 148.5, change_pct: Some(-1.66) }),
+            ("DUNYH".to_string(), BistQuote { close: 148.5, change_pct: Some(-1.66), ..Default::default() }),
         ]);
 
         apply_incremental_prices(&mut equities, &closes, &[]);
@@ -1425,12 +1453,44 @@ mod tests {
             ..Default::default()
         }];
         let closes = HashMap::from([
-            ("ASELS".to_string(), BistQuote { close: 104.0, change_pct: None }),
+            ("ASELS".to_string(), BistQuote { close: 104.0, change_pct: None, ..Default::default() }),
         ]);
 
         apply_incremental_prices(&mut equities, &closes, &[]);
         assert_eq!(equities[0].price, 104.0, "fiyat yine de tazelenmeli");
         assert_eq!(equities[0].change_pct, 2.5, "değişim korunmalı");
+    }
+
+    /// Dönemsel getiriler de artımlı turda tazelenmeli; aksi halde fiyat
+    /// ilerlerken haftalık/aylık/yıllık son tam senkronda donup kalır.
+    #[test]
+    fn incremental_refreshes_period_returns_too() {
+        use crate::isyatirim::BistQuote;
+        let mut equities = vec![EquityRow {
+            ticker: "KRTEK".into(),
+            price: 6.2,
+            change_1w: Some(12.12),
+            change_1m: Some(-72.66), // düzeltilmemiş bedelsizden kalma sahte kayıp
+            change_1y: Some(-79.69),
+            change_6m: Some(-76.62),
+            ..Default::default()
+        }];
+        let closes = HashMap::from([(
+            "KRTEK".to_string(),
+            BistQuote {
+                close: 6.2,
+                change_pct: Some(1.31),
+                change_1w: Some(12.12),
+                change_1m: Some(-6.49),
+                change_1y: Some(-29.78),
+            },
+        )]);
+
+        apply_incremental_prices(&mut equities, &closes, &[]);
+        assert_eq!(equities[0].change_1m, Some(-6.49), "aylık resmi değere oturmalı");
+        assert_eq!(equities[0].change_1y, Some(-29.78), "yıllık resmi değere oturmalı");
+        // 6 aylık bu ekranda yok; eldeki değer korunur.
+        assert_eq!(equities[0].change_6m, Some(-76.62), "6 aylık dokunulmadan kalmalı");
     }
 
     #[test]

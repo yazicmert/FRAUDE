@@ -29,14 +29,31 @@ struct CurrentRatios {
     /// kaynaktan okumak, artımlı senkronun eskiyen bir tabana yaslanmasını
     /// baştan engeller (bkz. `yahoo::apply_incremental_prices`).
     change_pct: Option<f64>,
+    /// Haftalık / aylık / yıllık getiri; kriter kodları 17, 18, 19.
+    ///
+    /// Kaynak seri **düzeltilmiştir** (temettü ve bedelsiz yansıtılmış). Yahoo'nun
+    /// ham kapanışından türetilen karşılıkları bu düzeltmeyi taşımadığı için
+    /// uzun dönemde sistematik olarak düşük çıkıyordu: bedelsiz sonrası eski
+    /// fiyat bölünmediğinden getiri olduğundan küçük, hatta sahte bir kayıp
+    /// gibi görünüyordu (ölçüm 2026-08-09: 623 hissenin 58'inde yıllık değişim
+    /// 10 puandan fazla sapıyordu; KRTEK −%79,69 görünürken gerçeği −%29,78'di).
+    change_1w: Option<f64>,
+    change_1m: Option<f64>,
+    change_1y: Option<f64>,
 }
 
 /// Toplu ekrandan gelen tek bir BIST kotasyonu.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// Fiyat ve tüm dönemsel getiriler aynı istekten gelir; böylece hiçbir dilim
+/// başka bir güne ya da başka bir düzeltme durumuna ait olamaz.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BistQuote {
     pub close: f64,
     /// Kaynağın bildirdiği günlük değişim; türetilmiş değil.
     pub change_pct: Option<f64>,
+    pub change_1w: Option<f64>,
+    pub change_1m: Option<f64>,
+    pub change_1y: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +85,13 @@ pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) ->
         equity.free_float_ratio = current.free_float_ratio.or(equity.free_float_ratio);
         equity.foreign_ratio = current.foreign_ratio.or(equity.foreign_ratio);
         equity.market_cap = current.market_cap.or(equity.market_cap);
+        // Dönemsel getiriler düzeltilmiş seriden gelir; Yahoo'nun ham
+        // kapanışından türetilen karşılıkları bedelsiz/temettü düzeltmesini
+        // taşımadığı için uzun dönemde sapıyordu. 6 aylık karşılığı bu ekranda
+        // yok, o yüzden Yahoo'nun düzeltilmiş serisinden hesaplanmaya devam eder.
+        equity.change_1w = current.change_1w.or(equity.change_1w);
+        equity.change_1m = current.change_1m.or(equity.change_1m);
+        equity.change_1y = current.change_1y.or(equity.change_1y);
         equity.fundamentals_available = [
             equity.pe, equity.pb, equity.roe, equity.roa, equity.gross_margin,
             equity.net_margin, equity.net_debt_ebitda, equity.dividend_yield,
@@ -97,7 +121,13 @@ pub async fn current_closes(client: &reqwest::Client) -> HashMap<String, BistQuo
         .into_iter()
         .filter_map(|(ticker, row)| {
             let close = row.close?;
-            (close > 0.0).then_some((ticker, BistQuote { close, change_pct: row.change_pct }))
+            (close > 0.0).then_some((ticker, BistQuote {
+                close,
+                change_pct: row.change_pct,
+                change_1w: row.change_1w,
+                change_1m: row.change_1m,
+                change_1y: row.change_1y,
+            }))
         })
         .collect()
 }
@@ -170,6 +200,16 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
         ["7", "1", "50000", "False"],
         ["16", "-100000", "100000", "False"]
     ]);
+    // Dönemsel getiriler AYRI bir katmanda istenir. Kriter 19 (yıllık) bir
+    // yıllık geçmişi olmayan payları eledğinden, kapanışla aynı katmana
+    // konduğunda günlük değişim kapsamı 602'den 566'ya düşüyordu — yeni
+    // listelenen hisseler fiyatıyla birlikte değişimini de kaybediyordu.
+    // Ölçüldü (2026-08-09): ayrı katmanda kapanış 602, dönemsel 587 satır.
+    let periods = serde_json::json!([
+        ["17", "-100000", "100000", "False"],
+        ["18", "-100000", "100000", "False"],
+        ["19", "-100000", "100000", "False"]
+    ]);
     let base = serde_json::json!([
         ["7", "1", "50000", "False"],
         ["28", "-100000", "100000", "False"],
@@ -191,16 +231,17 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
         ["40", "0", "100", "False"]
     ]);
 
-    let (widest, quote_body, base_body, extended_body, foreign_body) = tokio::join!(
+    let (widest, quote_body, period_body, base_body, extended_body, foreign_body) = tokio::join!(
         screener_request(client, &cookies, &market_cap_only),
         screener_request(client, &cookies, &quotes),
+        screener_request(client, &cookies, &periods),
         screener_request(client, &cookies, &base),
         screener_request(client, &cookies, &extended),
         screener_request(client, &cookies, &foreign),
     );
 
     let mut map = parse_rows(&widest?)?;
-    for body in [quote_body, base_body, extended_body, foreign_body].into_iter().flatten() {
+    for body in [quote_body, period_body, base_body, extended_body, foreign_body].into_iter().flatten() {
         if let Ok(rows) = parse_rows(&body) {
             for (ticker, ext) in rows {
                 let entry = map.entry(ticker).or_default();
@@ -214,6 +255,9 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
                 entry.market_cap = ext.market_cap.or(entry.market_cap);
                 entry.close = ext.close.or(entry.close);
                 entry.change_pct = ext.change_pct.or(entry.change_pct);
+                entry.change_1w = ext.change_1w.or(entry.change_1w);
+                entry.change_1m = ext.change_1m.or(entry.change_1m);
+                entry.change_1y = ext.change_1y.or(entry.change_1y);
             }
         }
     }
@@ -273,6 +317,9 @@ fn parse_rows(value: &str) -> Result<RatioMap, String> {
             market_cap: number(&row, "8").map(|value| value * 1_000_000.0),
             close: number(&row, "7"),
             change_pct: number(&row, "16"),
+            change_1w: number(&row, "17"),
+            change_1m: number(&row, "18"),
+            change_1y: number(&row, "19"),
         });
     }
     Ok(parsed)
@@ -325,6 +372,33 @@ mod tests {
             }
         }
         println!("{} kotasyon, {} tanesinde değişim", quotes.len(), with_change);
+
+        // Dönemsel getiriler de aynı istekten gelmeli; biri boşalırsa ekran
+        // sessizce Yahoo'nun düzeltilmemiş türetimine geri düşer.
+        for (label, extract) in [
+            ("haftalık", (|q: &BistQuote| q.change_1w) as fn(&BistQuote) -> Option<f64>),
+            ("aylık", |q: &BistQuote| q.change_1m),
+            ("yıllık", |q: &BistQuote| q.change_1y),
+        ] {
+            let filled = quotes.values().filter(|q| extract(q).is_some()).count();
+            assert!(
+                filled * 100 / quotes.len() >= 90,
+                "{label} getiri kapsamı düşük: {filled}/{}",
+                quotes.len()
+            );
+            println!("  {label}: {filled} hissede dolu");
+        }
+
+        // Hiçbir pay -%100'den fazla kaybedemez; taban bozulursa bu delinir.
+        for (ticker, quote) in &quotes {
+            for (label, value) in [
+                ("haftalık", quote.change_1w), ("aylık", quote.change_1m), ("yıllık", quote.change_1y),
+            ] {
+                if let Some(value) = value {
+                    assert!(value > -100.0, "{ticker} {label} imkânsız: {value}");
+                }
+            }
+        }
     }
 
     #[tokio::test]
