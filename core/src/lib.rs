@@ -28,6 +28,7 @@ pub mod isyatirim_price;
 pub mod kap;
 pub mod kap_capital;
 pub mod kap_dividend;
+pub mod kap_financials;
 pub mod kap_ipo;
 pub mod kap_pdr;
 pub mod keychain;

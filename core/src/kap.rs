@@ -636,6 +636,22 @@ impl KapForm {
         self.field(label).or_else(|| self.total(label))
     }
 
+    /// Etiketi taşıyan **ilk** satırın bütün değer hücreleri.
+    ///
+    /// [`field`](Self::field) tek değerli satırlar içindir ve ikinci hücreyi
+    /// döner. Finansal Rapor gövdesinde ise bir kalem dönem/para cinsi bazında
+    /// birden çok sütun taşıyor; hangisinin okunacağına çağıran karar verir.
+    ///
+    /// Aynı etiket birden çok tabloda geçebiliyor ("Dönem Karı (Zararı)" hem
+    /// gelir tablosunda hem nakit akış tablosunda var); ilk eşleşme, belgedeki
+    /// sırayla asıl tabloya denk gelir.
+    pub fn values(&self, label: &str) -> Option<&[String]> {
+        self.rows
+            .iter()
+            .find(|row| row.len() > 1 && row[0] == label)
+            .map(|row| &row[1..])
+    }
+
     /// Başlığında verilen etiketi taşıyan ilk tablo.
     ///
     /// Veri satırları, başlıkla **aynı hücre sayısına** sahip ardışık
@@ -695,18 +711,34 @@ impl<'a> KapTable<'a> {
 ///
 /// Tur seviyesindeki bütçe ve [`crate::kap_capital::body_cooldown`] penceresi
 /// bu ucun ritmini zaten yönetiyor; burada tek deneme doğru davranıştır.
+///
+/// **Aynı uca** ısrar edilmez ama iki uç denenir: excel ve word aynı gövdeyi
+/// veriyor ve kotaları **ayrı sayılıyor**. Ölçüm (09.08.2026, curl): excel 429
+/// dönerken word aynı belge için 200 veriyor. Yani ikinci istek sınırı
+/// derinleştiren bir tekrar değil, henüz dokunulmamış bir kotaya gidiş —
+/// yukarıdaki "yeniden denenmez" kuralı tek uç içindir ve korunur.
+const BODY_EXPORTS: [&str; 2] = ["excel", "word"];
+
 pub async fn fetch_disclosure_form(
     client: &Client,
     disclosure_index: &str,
 ) -> Result<KapForm, String> {
-    fetch_disclosure_form_once(client, disclosure_index).await
+    let mut last = String::new();
+    for export in BODY_EXPORTS {
+        match fetch_disclosure_form_once(client, disclosure_index, export).await {
+            Ok(form) => return Ok(form),
+            Err(error) => last = error,
+        }
+    }
+    Err(last)
 }
 
 async fn fetch_disclosure_form_once(
     client: &Client,
     disclosure_index: &str,
+    export: &str,
 ) -> Result<KapForm, String> {
-    let url = format!("{BASE_URL}/api/notification/export/excel/{disclosure_index}");
+    let url = format!("{BASE_URL}/api/notification/export/{export}/{disclosure_index}");
     let _permit = crate::retry::kap_permit().await;
 
     let response = client
@@ -782,18 +814,31 @@ fn parse_form(html: &str) -> KapForm {
     KapForm { rows }
 }
 
-/// (B) düzenindeki satırı `[etiket, değer]` çiftine indirger.
+/// (B) düzenindeki satırı `[etiket, değer…]` dizisine indirger.
 ///
 /// Sütunlar sınıf adıyla tanınır: aradaki boş "dimensional context" hücresi
 /// korunsaydı satır üç hücreli olur ve `field()`in aradığı ikili yapıya hiç
 /// uymazdı. Düzen tanınmıyorsa `None` döner ve satır olduğu gibi okunur.
+///
+/// Değer hücrelerinin **hepsi** taşınır, ilki değil. Bildirimlerin çoğunda tek
+/// değer var ve satır yine ikili çıkıyor; ama Finansal Rapor gövdesinde bir
+/// satır dönem ve para cinsi bazında birden çok sütun taşıyor
+/// (`TP | YP | Toplam | TP | YP | Toplam`). İlk hücreyi almak bankalarda
+/// "Toplam" yerine yalnız Türk parası kısmını okumak olurdu — sessizce eksik
+/// bir bilanço.
 fn taxonomy_pair(cells: &[scraper::ElementRef]) -> Option<Vec<String>> {
     let has_class = |cell: &scraper::ElementRef, name: &str| {
         cell.value().attr("class").is_some_and(|c| c.contains(name))
     };
     let title = cells.iter().find(|cell| has_class(cell, "taxonomy-field-title"))?;
-    let value = cells.iter().find(|cell| has_class(cell, "taxonomy-context-value"))?;
-    Some(vec![cell_text(title), cell_text(value)])
+    let mut row = vec![cell_text(title)];
+    row.extend(
+        cells
+            .iter()
+            .filter(|cell| has_class(cell, "taxonomy-context-value"))
+            .map(cell_text),
+    );
+    (row.len() > 1).then_some(row)
 }
 
 /// Hücrenin tüm alt metni, boşlukları tekleştirilmiş hâlde.
@@ -821,85 +866,53 @@ fn extract_href(html: &str, pattern: &str) -> Option<String> {
     None
 }
 
-/// Canlı KAP Finansal Rapor Bildiriminden (XBRL / SSR HTML) en güncel dönemi kazıyıp ayrıştırır.
+/// Bir hissenin en güncel KAP finansal raporunu döneme çevirir.
+///
+/// Kaynak **bildirim gövdesidir**, bildirim sayfası değil. Sayfa istemci
+/// tarafında render edilen bir Next.js uygulaması: kalem adları 5 MB'lık akış
+/// yükünün içinde geçiyor ama tablo ızgarası yok, dolayısıyla "etiketten
+/// sonraki ilk sayı" kuralı komşu alanın rakamını okuyor. Ölçüm (KLSYN
+/// 1636226): hasılat `3`, özkaynak `3`, gerisi boş — ve `revenue` dolu
+/// göründüğü için bu sahte dönem arşive yazılıyordu.
+///
+/// Gövde ise yapısal; ayrıştırma [`crate::kap_financials`] içinde.
 pub async fn fetch_latest_kap_financial_period(
     client: &Client,
     ticker: &str,
 ) -> Result<Option<crate::domain::FinancialPeriod>, Box<dyn Error + Send + Sync>> {
+    // Liste hissenin **son bildirimleriyle** sınırlı; rapor sezonu geçtiyse
+    // finansal rapor bu pencereden düşmüş olabilir ve `None` döner. Bu bir
+    // ayrıştırma hatası değil: mali tablo İş Yatırım'dan gelmeye devam eder,
+    // KAP yalnız o kaynağın henüz görmediği güncel dönemi tamamlar.
     let list = ticker_disclosures(client, ticker).await?;
-    let fr = list.into_iter().find(|ann| {
-        let cat = ann.category.to_uppercase();
-        let title = ann.title.to_lowercase();
-        cat == "FR" || title.contains("finansal rapor") || title.contains("bilanço")
-    });
 
-    let ann = match fr {
-        Some(a) => a,
-        None => return Ok(None),
+    // "Finansal Rapor Sorumluluk Beyanı" da FR kategorisinde ve gövdesinde
+    // tablo yok; konu birebir eşleşmeli.
+    let report = list
+        .into_iter()
+        .find(|ann| crate::kap_financials::is_financial_report(&ann.title));
+    let Some(report) = report else {
+        return Ok(None);
     };
 
-    let raw_id = ann.id.replace(|c: char| !c.is_ascii_digit(), "");
-    if raw_id.is_empty() {
+    let index: String = report.id.chars().filter(char::is_ascii_digit).collect();
+    if index.is_empty() {
         return Ok(None);
     }
 
-    let url = format!("{BASE_URL}/Bildirim/{raw_id}");
-    let resp = client
-        .get(&url)
-        .timeout(Duration::from_secs(10))
-        .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
-        .send()
-        .await?;
-
-    if !resp.status().is_success() {
-        return Ok(None);
-    }
-
-    let html = resp.text().await?;
-    let period_str = ann.date.chars().take(10).collect::<String>();
-
-    let revenue = parse_html_line_item(&html, &["Hasılat", "Satış Gelirleri", "FAİZ GELİRLERİ"]);
-    let gross_profit = parse_html_line_item(&html, &["Brüt Kâr", "NET FAİZ GELİRİ"]);
-    let operating_income = parse_html_line_item(&html, &["Esas Faaliyet Kârı", "Faaliyet Kârı"]);
-    let net_income = parse_html_line_item(&html, &["Net Dönem Kârı", "DÖNEM KÂRI"]);
-    let total_assets = parse_html_line_item(&html, &["Toplam Varlıklar", "TOPLAM AKTİFLER"]);
-    let total_equity = parse_html_line_item(&html, &["Özkaynaklar", "TOPLAM ÖZKAYNAKLAR"]);
-    let total_debt = parse_html_line_item(&html, &["Finansal Borçlar", "Kısa Vadeli Borçlar"]);
-    let operating_cash_flow = parse_html_line_item(&html, &["İşletme Faaliyetlerinden Nakit"]);
-
-    if revenue.is_none() && net_income.is_none() && total_assets.is_none() {
-        return Ok(None);
-    }
-
-    Ok(Some(crate::domain::FinancialPeriod {
-        period: period_str,
-        revenue,
-        gross_profit,
-        operating_income,
-        net_income,
-        total_assets,
-        total_equity,
-        total_debt,
-        operating_cash_flow,
-        free_cash_flow: None,
-    }))
-}
-
-fn parse_html_line_item(html: &str, keywords: &[&str]) -> Option<f64> {
-    for kw in keywords {
-        if let Some(pos) = html.find(kw) {
-            let snippet = &html[pos..pos + std::cmp::min(250, html.len() - pos)];
-            for token in snippet.split(|c: char| !c.is_numeric() && c != '.' && c != ',' && c != '-') {
-                let cleaned = token.replace('.', "").replace(',', ".");
-                if let Ok(num) = cleaned.parse::<f64>() {
-                    if num.abs() > 1.0 {
-                        return Some(num);
-                    }
-                }
-            }
+    // Gövde ucu hız sınırlı ve bu çağrı kullanıcı isteğiyle tetikleniyor;
+    // hata yutulmaz ama çağıranı da düşürmez — mali tablo İş Yatırım'dan
+    // gelmeye devam eder.
+    let form = match fetch_disclosure_form(client, &index).await {
+        Ok(form) => form,
+        Err(error) => {
+            eprintln!("[kap] {index}: finansal rapor gövdesi alınamadı: {error}");
+            return Ok(None);
         }
-    }
-    None
+    };
+
+    let period = report.date.chars().take(10).collect::<String>();
+    Ok(crate::kap_financials::parse_financial_form(&form, &period))
 }
 
 #[cfg(test)]

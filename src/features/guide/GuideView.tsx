@@ -130,7 +130,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       'FRAUDE açık kaynaklıdır ve tak-çıkar çalışır: masaüstü uygulamayı indiren herkes kendi AI sağlayıcısını kendi API anahtarıyla bağlar, kendi veri sağlayıcısını da eklenti olarak ekleyebilir. Kurulum iki hazır veri kaynağıyla gelir; ikisini de değiştirmek ya da yenisini eklemek serbesttir.',
     dataSources: [
       { code: 'Y!', name: 'Yahoo Finance', tag: 'Varsayılan', desc: 'Küresel fiyat verisi: BIST hisseleri, endeksler, emtia, döviz ve kripto.', items: ['OHLC mum + hacim serileri', '~15 dk gecikmeli kotasyon', 'Temettü ve bölünme olayları'] },
-      { code: 'İŞ', name: 'İş Yatırım', tag: 'Varsayılan', desc: "BIST'e özgü derinlik: düzeltilmiş seriler, mali tablolar ve tarama verisi.", items: ['Düzeltilmiş kapanış (temettü/bölünme yansıtılmış)', 'Mali tablo kalemleri', 'Tarama oranları (F/K, PD/DD, ROE…)'] },
+      { code: 'İŞ', name: 'İş Yatırım', tag: 'Varsayılan', desc: "BIST'e özgü derinlik: düzeltilmiş seriler, mali tablolar ve tarama verisi.", items: ['Düzeltilmiş kapanış (temettü/bölünme yansıtılmış)', 'Mali tablo kalemleri — en güncel dönem KAP Finansal Rapor bildiriminden resmî olarak tamamlanır', 'Tarama oranları (F/K, PD/DD, ROE…)'] },
       { code: '+', name: 'Kendi kaynağın', tag: 'Eklenti', desc: 'Kendi lisanslı veri beslemen veya API\'n varsa data-adapter eklentisiyle bağlarsın.', items: ['FMUP manifest: kind "data-adapter"', 'İmzalı paket + açık izin listesi', 'Ayarlar › Güncellemeler › Güncelleme Gönder ile toplulukla paylaşılır'] },
     ],
     pluginLegalNote:
@@ -429,7 +429,7 @@ const GUIDE: Record<'tr' | 'en', GuideContent> = {
       'FRAUDE is open source and plug-and-play: anyone who downloads the desktop app connects their own AI provider with their own API key, and can add their own data provider as a plug-in. The install ships with two ready data sources; both can be replaced or extended freely.',
     dataSources: [
       { code: 'Y!', name: 'Yahoo Finance', tag: 'Default', desc: 'Global price data: BIST equities, indices, commodities, FX and crypto.', items: ['OHLC candles + volume series', '~15-min delayed quotes', 'Dividend and split events'] },
-      { code: 'İŞ', name: 'İş Yatırım', tag: 'Default', desc: 'BIST-specific depth: adjusted series, financial statements and screening data.', items: ['Adjusted close (dividends/splits applied)', 'Financial statement items', 'Screening ratios (P/E, P/B, ROE…)'] },
+      { code: 'İŞ', name: 'İş Yatırım', tag: 'Default', desc: 'BIST-specific depth: adjusted series, financial statements and screening data.', items: ['Adjusted close (dividends/splits applied)', 'Financial statement items — the latest period is completed officially from the KAP financial report disclosure', 'Screening ratios (P/E, P/B, ROE…)'] },
       { code: '+', name: 'Your own source', tag: 'Plug-in', desc: 'If you have a licensed data feed or API, connect it as a data-adapter plug-in.', items: ['FMUP manifest: kind "data-adapter"', 'Signed bundle + explicit permission list', 'Share it with the community via Settings › Updates › Submit Update'] },
     ],
     pluginLegalNote:
