@@ -150,20 +150,17 @@ function renderVisualShareStructure(rawText?: string | null) {
         else if (isEkOrtak) label = '➕ Ek Ortak Satışı';
         else if (isOrtak) label = '🤝 Ortak Satışı';
 
-        let cleanVal = part
+        const cleanVal = part
           .replace(/^Sermaye Artırımı\s*:\s*/i, '')
           .replace(/^Ek Ortak Satışı\s*:\s*/i, '')
           .replace(/^Ortak Satışı\s*:\s*/i, '')
           .replace(/^Halka Arz Şekli\s*:\s*/i, '')
           .trim();
 
-        if (cleanVal.length > 45 && cleanVal.includes('(')) {
-          cleanVal = cleanVal.replace(/\(([^)]+)\)/g, (_m, p1) => {
-            const words = p1.trim().split(/\s+/);
-            const shortName = words.slice(0, 2).join(' ') + (words.length > 2 ? '...' : '');
-            return `(${shortName})`;
-          });
-        }
+        // Satan ortağın adı **kısaltılmaz**. Eskiden parantez içi ilk iki
+        // kelimeye indiriliyordu ("(Türkerler İnşaat...)") çünkü kart tabloya
+        // sığmıyordu; kart artık ekran genişliğinde ve asıl merak edilen bilgi
+        // kimin sattığı. Uzun unvan sararak yerleşir.
 
         return (
           <div key={idx} style={{

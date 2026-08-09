@@ -793,6 +793,7 @@ mod tests {
             ipo_size_tl: 3_882_800_000.0,
             price_range: None,
             consortium_lead: None,
+            sellers: Vec::new(),
             bulletin_no: "2026/45".to_string(),
             approval_date: chrono::Local::now().format("%Y-%m-%d").to_string(),
         };

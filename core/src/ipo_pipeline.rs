@@ -315,11 +315,22 @@ fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoAppro
             }
         }
 
+        // Pay yapısı: bülten dipnotu satan ortakların **adını** verdiğinde
+        // kırılım tam yazılır, yoksa yalnız toplam.
+        //
         // "SPK onaylı" etiketi şart: etiketsiz sayı, başka sitelerdekiyle
         // çeliştiğinde hangisinin ne olduğu anlaşılmıyor.
-        if approval.total_lots > 0.0 && entry.share_structure.is_none() {
-            entry.share_structure = Some(format!("{:.0} Lot (SPK onaylı)", approval.total_lots));
-            changed = true;
+        if let Some(structure) = format_share_structure(approval) {
+            // Kendi yazdığımız özeti tazeleriz (dipnot okunmaya başlayınca
+            // eski "N Lot (SPK onaylı)" satırı olduğu yerde kalıyordu), ama
+            // halkarz.com'un kırılımına dokunmayız: o da ortak adlarını
+            // taşıyor ve iki kaynağı yarıştırmanın kazancı yok.
+            let ours = entry.share_structure.as_deref().is_some_and(is_derived_structure);
+            let stale = entry.share_structure.as_deref() != Some(structure.as_str());
+            if (entry.share_structure.is_none() || ours) && stale {
+                entry.share_structure = Some(structure);
+                changed = true;
+            }
         }
 
         // Konsorsiyum liderini bülten resmî olarak yazıyor; halkarz.com'un
@@ -375,6 +386,99 @@ const KAP_SOURCE: &str = "KAP";
 /// İzahname arzdan ~2 ay önce, sonuç bildirimi birkaç gün sonra yayımlanır;
 /// altı ay iki yönde de rahat pay bırakır.
 const KAP_MATCH_WINDOW_DAYS: i64 = 180;
+
+/// Bülten onayından pay yapısı metni üretir.
+///
+/// Arşivin (ve arayüzün) beklediği biçim satır satır kırılımdır:
+/// ```text
+/// Sermaye Artırımı : 37.500.000 Lot
+/// Ortak Satışı : 27.500.000 Lot (Türkerler İnşaat … AŞ)
+/// Ek Ortak Satışı : 12.500.000 Lot (Türkerler İnşaat … AŞ)
+/// ```
+/// Satan ortağın adı bültenin **dipnotundan** geliyor; dipnot okunamazsa
+/// satır adsız yazılır, hiç satış yoksa yalnız toplam yazılır.
+fn format_share_structure(approval: &SpkIpoApproval) -> Option<String> {
+    if approval.total_lots <= 0.0 {
+        return None;
+    }
+
+    // Dipnot yoksa eski özet korunur: tek satırlık toplam.
+    if approval.sellers.is_empty() && approval.share_sale_lots <= 0.0 {
+        return Some(format!("{:.0} Lot (SPK onaylı)", approval.total_lots));
+    }
+
+    let mut lines = Vec::new();
+    if approval.capital_increase_lots > 0.0 {
+        lines.push(format!(
+            "Sermaye Artırımı : {} Lot",
+            group_thousands(approval.capital_increase_lots)
+        ));
+    }
+
+    let named = |extra: bool| -> Vec<String> {
+        approval
+            .sellers
+            .iter()
+            .filter(|seller| seller.extra_sale == extra)
+            .map(|seller| {
+                format!(
+                    "{} : {} Lot ({})",
+                    if extra { "Ek Ortak Satışı" } else { "Ortak Satışı" },
+                    group_thousands(seller.lots),
+                    seller.name
+                )
+            })
+            .collect()
+    };
+
+    // Dipnot okunamadıysa sütundaki toplam adsız yazılır — sayıyı düşürmek,
+    // adı bilmemekten kötü.
+    let sale_lines = named(false);
+    if sale_lines.is_empty() {
+        if approval.share_sale_lots > 0.0 {
+            lines.push(format!("Ortak Satışı : {} Lot", group_thousands(approval.share_sale_lots)));
+        }
+    } else {
+        lines.extend(sale_lines);
+    }
+
+    let extra_lines = named(true);
+    if extra_lines.is_empty() {
+        if approval.extra_sale_lots > 0.0 {
+            lines.push(format!(
+                "Ek Ortak Satışı : {} Lot",
+                group_thousands(approval.extra_sale_lots)
+            ));
+        }
+    } else {
+        lines.extend(extra_lines);
+    }
+
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+/// Pay yapısını biz mi yazdık? İki biçimimiz var: eski tek satırlık özet ve
+/// dipnottan kurulan kırılım. halkarz.com ikisini de böyle yazmıyor
+/// ("(SPK onaylı)" etiketi yalnız bizde, kırılımda da satır başları sabit).
+fn is_derived_structure(structure: &str) -> bool {
+    structure.ends_with("Lot (SPK onaylı)")
+        || structure
+            .lines()
+            .all(|line| line.starts_with("Sermaye Artırımı : ") || line.starts_with("Ortak Satışı : ") || line.starts_with("Ek Ortak Satışı : "))
+}
+
+/// "37500000" → "37.500.000".
+fn group_thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push('.');
+        }
+        out.push(c);
+    }
+    out
+}
 
 /// Bu metni biz mi ürettik? `format_ipo_size` çıktısı "<tamsayı> TL (" ile
 /// başlar; hiçbir dış kaynak büyüklüğü böyle yazmıyor.
@@ -637,6 +741,7 @@ mod tests {
             ipo_size_tl: 36_500_000.0 * price,
             price_range: None,
             consortium_lead: None,
+            sellers: Vec::new(),
             bulletin_no: "2026/49".to_string(),
             approval_date: today_in_turkish().0,
         }
@@ -800,10 +905,11 @@ mod tests {
         assert_eq!(archive[0].status, SPK_APPROVED_STATUS);
         assert_eq!(archive[0].price, 94.0);
         assert_eq!(archive[0].spk_bulletin_no.as_deref(), Some("2026/49"));
-        // Onaylanan tavan, gerçekleşen arzdan ayırt edilebilmeli.
+        // Pay yapısı kalem kalem yazılır; dipnot okunmadığı için satış satırı
+        // adsız kalır ama sayı düşmez.
         assert_eq!(
             archive[0].share_structure.as_deref(),
-            Some("36500000 Lot (SPK onaylı)")
+            Some("Sermaye Artırımı : 30.000.000 Lot\nOrtak Satışı : 6.500.000 Lot")
         );
         // Türkçe bülten tarihi ISO'ya çevrilmeli; yoksa takvimde sıralanamaz.
         assert_eq!(archive[0].ipo_date, today_in_turkish().1);

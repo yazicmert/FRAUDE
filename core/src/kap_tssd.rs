@@ -333,43 +333,12 @@ fn parse_share_structure(text: &str) -> ShareStructure {
     }
 }
 
-/// Metnin sonundaki özel adı ayıklar.
+/// Satan ortağın adı, kalıbın öncesinden geriye doğru okunur.
 ///
-/// Kural, Türkçe unvan yazımından çıkıyor: ad büyük harfle başlayan
-/// kelimelerden oluşur ve cümlenin kalıp sözcükleri ("mevcut pay
-/// sahiplerinden", "pay ve", "adet") küçük harflidir. Sondan geriye doğru
-/// büyük harfli kelimeler alınır; "ve" yalnız **iki büyük harfli kelimenin
-/// arasındaysa** ada dâhildir — böylece "Tic. ve San. A.Ş." bütün kalırken
-/// "pay ve Ali Kutay Yaralı"nın başındaki bağlaç dışarıda kalır.
-fn trailing_proper_name(before: &str) -> Option<String> {
-    let words: Vec<&str> = before.split_whitespace().collect();
-    let capitalized = |word: &str| word.chars().next().is_some_and(char::is_uppercase);
-
-    let mut start = words.len();
-    while start > 0 {
-        let word = words[start - 1];
-        if capitalized(word) {
-            start -= 1;
-            continue;
-        }
-        // Bağlaç: ancak iki yanı da adın parçasıysa geçilir.
-        if word.eq_ignore_ascii_case("ve")
-            && start < words.len()
-            && start >= 2
-            && capitalized(words[start - 2])
-        {
-            start -= 1;
-            continue;
-        }
-        break;
-    }
-
-    let name = words[start..].join(" ");
-    // Tek harflik "B" (pay grubu) ya da rakam içeren parça ad değildir; adsız
-    // satır yazmak yanlış ad yazmaktan iyidir.
-    let plausible = name.chars().count() > 3 && !name.chars().any(|c| c.is_ascii_digit());
-    plausible.then_some(name)
-}
+/// Aynı kural SPK bülteninin dipnotlarında da geçerli olduğu için ortak
+/// yardımcı orada duruyor; iki kopya tutmak ikisinin ayrı ayrı bozulması
+/// demekti.
+use crate::spk::trailing_proper_name;
 
 fn thousands(raw: &str) -> Option<u64> {
     raw.replace('.', "").parse().ok()

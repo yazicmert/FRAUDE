@@ -376,6 +376,7 @@ mod tests {
             ipo_size_tl: 25_100_000.0 * 94.0,
             price_range: None,
             consortium_lead: None,
+            sellers: Vec::new(),
             bulletin_no: bulletin_no.into(),
             approval_date: date.into(),
         }

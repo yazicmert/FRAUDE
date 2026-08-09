@@ -122,8 +122,23 @@ pub struct SpkIpoApproval {
     #[serde(default)]
     pub price_range: Option<String>,
     pub consortium_lead: Option<String>,
+    /// Paylarını satan mevcut ortaklar — bülten dipnotundan.
+    ///
+    /// Tablonun satış sütunları çıplak sayıdır; kimin sattığını yalnız hücreye
+    /// iliştirilen dipnot söylüyor ve o dipnot eskiden atılıyordu.
+    #[serde(default)]
+    pub sellers: Vec<SpkShareSeller>,
     pub bulletin_no: String,
     pub approval_date: String,
+}
+
+/// Halka arzda payını satan mevcut ortak.
+#[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq)]
+pub struct SpkShareSeller {
+    pub name: String,
+    pub lots: f64,
+    /// Fazla talep gelirse devreye giren ek satış mı?
+    pub extra_sale: bool,
 }
 
 /// Türkçe karakterleri ASCII eşdeğerlerine dönüştürür (fuzzy matching için).
@@ -448,11 +463,75 @@ fn extract_ipo_approvals_from_text(
     let Some(section) = ipo_section(&lines) else {
         return Vec::new();
     };
+    let footnotes = ipo_footnotes(&lines);
 
     section
         .split(|line| line.trim().is_empty())
-        .flat_map(|block| parse_approval_block(block, bulletin_no, approval_date))
+        .flat_map(|block| parse_approval_block(block, bulletin_no, approval_date, &footnotes))
         .collect()
+}
+
+/// Tablonun altındaki dipnot bloğu: numara → düzyazı.
+///
+/// **Satan ortağın adı yalnız burada yazıyor.** Tablonun "mevcut pay satışı"
+/// ve "ek pay satışı" sütunları çıplak sayıdır; kimin sattığı hücreye
+/// iliştirilen `(5)` işaretiyle dipnota havale edilir:
+///
+/// ```text
+/// … 37.500.000 - 27.500.000 (5) 12.500.000 (6) 136,00 (7)
+/// (5) Mevcut ortaklardan Türkerler İnşaat … AŞ'ye ait 27.500.000 TL nominal
+///     değerli (B) grubu payların satışı gerçekleştirilecektir.
+/// ```
+///
+/// Dipnot birden çok satıra sarar; sarma satırı işaretle başlamaz ve önceki
+/// dipnota eklenir. Blok bir sonraki bölüm başlığında biter.
+fn ipo_footnotes(lines: &[&str]) -> std::collections::HashMap<u32, String> {
+    let mut notes = std::collections::HashMap::new();
+    let Some(start) = lines.iter().position(|line| is_ipo_heading(line)) else {
+        return notes;
+    };
+
+    let mut current: Option<u32> = None;
+    for line in &lines[start + 1..] {
+        if is_section_heading(line) {
+            break;
+        }
+        if is_page_furniture(line) {
+            continue;
+        }
+        match footnote_marker(line) {
+            Some((number, rest)) => {
+                current = Some(number);
+                notes.insert(number, rest.to_string());
+            }
+            // Sarma satırı: işaretsiz ve açık bir dipnot varsa ona eklenir.
+            None => {
+                if let Some(number) = current {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        if let Some(text) = notes.get_mut(&number) {
+                            text.push(' ');
+                            text.push_str(trimmed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    notes
+}
+
+/// Satır bir dipnot tanımıyla mı başlıyor — "(5) Mevcut ortaklardan …"?
+///
+/// Tablo satırı ya da hücre devamı olan işaretli satırlar (`(1) - 73,70`)
+/// dipnot değildir; ayrımı [`is_footnote`] yapıyor.
+fn footnote_marker(line: &str) -> Option<(u32, &str)> {
+    if !is_footnote(line) {
+        return None;
+    }
+    let trimmed = line.trim();
+    let (marker, rest) = trimmed.strip_prefix('(')?.split_once(')')?;
+    Some((marker.parse().ok()?, rest.trim()))
 }
 
 /// Bültenin yalnız "İlk Halka Arzlar" bölümündeki tablo satırlarını verir.
@@ -683,14 +762,16 @@ fn parse_approval_block(
     block: &[&str],
     bulletin_no: &str,
     approval_date: &str,
+    footnotes: &std::collections::HashMap<u32, String>,
 ) -> Vec<SpkIpoApproval> {
-    let normalized = normalize_row_text(&block.join(" "));
+    let normalized = normalize_ipo_row_text(&block.join(" "));
     let tokens: Vec<&str> = normalized.split_whitespace().collect();
 
     let mut approvals = Vec::new();
     let mut index = 0usize;
     while index < tokens.len() {
-        // 1. Unvan: "AŞ" ekine kadar olan jetonlar.
+        // 1. Unvan: "AŞ" ekine kadar olan jetonlar. Dipnot jetonu unvanın
+        //    içinde kalmamalı — unvanın hemen ardından da gelebiliyor.
         let start = index;
         while index < tokens.len() && !is_company_suffix(tokens[index]) {
             index += 1;
@@ -698,15 +779,31 @@ fn parse_approval_block(
         if index == tokens.len() {
             break; // Blokta unvan sonu yok; şirket satırı değil.
         }
-        let company_name = tokens[start..=index].join(" ");
+        let company_name = tokens[start..=index]
+            .iter()
+            .filter(|token| footnote_token(token).is_none())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ");
         index += 1;
 
-        // 2. Hücreler: sayısal olmayan ilk jetona kadar.
+        // 2. Hücreler: sayısal olmayan ilk jetona kadar. Dipnot jetonu hücre
+        //    değildir; **kendinden önceki** hücreye iliştirilir, çünkü işaret
+        //    hücrenin ardına konuyor ("27.500.000 (5)").
         let cells_start = index;
         let mut cells = Vec::new();
+        let mut notes: Vec<Option<u32>> = Vec::new();
         while index < tokens.len() {
+            if let Some(number) = footnote_token(tokens[index]) {
+                if let Some(last) = notes.last_mut() {
+                    *last = Some(number);
+                }
+                index += 1;
+                continue;
+            }
             let Some(cell) = parse_cell(tokens[index]) else { break };
             cells.push(cell);
+            notes.push(None);
             index += 1;
         }
 
@@ -725,6 +822,8 @@ fn parse_approval_block(
         if let Some(approval) = approval_from_cells(
             company_name,
             &cells,
+            &notes,
+            footnotes,
             bulletin_no,
             approval_date,
         ) {
@@ -810,11 +909,43 @@ fn normalize_row_text(text: &str) -> String {
     collapse_spaces(&en_dash.replace_all(&without_footnotes, "-"))
 }
 
+/// Halka arz satırı için normalleştirme: numaralı dipnot işareti **korunur**.
+///
+/// Satan ortağın adı yalnız dipnotta yazıyor ve hangi hücrenin hangi dipnota
+/// baktığını yalnız bu işaret söylüyor, o yüzden `(5)` silinmek yerine `§5`
+/// jetonuna dönüşür (sentinel sayıyla karışmaz, hücre çözümlemesini bozmaz).
+///
+/// Ayrı bir işlev olması **şart**: aynı normalleştirmeyi sermaye artırımı
+/// tablosu da kullanıyor ve orada son sütun metindir — araya giren `§5`
+/// jetonu satırı bozup satırları düşürüyordu (2026/48'de üç kayıttan ikisi).
+fn normalize_ipo_row_text(text: &str) -> String {
+    static RE: std::sync::OnceLock<(regex::Regex, regex::Regex, regex::Regex)> =
+        std::sync::OnceLock::new();
+    let (star, numbered, en_dash) = RE.get_or_init(|| {
+        (
+            regex::Regex::new(r"\(\*+\)").expect("geçerli regex"),
+            regex::Regex::new(r"\((\d+)\)").expect("geçerli regex"),
+            regex::Regex::new(r"\s*\u{2013}\s*").expect("geçerli regex"),
+        )
+    });
+
+    let without_stars = star.replace_all(text, " ");
+    let with_markers = numbered.replace_all(&without_stars, " §$1 ");
+    collapse_spaces(&en_dash.replace_all(&with_markers, "-"))
+}
+
+/// `§5` jetonunu dipnot numarasına çevirir.
+fn footnote_token(token: &str) -> Option<u32> {
+    token.strip_prefix('§')?.parse().ok()
+}
+
 /// Çözülmüş hücrelerden onay kaydı üretir; sütun düzeni beklenenden farklıysa
 /// uyarı bırakıp `None` döner.
 fn approval_from_cells(
     company_name: String,
     cells: &[Cell],
+    notes: &[Option<u32>],
+    footnotes: &std::collections::HashMap<u32, String>,
     bulletin_no: &str,
     approval_date: &str,
 ) -> Option<SpkIpoApproval> {
@@ -863,6 +994,24 @@ fn approval_from_cells(
     let share_sale_lots = sale_columns.first().copied().map(Cell::number_or_zero).unwrap_or(0.0);
     let extra_sale_lots = sale_columns.get(1).copied().map(Cell::number_or_zero).unwrap_or(0.0);
 
+    // Satan ortaklar iki satış sütununun dipnotlarında yazıyor.
+    let note_for = |column: usize| {
+        notes
+            .get(column)
+            .copied()
+            .flatten()
+            .and_then(|number| footnotes.get(&number))
+            .map(String::as_str)
+    };
+    let mut sellers = note_for(COL_FIRST_SALE)
+        .map(|note| footnote_sellers(note, false))
+        .unwrap_or_default();
+    sellers.extend(
+        note_for(COL_FIRST_SALE + 1)
+            .map(|note| footnote_sellers(note, true))
+            .unwrap_or_default(),
+    );
+
     // Halka arz edilen pay = bedelli artırım + mevcut ortakların pay satışı.
     // Bedelsiz artırım mevcut ortaklara dağıtılır, arza konu değildir; ek pay
     // satışı yalnız fazla talep gelirse devreye girer, taban büyüklüğe girmez.
@@ -883,9 +1032,90 @@ fn approval_from_cells(
         ipo_size_tl: total_lots * price,
         price_range,
         consortium_lead: None,
+        sellers,
         bulletin_no: bulletin_no.to_string(),
         approval_date: approval_date.to_string(),
     })
+}
+
+/// Dipnot düzyazısından satan ortakları çıkarır.
+///
+/// Gerçek biçimler (2026/49):
+/// ```text
+/// Mevcut ortaklardan Türkerler İnşaat … Sanayi AŞ'ye ait 27.500.000 TL nominal
+///   değerli (B) grubu payların satışı gerçekleştirilecektir.
+/// Mevcut ortaklardan Kemal YARALI'nın sahip olduğu 3.000.000 TL nominal değerli
+///   ve Ali Kutay YARALI'nın sahip olduğu 3.000.000 TL nominal değerli …
+/// ```
+/// Tek dipnot **birden çok ortak** taşıyabiliyor; her biri ayrı kayıt olur.
+///
+/// Ad kalıbın öncesinden geriye doğru okunur — regex içinde yakalamak cümlenin
+/// yarısını ada katıyor (bkz. [`trailing_proper_name`]).
+fn footnote_sellers(note: &str, extra_sale: bool) -> Vec<SpkShareSeller> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = RE.get_or_init(|| {
+        regex::Regex::new(
+            r"['’](?:[a-zçğıöşü]{1,4})\s+(?:ait|sahip\s+olduğu)\s+(?:toplam\s+)?([\d.]+)\s*TL",
+        )
+        .expect("geçerli regex")
+    });
+
+    let mut sellers = Vec::new();
+    let mut cursor = 0;
+    for capture in pattern.captures_iter(note) {
+        let whole = capture.get(0).expect("tam eşleşme");
+        let Some(lots) = capture
+            .get(1)
+            .and_then(|m| m.as_str().replace('.', "").parse::<f64>().ok())
+            .filter(|lots| *lots > 0.0)
+        else {
+            cursor = whole.end();
+            continue;
+        };
+        let name = trailing_proper_name(&note[cursor..whole.start()]);
+        cursor = whole.end();
+        if let Some(name) = name {
+            sellers.push(SpkShareSeller { name, lots, extra_sale });
+        }
+    }
+    sellers
+}
+
+/// Metnin sonundaki özel adı ayıklar.
+///
+/// Kural Türkçe unvan yazımından çıkıyor: ad büyük harfle başlayan
+/// kelimelerden oluşur, cümlenin kalıp sözcükleri ("mevcut ortaklardan",
+/// "değerli ve") küçük harflidir. Sondan geriye doğru büyük harfli kelimeler
+/// alınır; "ve" yalnız **iki büyük harfli kelimenin arasındaysa** ada
+/// dâhildir — böylece "Ticaret ve Sanayi AŞ" bütün kalırken "değerli ve Ali
+/// Kutay YARALI"nın başındaki bağlaç dışarıda kalır.
+pub(crate) fn trailing_proper_name(before: &str) -> Option<String> {
+    let words: Vec<&str> = before.split_whitespace().collect();
+    let capitalized = |word: &str| word.chars().next().is_some_and(char::is_uppercase);
+
+    let mut start = words.len();
+    while start > 0 {
+        let word = words[start - 1];
+        if capitalized(word) {
+            start -= 1;
+            continue;
+        }
+        if word.eq_ignore_ascii_case("ve")
+            && start < words.len()
+            && start >= 2
+            && capitalized(words[start - 2])
+        {
+            start -= 1;
+            continue;
+        }
+        break;
+    }
+
+    let name = words[start..].join(" ");
+    // Tek harflik "B" (pay grubu) ya da rakam içeren parça ad değildir; adsız
+    // bırakmak yanlış ad yazmaktan iyidir.
+    let plausible = name.chars().count() > 3 && !name.chars().any(|c| c.is_ascii_digit());
+    plausible.then_some(name)
 }
 
 /// "8,50 - 9,90 TL" — arayüzün beklediği ham aralık metni.
@@ -1299,7 +1529,9 @@ const CAPITAL_FETCH_CONCURRENCY: usize = 4;
 ///    (Ereğli, Tüpraş, Hektaş, Türk Traktör…) artırımları hiç okunmuyordu.
 /// 6: İngilizce biçimli fiyat ("3.06") artık binlik ayracı sanılmıyor; Selva,
 ///    Çan2, Oncosem ve EYG arşivde yüz katı fiyatla duruyordu.
-pub const BULLETIN_PARSER_VERSION: u32 = 6;
+/// 7: satan ortakların adı dipnotlardan okunuyor — tablonun satış sütunları
+///    çıplak sayı, kimin sattığı yalnız dipnotta yazıyor ve atılıyordu.
+pub const BULLETIN_PARSER_VERSION: u32 = 7;
 
 /// Bir bültenden çıkan iki tablo.
 struct ParsedBulletin {
@@ -2219,6 +2451,86 @@ Gelecek  Varlık  Yönetimi  AŞ  126.500.000  139.700.000  13.200.000  -  8.800
         assert_eq!(approvals[1].total_lots, 20_000_000.0);
     }
 
+    /// **Satan ortağın adı yalnız dipnotta yazıyor.** Tablonun satış sütunları
+    /// çıplak sayı; kimin sattığını hücreye iliştirilen `(5)`/`(6)` işareti
+    /// dipnota bağlıyor ve o işaret eskiden atılıyordu. Metin 2026/49
+    /// bülteninden birebir alındı (VEYAS satırı + dipnotları).
+    #[test]
+    fn reads_the_selling_shareholder_from_the_footnote() {
+        let text = "1.  İlk Halka Arzlar
+
+Türker Vangölü Enerji Yatırım AŞ 529.354.723 566.854.723 37.500.000 - 27.500.000 (5) 12.500.000 (6) 136,00 (7)
+
+(5)  Mevcut ortaklardan Türkerler İnşaat Turizm Madencilik Enerji Üretim Ticaret ve Sanayi AŞ'ye ait 27.500.000 TL nominal değerli (B) grubu
+payların satışı gerçekleştirilecektir.
+(6)  Fazla talep gelmesi halinde mevcut ortaklardan Türkerler İnşaat Turizm Madencilik Enerji Üretim Ticaret ve Sanayi AŞ'nin sahip olduğu
+12.500.000 TL nominal değerli B grubu payların ek satışı gerçekleştirilebilecektir.
+(7) 1 TL nominal değerli paylar 136,00 TL sabit fiyat üzerinden satışa sunulacaktır.
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2026/49", "05 Ağustos 2026");
+        assert_eq!(approvals.len(), 1, "{approvals:#?}");
+        let veyas = &approvals[0];
+
+        assert_eq!(veyas.price, 136.0);
+        assert_eq!(veyas.share_sale_lots, 27_500_000.0);
+        assert_eq!(veyas.extra_sale_lots, 12_500_000.0);
+
+        let expected = "Türkerler İnşaat Turizm Madencilik Enerji Üretim Ticaret ve Sanayi AŞ";
+        assert_eq!(veyas.sellers.len(), 2, "{:#?}", veyas.sellers);
+        assert_eq!(veyas.sellers[0], SpkShareSeller {
+            name: expected.to_string(),
+            lots: 27_500_000.0,
+            extra_sale: false,
+        });
+        assert_eq!(veyas.sellers[1], SpkShareSeller {
+            name: expected.to_string(),
+            lots: 12_500_000.0,
+            extra_sale: true,
+        });
+    }
+
+    /// Tek dipnot **birden çok ortak** taşıyabiliyor; ikisi de ayrı kayıt
+    /// olmalı. TKNKA, 2026/49 dipnot (3) — birebir.
+    #[test]
+    fn one_footnote_can_name_two_sellers() {
+        let note = "Mevcut ortaklardan Kemal YARALI'nın sahip olduğu 3.000.000 TL nominal değerli \
+                    ve Ali Kutay YARALI'nın sahip olduğu 3.000.000 TL nominal değerli B grubu \
+                    paylar halka arza konu edilecektir.";
+        let sellers = footnote_sellers(note, false);
+        assert_eq!(sellers.len(), 2, "{sellers:#?}");
+        assert_eq!(sellers[0].name, "Kemal YARALI");
+        assert_eq!(sellers[1].name, "Ali Kutay YARALI");
+        assert!(sellers.iter().all(|s| s.lots == 3_000_000.0 && !s.extra_sale));
+    }
+
+    /// Unvanın içindeki "ve" ada dâhil, cümlenin bağlacı değil.
+    #[test]
+    fn a_corporate_title_keeps_its_conjunction() {
+        assert_eq!(
+            trailing_proper_name("Mevcut ortaklardan Tunçlar Yatırım Holding AŞ").as_deref(),
+            Some("Tunçlar Yatırım Holding AŞ")
+        );
+        assert_eq!(
+            trailing_proper_name("ortaklardan Türkerler İnşaat Ticaret ve Sanayi AŞ").as_deref(),
+            Some("Türkerler İnşaat Ticaret ve Sanayi AŞ")
+        );
+        assert_eq!(trailing_proper_name("değerli ve 3.000.000"), None);
+    }
+
+    /// Dipnot yoksa satır yine okunmalı — yalnız ad boş kalır. Dipnotu şart
+    /// koşan bir ayrıştırıcı, dipnotsuz arzları tamamen düşürürdü.
+    #[test]
+    fn a_row_without_footnotes_still_parses() {
+        let text = "1.  İlk Halka Arzlar
+
+Örnek Sanayi AŞ 100.000.000 125.000.000 25.000.000 - - - 30,00
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2026/1", "01 Ocak 2026");
+        assert_eq!(approvals.len(), 1, "{approvals:#?}");
+        assert!(approvals[0].sellers.is_empty());
+        assert_eq!(approvals[0].total_lots, 25_000_000.0);
+    }
+
     /// Sermaye özdeşliği (`yeni = mevcut + bedelli + bedelsiz`) tutmuyorsa
     /// sütunlar kaymış demektir; kayıt üretilmemeli.
     #[test]
@@ -2396,6 +2708,49 @@ Selva Gıda Sanayi A.Ş.  65.000.000  78.000.000  13.000.000  -  13.000.000  -  
         // Pipeline ile de test et
         let pipeline_approvals = fetch_and_parse_latest_approvals(&client).await.unwrap();
         println!("\npipeline toplam {} onay buldu", pipeline_approvals.len());
+    }
+
+    /// Canlı sözleşme sınaması: satan ortakların adı gerçek bültenden çıkmalı.
+    ///
+    /// Dipnot zinciri kırılgan (işaret → numara → düzyazı → ad) ve sabit
+    /// veriyle yazılmış test bültenin kendi biçim değişikliğini görmez.
+    #[tokio::test]
+    #[ignore = "canlı SPK erişimi gerektirir"]
+    async fn live_footnote_sellers_are_extracted() {
+        let client = crate::http_client();
+        let url = "https://spk.gov.tr/data/6a7395628f95db1c20deaf20/2026-49.pdf";
+        let pdf = fetch_bulletin_pdf(&client, url).await.unwrap();
+        let approvals = extract_ipo_approvals_from_pdf(&pdf, "2026/49", "05 Ağustos 2026");
+
+        for approval in &approvals {
+            println!(
+                "{} — satanlar: {:?}",
+                approval.company_name,
+                approval
+                    .sellers
+                    .iter()
+                    .map(|s| format!("{} ({:.0} lot{})", s.name, s.lots, if s.extra_sale { ", ek" } else { "" }))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        let veyas = approvals
+            .iter()
+            .find(|a| a.company_name.contains("Vangölü"))
+            .expect("VEYAS satırı bültende var");
+        assert_eq!(veyas.sellers.len(), 2, "{:#?}", veyas.sellers);
+        assert!(
+            veyas.sellers.iter().all(|s| s.name.starts_with("Türkerler İnşaat")),
+            "{:#?}",
+            veyas.sellers
+        );
+
+        let tknka = approvals
+            .iter()
+            .find(|a| a.company_name.contains("Teknika"))
+            .expect("TKNKA satırı bültende var");
+        let names: Vec<&str> = tknka.sellers.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Kemal YARALI", "Ali Kutay YARALI"], "{:#?}", tknka.sellers);
     }
 }
 

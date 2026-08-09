@@ -2,6 +2,39 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-09-satan-ortak-adi-spk-dipnotundan",
+      "date": "2026-08-09",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "Halka arzda payını satan ortağın tam unvanı SPK bülteni dipnotlarından okunuyor",
+        "en": "Selling shareholders' full legal names are read from SPK bulletin footnotes"
+      },
+      "summary": {
+        "tr": "Pay yapısı kartında \"Ortak Satışı : 27.500.000 Lot\" yazıyordu ama kimin sattığı yalnız halkarz.com'dan geldiğinde görünüyordu. Artık resmî kaynaktan geliyor.\n\nSPK bülteninin \"İlk Halka Arzlar\" tablosunda satış sütunları ÇIPLAK SAYIDIR; satan ortağın adı hücreye iliştirilen dipnot işaretiyle tablonun altındaki düzyazıya havale edilir:\n\n  … 37.500.000 - 27.500.000 (5) 12.500.000 (6) 136,00 (7)\n  (5) Mevcut ortaklardan Türkerler İnşaat … Sanayi AŞ'ye ait 27.500.000 TL nominal değerli (B) grubu payların satışı gerçekleştirilecektir.\n\nAyrıştırıcı bu işaretleri siliyordu, dolayısıyla dipnotlar hiç okunmuyordu. Üç değişiklik yapıldı. (1) Numaralı işaret artık silinmiyor, ayrı bir jetona dönüşüyor ve hangi hücreye ait olduğu korunuyor — işaret hücrenin ARDINA konduğu için kendinden önceki hücreye bağlanıyor. Bu normalleştirme halka arz tablosuna ÖZEL: aynı işlevi sermaye artırımı tablosu da kullanıyor ve orada son sütun metin olduğu için araya giren jeton satırları düşürüyordu (2026/48'de üç kayıttan ikisi kayboldu, testler yakaladı). (2) Dipnot bloğu numara→düzyazı olarak toplanıyor; dipnot birden çok satıra sarıyor ve sarma satırı öncekine ekleniyor. (3) Addan önce gelen kalıp sözcükler ayıklanıyor: ad regex içinde yakalanamıyor çünkü en soldan eşleşme cümlenin yarısını ada katıyor. Sondan geriye doğru büyük harfli kelime dizisi okunuyor ve \"ve\" yalnız iki büyük harfli kelimenin arasındaysa ada dâhil ediliyor — böylece \"Ticaret ve Sanayi AŞ\" bütün kalırken \"değerli ve Ali Kutay YARALI\"nın başındaki bağlaç dışarıda kalıyor.\n\nTek dipnot birden çok ortak taşıyabiliyor (TKNKA: Kemal YARALI 3.000.000 + Ali Kutay YARALI 3.000.000) ve ek satış ayrı dipnotta duruyor; ikisi de ayrı kalem olarak yazılıyor. Pay yapısı artık kalem kalem üretiliyor (Sermaye Artırımı / Ortak Satışı / Ek Ortak Satışı), dipnot okunamazsa satır adsız yazılıyor — sayıyı düşürmek adı bilmemekten kötü.\n\nCanlı bülten 2026/49 ile doğrulandı: Çitlekçi → Tunçlar Yatırım Holding AŞ, Teknika → Kemal YARALI + Ali Kutay YARALI, Türker Vangölü → Türkerler İnşaat … AŞ (27.500.000 + 12.500.000 ek), Kapeks → satan ortak yok (saf sermaye artırımı). Bülten ayrıştırıcı sürümü artırıldı, arşiv ilk yenilemede baştan kurulur ve geçmiş arzların satıcıları da dolar.\n\nArayüzde artık unvan KISALTILMIYOR. Eskiden parantez içi ilk iki kelimeye indiriliyordu (\"(Türkerler İnşaat...)\") çünkü kart tabloya sığmıyordu; kart ekran genişliğine oturduğuna göre asıl merak edilen bilgi tam olarak görünebilir.",
+        "en": "The share-structure card said \"Ortak Satışı : 27.500.000 Lot\" without saying who was selling unless halkarz.com happened to supply it. It now comes from the official source.\n\nIn the SPK bulletin's IPO table the sale columns are bare numbers; the seller's name is deferred to a footnote via a marker attached to the cell. The parser used to strip those markers, so the footnotes were never read. Markers are now preserved as separate tokens bound to the preceding cell, the footnote block is collected (including wrapped lines), and the name is recovered by walking backwards over capitalised words — \"ve\" counts as part of the name only between two capitalised words, so \"Ticaret ve Sanayi AŞ\" stays whole. The marker-preserving normalisation is specific to the IPO table: the capital increase table shares the old one and broke when tokens appeared mid-row.\n\nOne footnote can name several sellers, and the over-allotment sits in its own footnote; each becomes a separate line. Verified against live bulletin 2026/49. The bulletin parser version was bumped so the archive rebuilds and historical offerings gain their sellers. The UI no longer abbreviates the name."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/ipo_pipeline.rs",
+        "core/src/kap_tssd.rs",
+        "core/src/spk.rs",
+        "src/features/corporate/CorporateActionsView.tsx",
+        "src/features/guide/GuideView.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda halka arzda payını satan ortağın adını SPK bülteninden oku. ÖNCE ham bülteni gör, sonra kod yaz.\n\n1. KAYNAĞI DOĞRULA. Bir bülten PDF'i indir (ör. 2026/49) ve 'İlk Halka Arzlar' tablosunun ham metnine bak. Satış sütunlarının çıplak sayı olduğunu, adın tablonun ALTINDAKİ dipnotlarda durduğunu ve hücreye `(5)` gibi bir işaretle bağlandığını kendin gör.\n\n2. İŞARETİ KORU AMA YALNIZ BU TABLODA. Satır normalleştirici numaralı dipnot işaretini siliyor; sil yerine ayrı bir jetona çevir ve KENDİNDEN ÖNCEKİ hücreye bağla (işaret hücrenin ardına konuyor). DİKKAT: aynı normalleştiriciyi sermaye artırımı tablosu da kullanıyor ve orada son sütun metindir — araya giren jeton satırları düşürür. Halka arz tablosuna ayrı bir normalleştirici yaz; yazmazsan testler sermaye tablosunda kayıp verecek.\n\n3. DİPNOT BLOĞUNU TOPLA. Numara→düzyazı haritası; dipnot birden çok satıra sarıyor ve sarma satırı işaretle başlamıyor, öncekine eklenmeli. Blok bir sonraki bölüm başlığında biter.\n\n4. ADI REGEX İÇİNDE YAKALAMA. En soldan eşleşme cümlenin yarısını ada katar. Kalıbın öncesinden sondan geriye doğru büyük harfli kelimeleri al; \"ve\" yalnız iki büyük harfli kelimenin arasındaysa ada dâhil olsun (\"Ticaret ve Sanayi AŞ\" bütün kalmalı, \"değerli ve Ali Kutay YARALI\"nın bağlacı düşmeli). Rakam içeren ya da çok kısa parça ad değildir — adsız yazmak yanlış ad yazmaktan iyidir.\n\n5. ÇOKLU ORTAK. Tek dipnot birden çok ortak taşıyabiliyor ve ek satış ayrı dipnotta. Her biri ayrı kalem olmalı, ek satış işaretlenmeli.\n\n6. Ayrıştırıcı sürümünü ARTIR, yoksa düzeltme yalnız yeni bültenlere işler ve arşivdeki geçmiş arzlar adsız kalır. Canlı bir bültenle uçtan uca doğrula.",
+      "notes": {
+        "tr": "Dipnotlar fiyatı da yazıyor (\"1 TL nominal değerli paylar 136,00 TL sabit fiyat üzerinden satışa sunulacaktır\"); şu an okunmuyor ama fiyat sütununu çapraz doğrulamak için kullanılabilir.\n\nSaf sermaye artırımıyla yapılan arzlarda satan ortak yoktur ve dipnot da yoktur (Kapeks, 2026/49) — boş liste doğru sonuçtur, eksiklik değil.",
+        "en": "Footnotes also state the price, which could later cross-check the price column. Offerings made purely through a capital increase have no selling shareholder and no footnote — an empty list is the correct result there, not a gap."
+      }
+    },
+    {
       "id": "2026-08-09-satis-duyurusu-tssd-okuyucu",
       "date": "2026-08-09",
       "author": "yazicmert",
