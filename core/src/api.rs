@@ -229,6 +229,18 @@ pub async fn list_kap_announcements(
     Ok(services::filter_kap(&store, filter))
 }
 
+/// Sembol bir BIST endeksi mi? Tarihçe kaynağını bu seçer.
+///
+/// Endeks kodları 'X' ile başlar ve BIST'te 'X' ile başlayan pay senedi yoktur
+/// (Borsa İstanbul'un endeks bileşen CSV'sindeki 578 payın hiçbiri). Elenmesi
+/// gerekenler de 'X' ile başlar ama Borsa İstanbul'da karşılığı yoktur: kripto
+/// çiftleri (XRP-USD) ve döviz pariteleri (XAUUSD=X).
+fn is_bist_index_symbol(ticker: &str) -> bool {
+    ticker.starts_with('X')
+        && !ticker.contains('-')
+        && (ticker.ends_with(".IS") || !ticker.contains('='))
+}
+
 pub async fn get_price_history(
     state: &AppState,
     ticker: String,
@@ -242,15 +254,12 @@ pub async fn get_price_history(
     if source.as_deref() == Some("isyatirim") {
         return crate::isyatirim_price::fetch_price_history(&state.http, &ticker, &r).await;
     }
-    // X ile başlayan BIST endeksleri kısa vadede Borsa İstanbul'dan gelir;
-    // 'max', '5y', '1y' gibi çok yıllık uzun dönemlerde Borsa İstanbul grafiği
-    // yalnızca son birkaç ayı döndürdüğü için Yahoo Finance tarihselliği kullanılır.
-    if ticker.starts_with('X') && !ticker.contains('-') && (ticker.ends_with(".IS") || !ticker.contains('=')) {
-        if r != "max" && r != "5y" && r != "1y" {
-            if let Ok(rows) = crate::bist::fetch_index_history(&state.http, &ticker, &r).await {
-                if !rows.is_empty() {
-                    return Ok(rows);
-                }
+    // BIST endekslerinin tarihçesi HER aralıkta Borsa İstanbul'dan gelir; Yahoo
+    // yalnız yedektir (istek hata verir ya da boş dönerse aşağıya düşülür).
+    if is_bist_index_symbol(&ticker) {
+        if let Ok(rows) = crate::bist::fetch_index_history(&state.http, &ticker, &r).await {
+            if !rows.is_empty() {
+                return Ok(rows);
             }
         }
     }
@@ -759,4 +768,30 @@ pub async fn get_ipo_calendar(
         last_updated: cache.last_updated.clone(),
         scrape_ok: cache.scrape_ok,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bist_index_symbols_are_recognised() {
+        for symbol in ["XU100", "XU100.IS", "XU050.IS", "XHARZ", "XUTEK.IS", "XUHIZ"] {
+            assert!(is_bist_index_symbol(symbol), "{symbol} endeks sayılmalıydı");
+        }
+    }
+
+    #[test]
+    fn crypto_and_fx_pairs_are_not_bist_indices() {
+        for symbol in ["XRP-USD", "XAUUSD=X", "XAGUSD=X"] {
+            assert!(!is_bist_index_symbol(symbol), "{symbol} endeks sayılmamalıydı");
+        }
+    }
+
+    #[test]
+    fn equities_are_not_bist_indices() {
+        for symbol in ["THYAO.IS", "ASELS", "GARAN.IS", "DERHL.IS"] {
+            assert!(!is_bist_index_symbol(symbol), "{symbol} endeks sayılmamalıydı");
+        }
+    }
 }

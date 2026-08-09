@@ -119,4 +119,31 @@ mod tests {
         assert!(all.len() > 3_000);
         assert!(all.len() > three_months.len());
     }
+
+    /// Panoda/katalogda açılabilen her BIST endeksi uzun aralıklarda da dolu
+    /// seri vermeli. `api::get_price_history` bir dönem 1y/5y/max aralıklarını
+    /// Yahoo'ya yönlendiriyordu; Yahoo bu sembollerin çoğunda 'max' aralığında
+    /// bile tek bar döndürdüğü için grafik boş kalıyordu. Bu test yönlendirmenin
+    /// geri gelmesini değil, Borsa İstanbul'un uzun aralık kapsamasını korur.
+    #[tokio::test]
+    #[ignore = "requires live Borsa İstanbul access"]
+    async fn live_every_exposed_index_has_long_history() {
+        let client = reqwest::Client::new();
+        for code in ["XU100", "XU050", "XU030", "XBANK", "XUSIN", "XUTEK", "XHARZ"] {
+            let year = fetch_index_history(&client, code, "1y").await.unwrap();
+            let all = fetch_index_history(&client, code, "max").await.unwrap();
+            assert!(year.len() > 200, "{code} 1y yalnız {} bar", year.len());
+            assert!(all.len() > 2_000, "{code} max yalnız {} bar", all.len());
+        }
+    }
+
+    /// Sembol ".IS" ekiyle de gelebilir (katalog `XU100.IS` saklar); ekin
+    /// soyulmaması tüm endeks isteklerini sessizce Yahoo'ya düşürürdü.
+    #[tokio::test]
+    #[ignore = "requires live Borsa İstanbul access"]
+    async fn live_suffixed_symbol_resolves() {
+        let client = reqwest::Client::new();
+        let rows = fetch_index_history(&client, "XU050.IS", "1y").await.unwrap();
+        assert!(rows.len() > 200);
+    }
 }

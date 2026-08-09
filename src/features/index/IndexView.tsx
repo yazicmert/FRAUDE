@@ -81,12 +81,18 @@ export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexVi
 
   const yahooSymbol = SYMBOL_MAP[symbol] || symbol;
   
-  // Transform symbol to BIST code if possible
+  // Transform symbol to BIST code if possible.
+  // Kod eşlemesi olmayan endeks, CSV'den gelen bileşen listesine (kodla
+  // anahtarlanır) hiç ulaşamaz: ısı haritası boş kalır ve endekse giriş/çıkış
+  // rozeti (index_code karşılaştırması) hiç eşleşmez. BIST HALKA ARZ'ın liste
+  // görünümü ayrı bir özel yolla dolduğu için bu eksik uzun süre görünmedi.
   const bistCode = symbol === 'BIST 100' ? 'XU100' :
                    symbol === 'BIST 30' ? 'XU030' :
-                   symbol === 'BIST 50' ? 'XU050' : 
-                   symbol === 'BIST BANKA' ? 'XBANK' : 
+                   symbol === 'BIST 50' ? 'XU050' :
+                   symbol === 'BIST BANKA' ? 'XBANK' :
                    symbol === 'BIST SINAI' ? 'XUSIN' :
+                   symbol === 'BIST HIZMETLER' ? 'XUHIZ' :
+                   symbol === 'BIST HALKA ARZ' ? 'XHARZ' :
                    symbol === 'BIST TEKNOLOJI' ? 'XUTEK' : symbol;
 
   const isGlobalIndex = symbol === 'S&P 500' || symbol === 'NASDAQ' || symbol === 'DOW JONES';

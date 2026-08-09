@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-09-endeks-uzun-aralik-yonlendirmesi",
+      "date": "2026-08-09",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Endeks grafiklerinde 1Y / 5Y / TÜM aralıkları artık boş gelmiyor",
+        "en": "Index charts no longer come back empty on the 1Y / 5Y / ALL ranges"
+      },
+      "summary": {
+        "tr": "BIST endekslerinin 86'sının tamamı üç kaynakta canlı tarandı ve uygulamanın veri çekiminde iki eksik bulundu. Birincisi ve önemlisi: endeks tarihçesi kısa aralıklarda Borsa İstanbul'dan alınıyor, ama 1y, 5y ve max aralıkları 'Borsa İstanbul yalnız son birkaç ayı döndürüyor' gerekçesiyle Yahoo'ya yönlendiriliyordu. Ölçüm bunun tam tersini gösterdi: Borsa İstanbul XU100'ü 31/01/1986'ya kadar 9.674 günlük barla veriyor, Yahoo'nun aynı sembol için 'max' yanıtı 351 bar. Dahası Yahoo, 86 endeksin 82'sinde 'max' aralığında bile TEK bar döndürüyor; bunların arasında uygulamanın kataloğunda açılabilen BIST 50, BIST TEKNOLOJİ ve BIST HALKA ARZ da var. Yani kural, grafiği tam da boş kalacağı kaynağa gönderiyordu: bu üç endekste 1Y/5Y/TÜM düğmeleri tek noktalı bir grafik üretiyordu. Artık BIST endekslerinin tarihçesi her aralıkta Borsa İstanbul'dan gelir, Yahoo yalnızca yedektir (istek hata verir ya da boş dönerse). Kaynak seçimi saf ve test edilebilir bir fonksiyona çıkarıldı; kripto çiftleri (XRP-USD) ve döviz pariteleri (XAUUSD=X) de 'X' ile başladığı için ayıklanmaları birim testle sabitlendi, BIST'te 'X' ile başlayan pay senedi bulunmadığı (bileşen CSV'sindeki 578 payın hiçbiri) doğrulandı. İkinci eksik: BIST HALKA ARZ'ın endeks kodu eşlemesi yoktu. Bileşen listesi koda göre (XHARZ) anahtarlandığından ısı haritası boş kalıyor ve endekse giriş/çıkış rozeti hiç eşleşmiyordu; liste görünümü ayrı bir özel yoldan dolduğu için eksik uzun süre görünmemişti. Denetimin doğruladıkları da kayda değer: Borsa İstanbul ile İş Yatırım 86 endeksin 86'sında son kapanışta birebir aynı değeri veriyor ve ikisi de son işlem gününe kadar günceldi; şeritteki 8 endeksin günlük değişimi de doğru çıktı. Yeni canlı testler kataloğa açık her endeksin 1y'de 200'den, max'ta 2.000'den fazla bar döndürdüğünü denetliyor.",
+        "en": "All 86 BIST indices were swept live against three sources, and two gaps were found in the app's data fetching. The first and more serious: index history is taken from Borsa İstanbul on short ranges, but the 1y, 5y and max ranges were routed to Yahoo on the grounds that 'Borsa İstanbul only returns the last few months'. Measurement showed the exact opposite: Borsa İstanbul serves XU100 with 9,674 daily bars going back to 31/01/1986, while Yahoo's 'max' response for the same symbol is 351 bars. Worse, Yahoo returns a SINGLE bar even at 'max' for 82 of the 86 indices — among them BIST 50, BIST TEKNOLOJİ and BIST HALKA ARZ, all of which the app's catalog can open. So the rule sent the chart precisely to the source where it would be empty: on those three indices the 1Y/5Y/ALL buttons produced a single-point chart. Index history now comes from Borsa İstanbul on every range, with Yahoo as a fallback only (if the request errors or returns nothing). The source decision was extracted into a pure, testable function; crypto pairs (XRP-USD) and FX pairs (XAUUSD=X) also start with 'X', so their exclusion is pinned by unit tests, and it was verified that no BIST equity starts with 'X' (none of the 578 shares in the constituent CSV). The second gap: BIST HALKA ARZ had no index-code mapping. Because the constituent list is keyed by code (XHARZ), its heatmap stayed empty and the index add/remove badge never matched; the list view filled through a separate special case, which is why the gap went unnoticed. What the audit confirmed is worth recording too: Borsa İstanbul and İş Yatırım return an identical last close for 86 of 86 indices and both were current through the last trading day, and the daily change for the 8 indices on the marquee checked out correct. New live tests assert that every index reachable from the catalog returns more than 200 bars at 1y and more than 2,000 at max."
+      }
+    },
+    {
       "id": "2026-08-09-tam-senkron-gunluk-degisim-eksigi",
       "date": "2026-08-09",
       "author": "yazicmert",
