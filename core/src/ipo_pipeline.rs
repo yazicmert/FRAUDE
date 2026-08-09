@@ -296,9 +296,23 @@ fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoAppro
         // gerçekleşen arz bundan küçük olabilir. Enda Enerji 100.000.000 lotla
         // onaylanıp 91.719.684 lot satmış. Tamamlanmış bir arzda gerçekleşen
         // rakam tavandan daha doğrudur; tavan yalnız boşluğu doldurur.
-        if approval.ipo_size_tl > 0.0 && entry.ipo_size.is_none() {
-            entry.ipo_size = Some(format_ipo_size(approval.ipo_size_tl));
-            changed = true;
+        //
+        // Tek istisna, **kendi türettiğimiz** değerdir: o bir kaynak ölçümü
+        // değil, bültenin o günkü okunuşudur. Ayrıştırıcı düzelince (yüz katı
+        // fiyat hatası gibi) eski türev arşivde kalıyor ve düzeltilmiş fiyatla
+        // çelişiyordu. Biçim imzası ayırt etmeye yeter: bu kalıbı yalnız
+        // `format_ipo_size` üretir, halkarz.com "～ 6,2 Milyar TL." yazar.
+        if approval.ipo_size_tl > 0.0
+            && entry
+                .ipo_size
+                .as_deref()
+                .is_none_or(is_derived_ipo_size)
+        {
+            let refreshed = format_ipo_size(approval.ipo_size_tl);
+            if entry.ipo_size.as_deref() != Some(refreshed.as_str()) {
+                entry.ipo_size = Some(refreshed);
+                changed = true;
+            }
         }
 
         // "SPK onaylı" etiketi şart: etiketsiz sayı, başka sitelerdekiyle
@@ -361,6 +375,15 @@ const KAP_SOURCE: &str = "KAP";
 /// İzahname arzdan ~2 ay önce, sonuç bildirimi birkaç gün sonra yayımlanır;
 /// altı ay iki yönde de rahat pay bırakır.
 const KAP_MATCH_WINDOW_DAYS: i64 = 180;
+
+/// Bu metni biz mi ürettik? `format_ipo_size` çıktısı "<tamsayı> TL (" ile
+/// başlar; hiçbir dış kaynak büyüklüğü böyle yazmıyor.
+fn is_derived_ipo_size(size: &str) -> bool {
+    let Some((digits, rest)) = size.split_once(" TL (") else {
+        return false;
+    };
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) && rest.ends_with(')')
+}
 
 fn format_ipo_size(size_tl: f64) -> String {
     if size_tl >= 1_000_000_000.0 {
@@ -657,6 +680,50 @@ mod tests {
             "SPK'nın onayladığı fiyat halkarz.com değerini ezmeli"
         );
         assert_eq!(archive[0].spk_bulletin_no.as_deref(), Some("2026/49"));
+    }
+
+    /// **Regresyon: düzeltilmiş fiyat, ondan türetilmiş büyüklüğü de düzeltmeli.**
+    ///
+    /// Selva'nın fiyatı bültenden yüz katı okunmuştu ve arşivdeki büyüklük o
+    /// fiyattan türemişti (7,96 milyar TL). Ayrıştırıcı düzelip fiyat 3,06'ya
+    /// inince, "büyüklük ezilmez" kuralı eski türevi olduğu gibi bırakıyor ve
+    /// kayıt kendi içinde çelişik kalıyordu.
+    #[test]
+    fn a_size_we_derived_ourselves_is_refreshed_with_the_price() {
+        let mut archive = vec![PersistedIpo {
+            name: "Selva Gıda Sanayi A.Ş.".to_string(),
+            price: 306.0,
+            ipo_size: Some(format_ipo_size(36_500_000.0 * 306.0)),
+            ..PersistedIpo::default()
+        }];
+
+        let mut corrected = approval("Selva Gıda Sanayi AŞ", 3.06);
+        corrected.approval_date = today_in_turkish().0;
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&corrected));
+
+        assert_eq!(archive[0].price, 3.06);
+        assert_eq!(
+            archive[0].ipo_size.as_deref(),
+            Some(format_ipo_size(36_500_000.0 * 3.06).as_str()),
+            "kendi türettiğimiz büyüklük fiyatla birlikte tazelenmeli"
+        );
+    }
+
+    /// Dış kaynağın yazdığı büyüklük **korunmalı**: gerçekleşen arz, onaylanan
+    /// tavandan küçük olabilir ve tavan onun yerini almamalı.
+    #[test]
+    fn a_scraped_size_still_survives_the_approval() {
+        let mut archive = vec![PersistedIpo {
+            name: "Şa-Ra Enerji İnşaat Tic. ve San. A.Ş.".to_string(),
+            ipo_size: Some("～ 6,2 Milyar TL.".to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        let mut approved = approval("Şa-Ra Enerji İnşaat Tic. ve San. AŞ", 70.0);
+        approved.approval_date = today_in_turkish().0;
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approved));
+
+        assert_eq!(archive[0].ipo_size.as_deref(), Some("～ 6,2 Milyar TL."));
     }
 
     /// KAP'ın tek resmî kaynak olduğu alanlar scraper değerini ezmeli;
