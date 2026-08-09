@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-09-artimli-senkron-gunluk-degisim-tabani",
+      "date": "2026-08-09",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Artımlı senkronda günlük değişim sağlayıcıdan okunuyor (kendi bayat değerini besleyen taban giderildi)",
+        "en": "Incremental sync now reads the daily change from the provider (fixes a base that fed on its own stale value)"
+      },
+      "summary": {
+        "tr": "En çok artanlar listesinde DUNYH +%36,11 ve VKGYO +%27,54 görünüyordu; BIST'te günlük fiyat marjı ±%10 olduğundan bu değerler tek seansta imkânsızdı. Fiyatlar doğruydu (148,50 ve 2,53) — bozuk olan değişimin tabanıydı. Sebep artımlı senkrondaydı: İş Yatırım toplu ekranı yalnız güncel kapanış veriyordu, önceki kapanış ise satırın KENDİ fiyat/değişim ikilisinden geri türetiliyordu. Bu kendini besleyen bir sarmaldı — türetilen değişim bir sonraki turda tabanı üretiyor, taban hiç tazelenmediği için hata birikerek kalıcılaşıyordu. Ölçüm (uygulamanın kendi önbelleği, 2026-08-09): DUNYH'nin ima ettiği taban 109,10'du ve bu tam olarak 2026-03-22 kapanışına eşitti, yani taban 4,5 ay bayattı; gerçek günlük değişim −%1,66'ydı. VKGYO gerçekte %0,00 değişmişti. Çözüm: değişim artık fiyatla AYNI istekten, sağlayıcının kendi alanından okunuyor (screener kriter kodu 16). Kod canlı doğrulandı: DUNYH −1,66, VKGYO 0,00, DERHL +2,86 — üçü de İş Yatırım'ın gerçek serisiyle birebir. Kapsam ölçüldü, kayıp yok: yalnız kapanış istendiğinde 602 satır geliyordu, kapanış+değişim istendiğinde yine 602 satır ve 602'sinde de değişim dolu. Sağlayıcı değişimi vermezse satırın eldeki değeri korunuyor; uydurma taban üretilmiyor ve doğrusu en geç bir sonraki tam senkronda geliyor. Uygulamanın önbelleğindeki 619 BIST satırı İş Yatırım'la karşılaştırıldı: bu iki hisse dışında 1 puandan fazla sapan başka satır yok.",
+        "en": "The top-gainers list showed DUNYH at +36.11% and VKGYO at +27.54%, impossible in a single session given BIST's ±10% daily price limit. The prices were right (148.50 and 2.53) — what was broken was the base of the change. The cause was in the incremental sync: the İş Yatırım bulk screen only supplied a current close, so the previous close was back-derived from the row's OWN price/change pair. That was a self-feeding loop — the derived change produced the next round's base, and because the base was never refreshed the error compounded and became permanent. Measured against the app's own cache (2026-08-09): DUNYH's implied base was 109.10, exactly the close for 2026-03-22, meaning the base was 4.5 months stale; the real daily change was −1.66%. VKGYO had actually moved 0.00%. The fix reads the change from the provider's own field in the SAME request as the price (screener criterion 16). Verified live: DUNYH −1.66, VKGYO 0.00, DERHL +2.86, all matching İş Yatırım's real series exactly. Coverage was measured with no loss: requesting the close alone returned 602 rows, close+change returned the same 602 rows with the change populated on all of them. If the provider omits the change, the row's existing value is kept — no invented base — and the correct figure arrives at the next full sync at the latest. All 619 BIST rows in the app's cache were compared against İş Yatırım: apart from these two, no row deviates by more than 1 point."
+      }
+    },
+    {
       "id": "2026-08-09-yahoo-olcek-onarimi-ve-analist-raporlari",
       "date": "2026-08-09",
       "author": "yazicmert",

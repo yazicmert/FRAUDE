@@ -23,6 +23,20 @@ struct CurrentRatios {
     market_cap: Option<f64>,
     /// Güncel (gecikmeli) fiyat; screener kriter kodu 7 "kapanış".
     close: Option<f64>,
+    /// Günlük değişim yüzdesi; screener kriter kodu 16.
+    ///
+    /// Fiyatla **aynı** istekten gelir. Değişimi fiyattan türetmek yerine
+    /// kaynaktan okumak, artımlı senkronun eskiyen bir tabana yaslanmasını
+    /// baştan engeller (bkz. `yahoo::apply_incremental_prices`).
+    change_pct: Option<f64>,
+}
+
+/// Toplu ekrandan gelen tek bir BIST kotasyonu.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BistQuote {
+    pub close: f64,
+    /// Kaynağın bildirdiği günlük değişim; türetilmiş değil.
+    pub change_pct: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -77,12 +91,14 @@ pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) ->
 /// boş bıraktığı hisseler haritada yer almaz; çağıran eldeki fiyatı korur.
 /// `CACHE_TTL` (15 dk) içindeki çağrılar ağa gitmez — BIST verisi zaten ~15 dk
 /// gecikmeli olduğundan daha sık sormanın karşılığı yoktur.
-pub async fn current_closes(client: &reqwest::Client) -> HashMap<String, f64> {
+pub async fn current_closes(client: &reqwest::Client) -> HashMap<String, BistQuote> {
     let Some(ratios) = load_ratios(client).await else { return HashMap::new() };
     ratios
         .into_iter()
-        .filter_map(|(ticker, row)| Some((ticker, row.close?)))
-        .filter(|(_, close)| *close > 0.0)
+        .filter_map(|(ticker, row)| {
+            let close = row.close?;
+            (close > 0.0).then_some((ticker, BistQuote { close, change_pct: row.change_pct }))
+        })
         .collect()
 }
 
@@ -146,6 +162,14 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
     let market_cap_only = serde_json::json!([
         ["8", "0", "1000000000", "False"]
     ]);
+    // Kapanış (7) + günlük değişim (16) aynı katmanda istenir: ikisi de aynı
+    // seansın verisi olduğundan fiyat ve değişim hiçbir zaman farklı günlere
+    // ait olamaz. Ölçüldü (2026-08-09): yalnız 7 → 602 satır, 7+16 → 602 satır,
+    // 16 alanı 602'sinde de dolu; kapsam kaybı yok.
+    let quotes = serde_json::json!([
+        ["7", "1", "50000", "False"],
+        ["16", "-100000", "100000", "False"]
+    ]);
     let base = serde_json::json!([
         ["7", "1", "50000", "False"],
         ["28", "-100000", "100000", "False"],
@@ -167,15 +191,16 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
         ["40", "0", "100", "False"]
     ]);
 
-    let (widest, base_body, extended_body, foreign_body) = tokio::join!(
+    let (widest, quote_body, base_body, extended_body, foreign_body) = tokio::join!(
         screener_request(client, &cookies, &market_cap_only),
+        screener_request(client, &cookies, &quotes),
         screener_request(client, &cookies, &base),
         screener_request(client, &cookies, &extended),
         screener_request(client, &cookies, &foreign),
     );
 
     let mut map = parse_rows(&widest?)?;
-    for body in [base_body, extended_body, foreign_body].into_iter().flatten() {
+    for body in [quote_body, base_body, extended_body, foreign_body].into_iter().flatten() {
         if let Ok(rows) = parse_rows(&body) {
             for (ticker, ext) in rows {
                 let entry = map.entry(ticker).or_default();
@@ -188,6 +213,7 @@ async fn fetch_ratios(client: &reqwest::Client) -> Result<RatioMap, String> {
                 entry.foreign_ratio = ext.foreign_ratio.or(entry.foreign_ratio);
                 entry.market_cap = ext.market_cap.or(entry.market_cap);
                 entry.close = ext.close.or(entry.close);
+                entry.change_pct = ext.change_pct.or(entry.change_pct);
             }
         }
     }
@@ -246,6 +272,7 @@ fn parse_rows(value: &str) -> Result<RatioMap, String> {
             // Ekran 8 no'lu kriteriyi milyon TL olarak döndürür; ısı haritası TL bekler.
             market_cap: number(&row, "8").map(|value| value * 1_000_000.0),
             close: number(&row, "7"),
+            change_pct: number(&row, "16"),
         });
     }
     Ok(parsed)
@@ -270,6 +297,34 @@ mod tests {
         assert_eq!(asels.pb, Some(6.0));
         assert_eq!(asels.roe, Some(16.23));
         assert_eq!(asels.roa, Some(9.41));
+    }
+
+    /// Günlük değişim (kriter 16) kapanışla aynı kapsamda gelmeli ve BIST
+    /// fiyat marjı içinde kalmalı. Bu alan boşalırsa artımlı senkron sessizce
+    /// bayat değişim göstermeye döner — regresyonu burada yakalarız.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_quotes_carry_provider_change() {
+        let quotes = current_closes(&reqwest::Client::new()).await;
+        assert!(quotes.len() > 300, "kotasyon kapsamı düşük: {}", quotes.len());
+
+        let with_change = quotes.values().filter(|quote| quote.change_pct.is_some()).count();
+        assert!(
+            with_change * 100 / quotes.len() >= 95,
+            "değişim kapsamı düşük: {with_change}/{}",
+            quotes.len()
+        );
+
+        // BIST'te günlük marj ±%10; küçük bir tolerans payıyla sınır aşılmamalı.
+        for (ticker, quote) in &quotes {
+            if let Some(change) = quote.change_pct {
+                assert!(
+                    change.abs() <= 25.0,
+                    "{ticker} sağlayıcı değişimi fiyat marjını aşıyor: {change:+.2}%"
+                );
+            }
+        }
+        println!("{} kotasyon, {} tanesinde değişim", quotes.len(), with_change);
     }
 
     #[tokio::test]

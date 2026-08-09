@@ -1078,14 +1078,24 @@ pub async fn fetch_global_quotes(client: &reqwest::Client) -> Vec<MarketQuote> {
 
 /// Ucuz toplu fiyatları mevcut evrenin üzerine işler; güncellenen satır sayısını döndürür.
 ///
-/// BIST satırlarında önceki kapanış, satırın eldeki fiyat/değişim ikilisinden
-/// türetilir; böylece değişim yüzdesi aynı tabana göre güncel kalır. Gün
-/// devrildiğinde taban eskir — sapma en geç bir sonraki tam senkronda düzelir.
+/// BIST satırlarında değişim yüzdesi **sağlayıcıdan** okunur (screener kriter
+/// 16), fiyatla aynı istekten gelir. Eskiden taban satırın kendi fiyat/değişim
+/// ikilisinden geri türetiliyordu; bu, tabanı hiç tazelenmeyen bir sarmala
+/// sokuyordu: türetilen değişim bir sonraki turda tabanı üretiyor, hata
+/// birikerek kalıcılaşıyordu. Ölçüm (2026-08-09, uygulamanın kendi önbelleği):
+/// DUNYH +%36,11 görünüyordu, tabanı 2026-03-22 kapanışıydı (109,10) — gerçek
+/// günlük değişim −%1,66. VKGYO +%27,54 görünürken gerçek değişim %0,00'dı.
+/// Fiyatlar doğruydu, bozuk olan yalnız tabandı.
+///
+/// Sağlayıcı değişimi vermezse satırın eski değişimi **korunur**; uydurulmuş
+/// bir taban üretmektense bayat ama tutarlı bir değer bırakmak yeğdir, ve
+/// doğrusu en geç bir sonraki tam senkronda gelir.
+///
 /// Göstergelere (RSI vb.) bilerek dokunulmaz: günlük barlarla çalışırlar ve
 /// tam senkron yeniler.
 pub fn apply_incremental_prices(
     equities: &mut [EquityRow],
-    bist_closes: &HashMap<String, f64>,
+    bist_closes: &HashMap<String, crate::isyatirim::BistQuote>,
     global_quotes: &[MarketQuote],
 ) -> usize {
     let mut updated = 0;
@@ -1108,14 +1118,13 @@ pub fn apply_incremental_prices(
         }
     }
 
-    // BIST satırları: İş Yatırım toplu kapanışından güncellenir.
+    // BIST satırları: İş Yatırım toplu ekranından fiyat ve değişim birlikte.
     for row in equities.iter_mut() {
-        let Some(&close) = bist_closes.get(&row.ticker) else { continue };
-        if close <= 0.0 || row.price <= 0.0 { continue; }
-        let previous = row.price / (1.0 + row.change_pct / 100.0);
-        row.price = close;
-        if previous.is_finite() && previous > 0.0 {
-            row.change_pct = (close - previous) / previous * 100.0;
+        let Some(&quote) = bist_closes.get(&row.ticker) else { continue };
+        if quote.close <= 0.0 { continue; }
+        row.price = quote.close;
+        if let Some(change_pct) = quote.change_pct.filter(|value| value.is_finite()) {
+            row.change_pct = change_pct;
         }
         row.as_of_ts = Some(fetched_at);
         updated += 1;
@@ -1338,14 +1347,17 @@ mod tests {
         fn row(ticker: &str, price: f64, change_pct: f64) -> EquityRow {
             EquityRow { ticker: ticker.into(), price, change_pct, ..Default::default() }
         }
+        use crate::isyatirim::BistQuote;
         let mut equities = vec![
-            row("ASELS", 100.0, 25.0),         // önceki kapanış 80'e denk gelir
+            row("ASELS", 100.0, 25.0),         // eldeki bayat değişim
             row("THYAO", 300.0, 0.0),          // kapanış gelmeyecek → aynı kalmalı
             row("GC=F", 2000.0, 1.0),
             row("USDTRY=X", 40.0, 0.5),
             row("GRAM ALTIN", 2572.0, 1.0),
         ];
-        let closes = HashMap::from([("ASELS".to_string(), 90.0)]);
+        let closes = HashMap::from([
+            ("ASELS".to_string(), BistQuote { close: 90.0, change_pct: Some(-1.5) }),
+        ]);
         let globals = vec![
             MarketQuote { symbol: "GC=F".into(), price: 2100.0, previous_close: 2000.0, as_of_ts: Some(10) },
             MarketQuote { symbol: "USDTRY=X".into(), price: 41.0, previous_close: 40.0, as_of_ts: Some(9) },
@@ -1355,7 +1367,9 @@ mod tests {
         assert_eq!(updated, 4, "ASELS + altın + USD/TRY + gram altın");
 
         assert_eq!(equities[0].price, 90.0);
-        assert!((equities[0].change_pct - 12.5).abs() < 1e-9, "80 tabanına göre %12.5 olmalı: {}", equities[0].change_pct);
+        // Değişim sağlayıcıdan gelir; eldeki %25'lik bayat değerden taban
+        // türetilmez (türetilseydi 80 tabanına göre %12,5 çıkardı).
+        assert!((equities[0].change_pct + 1.5).abs() < 1e-9, "sağlayıcının değişimi: {}", equities[0].change_pct);
 
         assert_eq!(equities[1].price, 300.0);
         assert_eq!(equities[1].change_pct, 0.0);
@@ -1370,6 +1384,53 @@ mod tests {
         let expected_change = combined_change_pct(5.0, 2.5);
         assert!((gram.change_pct - expected_change).abs() < 1e-9);
         assert_eq!(gram.as_of_ts, Some(9), "sentetik seri iki bileşenin daha eski zamanını taşır");
+    }
+
+    /// Artımlı senkron eski değişimi **taban olarak** kullanmamalı.
+    ///
+    /// DUNYH 2026-08-09'da ekranda +%36,11 görünüyordu; ima edilen taban
+    /// 2026-03-22 kapanışıydı (109,10). Fiyat her turda tazeleniyor ama taban
+    /// satırın kendi bayat değişiminden geri türetildiği için hata kendini
+    /// besliyordu. Değişim artık fiyatla aynı istekten okunur.
+    #[test]
+    fn incremental_change_does_not_feed_on_its_own_stale_value() {
+        use crate::isyatirim::BistQuote;
+        let mut equities = vec![EquityRow {
+            ticker: "DUNYH".into(),
+            price: 148.5,
+            change_pct: 36.11, // bozuk, aylar önceki tabandan kalma
+            ..Default::default()
+        }];
+        let closes = HashMap::from([
+            ("DUNYH".to_string(), BistQuote { close: 148.5, change_pct: Some(-1.66) }),
+        ]);
+
+        apply_incremental_prices(&mut equities, &closes, &[]);
+        assert!((equities[0].change_pct + 1.66).abs() < 1e-9, "gerçek değişim: {}", equities[0].change_pct);
+
+        // Aynı tur tekrar çalışsa da değer sabit kalmalı: hata birikmez.
+        apply_incremental_prices(&mut equities, &closes, &[]);
+        assert!((equities[0].change_pct + 1.66).abs() < 1e-9, "tekrarda kaymamalı: {}", equities[0].change_pct);
+    }
+
+    /// Sağlayıcı değişimi vermezse eldeki değer korunur; uydurulmuş bir taban
+    /// üretilmez. Fiyat yine de tazelenir.
+    #[test]
+    fn incremental_keeps_previous_change_when_provider_omits_it() {
+        use crate::isyatirim::BistQuote;
+        let mut equities = vec![EquityRow {
+            ticker: "ASELS".into(),
+            price: 100.0,
+            change_pct: 2.5,
+            ..Default::default()
+        }];
+        let closes = HashMap::from([
+            ("ASELS".to_string(), BistQuote { close: 104.0, change_pct: None }),
+        ]);
+
+        apply_incremental_prices(&mut equities, &closes, &[]);
+        assert_eq!(equities[0].price, 104.0, "fiyat yine de tazelenmeli");
+        assert_eq!(equities[0].change_pct, 2.5, "değişim korunmalı");
     }
 
     #[test]
