@@ -35,6 +35,15 @@ fn write_cache(cache: &Cache) {
     }
 }
 
+/// Önbellekteki evren; ağ erişimi yapmaz, bayat da olsa okunur.
+///
+/// Unvan → kod eşleştirmesi gibi eşzamanlı yollar için: bir gün eski liste,
+/// hiç liste olmamasından iyidir. Önbellek yoksa boş döner ve çağıran statik
+/// listeye güvenmeye devam eder.
+pub fn cached_symbols() -> Vec<(String, String)> {
+    read_cache().map(|cache| cache.symbols).unwrap_or_default()
+}
+
 /// Tam BIST evrenini (ticker, ünvan) döndürür. Önbellek bugüne aitse ağdan
 /// çekmez. Ağ hatasında bayat önbellek (varsa) döner, o da yoksa boş liste —
 /// bu durumda çağıran taraf statik listeye güvenmeye devam eder.

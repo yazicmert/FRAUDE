@@ -399,6 +399,10 @@ pub struct DividendRecord {
     /// Aynı takvim yılı içindeki kaçıncı ödeme (1 tabanlı). 0 = hesaplanmadı.
     #[serde(default)]
     pub installment: u32,
+    /// Kaydın geldiği kaynak ("KAP Bildirimi 1617428" / "Yahoo Finance").
+    /// Resmî kaynağa geçiş sürerken hangi satırın nereden geldiği görünür olmalı.
+    #[serde(default)]
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -444,6 +448,39 @@ pub struct IpoRecord {
     pub t1_t2_available: Option<String>,
     #[serde(default)]
     pub distribution_ratios: Option<String>,
+    #[serde(default)]
+    pub price_range: Option<String>,
+    #[serde(default)]
+    pub lot_amount: Option<String>,
+    #[serde(default)]
+    pub market: Option<String>,
+    #[serde(default)]
+    pub index_name: Option<String>,
+    #[serde(default)]
+    pub free_float_lots: Option<String>,
+    #[serde(default)]
+    pub free_float_ratio: Option<String>,
+    #[serde(default)]
+    pub sale_method: Option<String>,
+    #[serde(default)]
+    pub expected_lots: Option<String>,
+    #[serde(default)]
+    pub financials: Option<String>,
+    #[serde(default)]
+    pub price_stability: Option<String>,
+    #[serde(default)]
+    pub public_float_ratio: Option<String>,
+    #[serde(default)]
+    pub discount: Option<String>,
+    #[serde(default)]
+    pub results_table: Option<Vec<crate::ipo_scraper::IpoResultRow>>,
+    #[serde(default)]
+    pub major_shareholders: Option<String>,
+    /// Kaydın hangi kaynaklardan doğrulandığı (SPK, KAP, halkarz.com).
+    #[serde(default)]
+    pub data_sources: Vec<String>,
+    #[serde(default)]
+    pub spk_bulletin_no: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -51,6 +51,10 @@ struct DisclosureRow {
     summary: Option<String>,
     #[serde(rename = "disclosureIndex")]
     disclosure_index: u64,
+    /// Bildirimi yapan şirketin KAP'taki tam unvanı. Yanıtta `companyName`
+    /// **yoktur**; unvan yalnız bu alanda gelir.
+    #[serde(rename = "kapTitle")]
+    kap_title: Option<String>,
     /// Bildirime ekli dosya sayısı (IR sunum, finansal rapor PDF'leri vb.).
     #[serde(rename = "attachmentCount", default)]
     attachment_count: u32,
@@ -190,6 +194,79 @@ fn fetch_window<'a>(
             _ => Ok(rows),
         }
     })
+}
+
+/// Modüller arası paylaşılan ham bildirim satırı.
+///
+/// `DisclosureRow` özeldir çünkü serde adlandırmaları uca bağlıdır; halka arz
+/// tarafı gibi başka modüller uçla değil bu sadeleşmiş görünümle konuşur.
+#[derive(Clone, Debug)]
+pub struct RawDisclosure {
+    pub publish_date: String,
+    pub subject: String,
+    pub disclosure_index: u64,
+    /// Bildirimi yapan şirketin KAP unvanı.
+    pub kap_title: String,
+    /// Bildirimle ilişkili pay kodları; bildirimi yapan yoksa ilgili paylar.
+    pub stock_codes: Vec<String>,
+    /// Bildirimin **konusu** olan paylar — bildirimi yapan şirketin kendi
+    /// kodlarından ayrı tutulur.
+    ///
+    /// Halka arzda ayrım hayati: bildirimi konsorsiyum lideri yapıyor, yani
+    /// `stock_codes` aracı kurumun kodudur ("DZY, DZYMK") ve arz edilen şirket
+    /// yalnız burada görünür ("MASFN"). Birleşik listede okunursa halka arz
+    /// verisi aracı kurumun kaydına yazılır.
+    pub related_stocks: Vec<String>,
+}
+
+impl RawDisclosure {
+    /// Bildirim numarasının metin hâli — gövde uçları ve arşiv anahtarları
+    /// metin kullanıyor.
+    pub fn disclosure_index_str(&self) -> String {
+        self.disclosure_index.to_string()
+    }
+}
+
+impl From<&DisclosureRow> for RawDisclosure {
+    fn from(row: &DisclosureRow) -> Self {
+        RawDisclosure {
+            publish_date: row.publish_date.clone(),
+            subject: row.subject.clone().unwrap_or_default(),
+            disclosure_index: row.disclosure_index,
+            kap_title: row.kap_title.clone().unwrap_or_default(),
+            stock_codes: row
+                .stock_code_list()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            related_stocks: split_codes(row.related_stocks.as_deref()),
+        }
+    }
+}
+
+/// "MASFN, DZY" → ["MASFN", "DZY"]. Boş ve "-" değerleri düşer.
+fn split_codes(raw: Option<&str>) -> Vec<String> {
+    raw.unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|code| !code.is_empty() && *code != "-")
+        .map(str::to_string)
+        .collect()
+}
+
+/// Verilen tarih aralığındaki **tüm** şirket bildirimlerini getirir.
+///
+/// `member_rows` yalnız son ~4 haftayı önbellekler; geçmişe dönük tarama
+/// (halka arz arşivi gibi) buradan geçer. Aralık tek istekle 2000 satır
+/// sınırına dayanırsa `fetch_window` özyinelemeli olarak böler, yani uzun
+/// aralıklarda da kayıt düşmez. Önbelleklenmez: çağıran kendi ritmini kurar.
+pub async fn disclosures_in_range(
+    client: &Client,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<RawDisclosure>, String> {
+    let rows = fetch_window(client, "members", from, to).await?;
+    Ok(rows.iter().map(RawDisclosure::from).collect())
 }
 
 /// "16.07.2026 15:50:23" → "16.07.2026 15:50". Beklenmedik biçim aynen kalır.
@@ -426,6 +503,7 @@ pub(crate) fn format_rss_date(raw: &str) -> String {
 
 use crate::domain::{KapAttachmentInfo, KapDisclosureDetail};
 use regex::Regex;
+use scraper::{Html, Selector};
 
 /// Bir KAP bildiriminin detay sayfasını çekip ek dosyaları ve export URL'lerini
 /// çıkarır. `disclosure_index` sayısal bildirim numarasıdır (ör. "1643242").
@@ -480,6 +558,250 @@ pub async fn fetch_disclosure_detail(
         word_url,
         excel_url,
     })
+}
+
+// ─── Bildirim Gövdesi (yapısal alanlar) ─────────────────────────────────
+
+/// Bir KAP bildiriminin gövdesi: etiket/değer hücrelerinin sıralı listesi.
+///
+/// Bildirim **sayfası** işe yaramaz — istemci tarafında render edilen bir React
+/// uygulaması, gövde sunucu HTML'inde yok. Gövdeye ulaşan üç anahtarsız uç var:
+///
+/// | uç | biçim | boyut |
+/// |---|---|---|
+/// | `api/BildirimPdf/{id}` | PDF | ~69 KB |
+/// | `api/notification/export/word/{id}` | HTML tablo | ~11 KB |
+/// | `api/notification/export/excel/{id}` | HTML tablo | ~11 KB |
+///
+/// Excel/Word aynı gövdeyi verir; excel seçildi çünkü PDF'in altıda biri
+/// büyüklüğünde ve metin çıkarma gerektirmeden **zaten tablolu**: alanlar
+/// `<td>etiket</td><td>değer</td>` çiftleri hâlinde geliyor. PDF yolunda aynı
+/// veriyi almak için sayfa düzeninden sütun tahmin etmek gerekirdi.
+/// Gövde **satır** olarak tutulur, düz hücre listesi olarak değil. Belgede iki
+/// ayrı düzen var ve ikisi tek listede ayırt edilemiyor:
+///
+/// ```text
+/// r6   [Mevcut Sermaye (TL)] [140.000.000]              ← etiket/değer çifti
+/// r9   [Pay Grup Bilgileri] [Mevcut Sermaye (TL)] […]   ← tablo başlığı
+/// r10  [BRKO, TRE…] [140.000.000] [] […]                ← tablo satırı
+/// r11  [] [Mevcut Sermaye (TL)] […]                     ← TOPLAM başlığı
+/// r12  [TOPLAM] [140.000.000] [] […]                    ← TOPLAM satırı
+/// ```
+///
+/// Tabloda etiketin hemen ardından değeri **gelmez**; başlıklar bir satırda,
+/// değerler ayrı satırda ve sütun sırasıyla durur. Düz listede "etiketten
+/// sonraki hücre" kuralı burada bir sonraki **başlığı** okur ve sessizce sıfır
+/// üretir.
+#[derive(Clone, Debug, Default)]
+pub struct KapForm {
+    pub rows: Vec<Vec<String>>,
+}
+
+impl KapForm {
+    /// İki hücreli satırlardaki etiket/değer çifti.
+    ///
+    /// Etiket **birebir** aranır: "Mevcut Sermaye (TL)" ile "Ulaşılacak
+    /// Sermaye (TL)" gibi birbirini içeren adlar var ve gevşek arama yanlış
+    /// alanı okur.
+    pub fn field(&self, label: &str) -> Option<&str> {
+        self.rows
+            .iter()
+            .find(|row| row.len() == 2 && row[0] == label)
+            .map(|row| row[1].as_str())
+    }
+
+    /// Pay grubu tablosunun TOPLAM satırındaki sütun değeri.
+    ///
+    /// Tutarlar pay grubu (A/B) bazında verilir; bizi ilgilendiren toplamdır.
+    /// Sütun, TOPLAM satırından hemen önceki başlık satırında aranır — belgede
+    /// birden çok tablo olabiliyor (bedelsiz ve bedelli ayrı ayrı).
+    pub fn total(&self, label: &str) -> Option<&str> {
+        for (index, row) in self.rows.iter().enumerate() {
+            if row.first().map(String::as_str) != Some("TOPLAM") {
+                continue;
+            }
+            let header = self.rows[..index]
+                .iter()
+                .rev()
+                .find(|candidate| candidate.len() == row.len())?;
+            if let Some(column) = header.iter().position(|cell| cell == label) {
+                return row.get(column).map(String::as_str);
+            }
+        }
+        None
+    }
+
+    /// Etiket önce çift olarak, yoksa TOPLAM sütunu olarak aranır.
+    pub fn field_or_total(&self, label: &str) -> Option<&str> {
+        self.field(label).or_else(|| self.total(label))
+    }
+
+    /// Başlığında verilen etiketi taşıyan ilk tablo.
+    ///
+    /// Veri satırları, başlıkla **aynı hücre sayısına** sahip ardışık
+    /// satırlardır; sayı değişince tablo bitmiştir. Belgede tablolar art arda
+    /// geliyor ve aralarında tek hücrelik başlık satırları bulunuyor.
+    ///
+    /// Etiket ayırt edici seçilmeli: "Ödeme" hem tutar tablosunun bir sütunu
+    /// hem tarih tablosunun ilk başlığıdır.
+    pub fn table(&self, header_label: &str) -> Option<KapTable<'_>> {
+        let start = self
+            .rows
+            .iter()
+            .position(|row| row.len() > 1 && row.iter().any(|cell| cell == header_label))?;
+        let header = &self.rows[start];
+        let rows = self.rows[start + 1..]
+            .iter()
+            .take_while(|row| row.len() == header.len())
+            .collect();
+        Some(KapTable { header, rows })
+    }
+}
+
+/// Bir bildirim tablosu: başlık satırı ve altındaki veri satırları.
+pub struct KapTable<'a> {
+    pub header: &'a [String],
+    pub rows: Vec<&'a Vec<String>>,
+}
+
+impl<'a> KapTable<'a> {
+    /// Bir satırın, adı verilen sütundaki hücresi.
+    pub fn cell(&self, row: &'a [String], column_label: &str) -> Option<&'a str> {
+        let column = self.header.iter().position(|cell| cell == column_label)?;
+        row.get(column).map(String::as_str)
+    }
+
+    /// Gövdede bu metin geçiyor mu? Bildirim türünü ayırt etmek için.
+    pub fn contains(&self, needle: &str) -> bool {
+        self.rows
+            .iter()
+            .any(|row| row.iter().any(|cell| cell.contains(needle)))
+    }
+}
+
+/// Bildirim gövdesini yapısal forma çevirir.
+///
+/// **Yeniden denenmez.** Bu ucun baskın hata biçimi hız sınırıdır ve ısrar
+/// sınırı derinleştirmekten başka işe yaramaz.
+///
+/// Ölçüm (curl, ardışık istek): uç **10 belge** verdikten sonra temiz `429`
+/// döndürüyor; pencere temiz bir başlangıçta 30-60 saniyede sıfırlanıyor ama
+/// sürekli yük altında ceza uzuyor. Ancak 429 reqwest'e **durum kodu olarak
+/// ulaşmıyor**: KAP
+/// bağlantıyı kapatıyor, havuzdaki ölü soket yeniden kullanılınca istek
+/// "error sending request" ile düşüyor. `is_rate_limited` bu metni
+/// tanımadığından yeniden deneme katmanı sınırlanmış her isteği üç kez
+/// gönderiyordu — yani sınır her turda kendi kendini büyütüyordu.
+///
+/// Tur seviyesindeki bütçe ve [`crate::kap_capital::body_cooldown`] penceresi
+/// bu ucun ritmini zaten yönetiyor; burada tek deneme doğru davranıştır.
+pub async fn fetch_disclosure_form(
+    client: &Client,
+    disclosure_index: &str,
+) -> Result<KapForm, String> {
+    fetch_disclosure_form_once(client, disclosure_index).await
+}
+
+async fn fetch_disclosure_form_once(
+    client: &Client,
+    disclosure_index: &str,
+) -> Result<KapForm, String> {
+    let url = format!("{BASE_URL}/api/notification/export/excel/{disclosure_index}");
+    let _permit = crate::retry::kap_permit().await;
+
+    let response = client
+        .get(&url)
+        .timeout(REQUEST_TIMEOUT)
+        .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
+        .send()
+        .await
+        .map_err(|e| format!("KAP bildirim gövdesi isteği: {e}"))?;
+    let response = crate::retry::check_status(response, "KAP bildirim gövdesi")?;
+    let html = response
+        .text()
+        .await
+        .map_err(|e| format!("KAP bildirim gövdesi okunamadı: {e}"))?;
+
+    Ok(parse_form(&html))
+}
+
+/// Export HTML'ini satır/hücre ızgarasına çevirir.
+///
+/// Satır içindeki boş hücreler **korunur**: sütun hizası onlara bağlı, atılırsa
+/// TOPLAM satırındaki değer yanlış sütuna denk gelir. Tamamı boş satırlar
+/// (biçimlendirme boşlukları) atılır.
+///
+/// Ayrıştırma **iç içe tabloları tanımak zorunda**; düz metin araması yetmiyor.
+/// KAP iki ayrı belge düzeni üretiyor:
+///
+/// ```text
+/// A) <tr><td>Mevcut Sermaye (TL)</td><td>117.000.000</td></tr>
+///
+/// B) <tr>
+///      <td class="taxonomy-dimensional-context-cell"></td>
+///      <td class="taxonomy-field-title"><table>…<tr><td>Borsa Karar Tarihi</td>…</tr></table></td>
+///      <td class="taxonomy-context-value">26/06/2026</td>
+///    </tr>
+/// ```
+///
+/// (B) düzeninde etiket bir **iç tablonun** içindedir. `<tr>…</tr>` arayan
+/// tembel bir regex dış satırı ilk `</tr>`de, yani iç tablonun satırında
+/// kapatır: değer hücresi eşleşmenin dışında kalır ve sessizce kaybolur.
+/// Sermaye ve temettü bildirimleri (A) düzeninde olduğu için bu yıllarca
+/// görünmedi; halka arz bildirimlerinin tamamı (B) düzenindedir — sonuç
+/// bildirimi, işlem görmeye başlama, Borsa duyurusu — yani halka arz kolu bu
+/// düzen okunmadan hiçbir alan dolduramaz.
+///
+/// Bu yüzden gövde DOM olarak gezilir ve bir satırın hücreleri **doğrudan
+/// çocukları** sayılır; iç tablonun satırları ayrıca kendi satırları olarak
+/// gelir (zararsız gürültü, hiçbir etiketle birebir eşleşmezler).
+fn parse_form(html: &str) -> KapForm {
+    static ROW: OnceLock<Selector> = OnceLock::new();
+    let row_selector = ROW.get_or_init(|| Selector::parse("tr").expect("geçerli seçici"));
+
+    let document = Html::parse_document(html);
+    let rows = document
+        .select(row_selector)
+        .filter_map(|row| {
+            let cells: Vec<scraper::ElementRef> = row
+                .children()
+                .filter_map(scraper::ElementRef::wrap)
+                .filter(|cell| matches!(cell.value().name(), "td" | "th"))
+                .collect();
+            if cells.is_empty() {
+                return None;
+            }
+            let cells = match taxonomy_pair(&cells) {
+                Some(pair) => pair,
+                None => cells.iter().map(cell_text).collect(),
+            };
+            cells.iter().any(|cell| !cell.is_empty()).then_some(cells)
+        })
+        .collect();
+
+    KapForm { rows }
+}
+
+/// (B) düzenindeki satırı `[etiket, değer]` çiftine indirger.
+///
+/// Sütunlar sınıf adıyla tanınır: aradaki boş "dimensional context" hücresi
+/// korunsaydı satır üç hücreli olur ve `field()`in aradığı ikili yapıya hiç
+/// uymazdı. Düzen tanınmıyorsa `None` döner ve satır olduğu gibi okunur.
+fn taxonomy_pair(cells: &[scraper::ElementRef]) -> Option<Vec<String>> {
+    let has_class = |cell: &scraper::ElementRef, name: &str| {
+        cell.value().attr("class").is_some_and(|c| c.contains(name))
+    };
+    let title = cells.iter().find(|cell| has_class(cell, "taxonomy-field-title"))?;
+    let value = cells.iter().find(|cell| has_class(cell, "taxonomy-context-value"))?;
+    Some(vec![cell_text(title), cell_text(value)])
+}
+
+/// Hücrenin tüm alt metni, boşlukları tekleştirilmiş hâlde.
+fn cell_text(cell: &scraper::ElementRef) -> String {
+    cell.text()
+        .flat_map(str::split_whitespace)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// HTML'den belirli bir alt-dizi içeren ilk `href="…"` değerini çıkarır.
@@ -857,4 +1179,102 @@ mod tests {
         assert!(detail.attachments.len() >= 3, "THYAO 1643242 bildiriminde en az 3 adet ek olmalı");
         assert!(detail.attachments[0].url.contains("api/file/download/"));
     }
+
+    /// (B) düzeni: etiket iç tabloda, değer kardeş hücrede.
+    ///
+    /// Gerçek gövdenin (MASFN halka arz sonuçları, 1636762) satır yapısı birebir
+    /// alındı. Tembel regex bu satırı iç tablonun `</tr>`sinde kapatıyor ve
+    /// değer hücresini düşürüyordu.
+    #[test]
+    fn taxonomy_layout_keeps_the_value_cell() {
+        let html = r#"
+        <table><tbody>
+          <tr class="oda-12300_Public-Offer-row-7 data-input-row">
+            <td class="taxonomy-dimensional-context-cell"></td>
+            <td class="taxonomy-field-title">
+              <table><tbody><tr>
+                <td><div>HALKA ARZ FİYATI</div></td><td></td><td></td><td></td>
+              </tr></tbody></table></td>
+            <td class="taxonomy-context-value col-order-class-3"><div>45,68</div></td>
+          </tr>
+        </tbody></table>"#;
+
+        let form = parse_form(html);
+        assert_eq!(form.field("HALKA ARZ FİYATI"), Some("45,68"));
+    }
+
+    /// (A) düzeni: etiket ve değer aynı satırın iki hücresi. Sermaye ve temettü
+    /// bildirimleri bu düzende; (B) desteği eklenirken bozulmamalı.
+    #[test]
+    fn plain_layout_still_reads_label_value_pairs() {
+        let html = r#"
+        <table><tbody><tr><td>
+          <table><tbody>
+            <tr><td><div>Mevcut Sermaye (TL)</div></td><td><div>117.000.000</div></td></tr>
+            <tr><td><div>Ulaşılacak Sermaye (TL)</div></td><td><div>181.350.000</div></td></tr>
+          </tbody></table>
+        </td></tr></tbody></table>"#;
+
+        let form = parse_form(html);
+        assert_eq!(form.field("Mevcut Sermaye (TL)"), Some("117.000.000"));
+        assert_eq!(form.field("Ulaşılacak Sermaye (TL)"), Some("181.350.000"));
+    }
+
+    /// Sütun hizası boş hücrelere bağlı: TOPLAM satırı başlıkla aynı genişlikte
+    /// kalmazsa değer yanlış sütundan okunur.
+    #[test]
+    fn empty_cells_keep_column_alignment() {
+        let html = r#"
+        <table><tbody>
+          <tr><td>Pay Grup Bilgileri</td><td>İç Kaynaklardan Bedelsiz Pay Alma Tutarı (TL)</td><td>Kar Payından Bedelsiz Pay Alma Tutarı (TL)</td></tr>
+          <tr><td>B Grubu, VSNMD</td><td></td><td>53.350.000</td></tr>
+          <tr><td></td><td>İç Kaynaklardan Bedelsiz Pay Alma Tutarı (TL)</td><td>Kar Payından Bedelsiz Pay Alma Tutarı (TL)</td></tr>
+          <tr><td>TOPLAM</td><td></td><td>64.350.000</td></tr>
+        </tbody></table>"#;
+
+        let form = parse_form(html);
+        assert_eq!(form.total("Kar Payından Bedelsiz Pay Alma Tutarı (TL)"), Some("64.350.000"));
+        assert_eq!(form.total("İç Kaynaklardan Bedelsiz Pay Alma Tutarı (TL)"), Some(""));
+    }
+
+    /// Canlı sözleşme sınaması: KAP'ın **iki** gövde düzeni de okunabiliyor mu?
+    ///
+    /// 1644978 (VSNMD sermaye artırımı) (A) düzeninde, 1636762 (MASFN halka arz
+    /// sonuçları) (B) düzenindedir. Biri kopunca ilgili modül sessizce boş
+    /// dönerdi.
+    #[tokio::test]
+    #[ignore = "canlı KAP erişimi gerektirir"]
+    async fn live_both_form_layouts_parse() {
+        let client = crate::http_client();
+
+        let plain = fetch_form_or_explain(&client, "1644978").await;
+        assert_eq!(plain.field("Mevcut Sermaye (TL)"), Some("117.000.000"));
+
+        let taxonomy = fetch_form_or_explain(&client, "1636762").await;
+        assert_eq!(taxonomy.field("HALKA ARZ FİYATI"), Some("45,68"));
+        assert_eq!(
+            taxonomy.field("HALKA ARZA KATILAN TOPLAM YATIRIMCI SAYISI"),
+            Some("1.093.898")
+        );
+    }
+}
+
+/// Sınamalar için gövde çekimi: hız sınırına takılırsa bir kez pencere bekleyip
+/// yeniden dener, hâlâ olmuyorsa **sebebi söyleyerek** düşer.
+///
+/// Düz `unwrap()` burada yanıltıcı: hız sınırı ile ayrıştırıcının bozulması
+/// aynı kırmızı testi üretiyor ve gövde ucu sınıra kolay takıldığı için
+/// sözleşme sınamaları düzenli olarak "bozulmuş" gibi görünüyordu.
+#[cfg(test)]
+pub(crate) async fn fetch_form_or_explain(client: &Client, index: &str) -> KapForm {
+    if let Ok(form) = fetch_disclosure_form(client, index).await {
+        return form;
+    }
+    crate::kap_capital::body_cooldown().await;
+    fetch_disclosure_form(client, index).await.unwrap_or_else(|error| {
+        panic!(
+            "KAP gövde ucu {index} için pencere beklemesinden sonra da yanıt vermedi \
+             — büyük olasılıkla hız sınırı, ayrıştırıcı değil: {error}"
+        )
+    })
 }

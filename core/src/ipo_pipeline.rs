@@ -9,7 +9,7 @@
 //! Her kaynak bağımsız çalışır; biri başarısız olursa diğerleri devam eder.
 
 use crate::ipo_store::PersistedIpo;
-use crate::kap_ipo::KapIpoDisclosure;
+use crate::kap_ipo::{KapIpoDisclosure, KapIpoExtractedData};
 use crate::spk::{SpkApplication, SpkIpoApproval};
 use crate::ipo_scraper::ScrapedIpo;
 use reqwest::Client;
@@ -19,6 +19,12 @@ pub struct PipelineResult {
     pub spk_applications: Vec<SpkApplication>,
     pub spk_approvals: Vec<SpkIpoApproval>,
     pub kap_disclosures: Vec<KapIpoDisclosure>,
+    /// KAP taramasının **ham** sonucu.
+    ///
+    /// `kap_disclosures` sadeleştirilmiş görünüm; izleme turu (`ipo_follow`)
+    /// ham satırdaki kod alanlarına ihtiyaç duyuyor ve aynı taramayı ikinci
+    /// kez yapmak her yenilemede uçtan onlarca sayfa daha istemek olurdu.
+    pub kap_scan: crate::kap_ipo::IpoScan,
     pub scraper_ipos: Vec<ScrapedIpo>,
     pub errors: Vec<String>,
 }
@@ -53,13 +59,15 @@ pub async fn run_full_pipeline(client: &Client) -> PipelineResult {
         }
     };
 
-    let kap_disclosures = match kap_disclosures {
-        Ok(d) => d,
-        Err(e) => {
-            errors.push(format!("KAP bildirim: {e}"));
-            Vec::new()
-        }
-    };
+    let kap_scan = kap_disclosures;
+    if !kap_scan.complete {
+        errors.push("KAP bildirim: bazı pencereler alınamadı".to_string());
+    }
+    let kap_disclosures = kap_scan
+        .rows
+        .iter()
+        .filter_map(crate::kap_ipo::to_ipo_disclosure)
+        .collect();
 
     let scraper_ipos = match scraper {
         Ok(ipos) => ipos,
@@ -73,6 +81,7 @@ pub async fn run_full_pipeline(client: &Client) -> PipelineResult {
         spk_applications,
         spk_approvals,
         kap_disclosures,
+        kap_scan,
         scraper_ipos,
         errors,
     }
@@ -91,18 +100,16 @@ async fn fetch_spk_applications_safe(
 async fn fetch_spk_approvals_safe(
     client: &Client,
 ) -> Result<Vec<SpkIpoApproval>, String> {
-    // Aşama 2'de SPK bülten PDF parsing eklenecek.
-    // Şimdilik boş döner — yapı hazır, içerik sonra dolar.
-    let _ = client;
-    Ok(Vec::new())
-}
-
-async fn fetch_kap_ipo_safe(
-    client: &Client,
-) -> Result<Vec<KapIpoDisclosure>, String> {
-    crate::kap_ipo::fetch_ipo_disclosures(client, 90)
+    crate::spk::fetch_all_approvals(client)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Taranacak pencere `ipo_follow`'un ilerlemesine göre daralır; geçmişi bir
+/// kez kurduktan sonra her tur yalnız araya giren günleri sorar.
+async fn fetch_kap_ipo_safe(client: &Client) -> crate::kap_ipo::IpoScan {
+    let days = crate::ipo_follow::scan_days(crate::kap::istanbul_today());
+    crate::kap_ipo::fetch_ipo_rows(client, days).await
 }
 
 async fn fetch_scraper_safe(
@@ -118,26 +125,35 @@ async fn fetch_scraper_safe(
 /// Pipeline sonuçlarını mevcut arşive birleştirir.
 ///
 /// Öncelik sırası: SPK onayları > KAP bildirimleri > halkarz.com scraper.
-/// Resmi kaynak (SPK/KAP) verileri scraper verilerini ezer.
+///
+/// **Sıra, önceliğin kendisidir.** `merge_scraped` alanları koşulsuz ezer;
+/// resmî kaynaklardan sonra çalıştırıldığında SPK'nın fiyatını, KAP'ın
+/// katılımcı sayısını ve ilk işlem tarihini her yenilemede halkarz.com'un
+/// değeriyle değiştiriyordu — yani resmî veri yazılıyor ama saniyeler içinde
+/// üzerine yazılıyordu. Yalnız halkarz.com'un tek kaynak olduğu alanlar
+/// (endeks üyeliği gibi) hayatta kalabiliyordu, o da tesadüfen.
+///
+/// Bu yüzden scraper **önce** çalışır ve tabanı kurar; resmî kaynaklar
+/// üstüne yazar.
 pub fn merge_pipeline_into_archive(
     archive: &mut Vec<PersistedIpo>,
     result: &PipelineResult,
 ) -> bool {
     let mut changed = false;
 
-    // 1. SPK başvurularını TASLAK olarak ekle
+    // 1. SPK başvurularını TASLAK olarak ekle (yalnız kayıt açar, alan yazmaz)
     changed |= merge_spk_applications(archive, &result.spk_applications);
 
-    // 2. SPK onaylarını birleştir (fiyat, lot, büyüklük)
-    changed |= merge_spk_approvals(archive, &result.spk_approvals);
-
-    // 3. KAP bildirimlerini birleştir
-    changed |= merge_kap_disclosures(archive, &result.kap_disclosures);
-
-    // 4. halkarz.com scraper (mevcut merge_scraped mantığı)
+    // 2. halkarz.com scraper: geniş ama gayriresmî taban
     if !result.scraper_ipos.is_empty() {
         changed |= crate::ipo_store::merge_scraped(archive, &result.scraper_ipos);
     }
+
+    // 3. SPK onayları taban üzerine yazar (fiyat, aralık, konsorsiyum, bülten)
+    changed |= merge_spk_approvals(archive, &result.spk_approvals);
+
+    // 4. KAP bildirimleri en son söz sahibi; gövdeleri `ipo_follow` okur
+    changed |= merge_kap_disclosures(archive, &result.kap_disclosures);
 
     changed
 }
@@ -152,7 +168,9 @@ fn merge_spk_applications(
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     for app in applications {
-        if app.company_name.is_empty() {
+        // Harf içermeyen unvan bir ayrıştırma kazasıdır (sıra numarası, tire).
+        // Arşive sızdığında elle temizlenmesi gerekiyordu; kaynakta durduruluyor.
+        if !app.company_name.chars().any(char::is_alphabetic) {
             continue;
         }
 
@@ -163,30 +181,12 @@ fn merge_spk_applications(
 
         if existing.is_none() {
             archive.push(PersistedIpo {
-                ticker: String::new(),
                 name: app.company_name.clone(),
                 ipo_date: app.application_date.clone(),
-                price: 0.0,
                 status: "TASLAK".to_string(),
-                book_building_dates: None,
-                trading_start_date: None,
-                distribution_type: None,
-                participant_count: None,
                 last_seen: Some(today.clone()),
-                split_factor: None,
-                split_checked: None,
-                fund_usage: None,
-                share_structure: None,
-                ipo_size: None,
-                katilim_index: None,
-                lockup_period: None,
-                consortium_lead: None,
-                t1_t2_available: None,
-                distribution_ratios: None,
                 data_sources: vec!["SPK".to_string()],
-                spk_bulletin_no: None,
-                spk_approval_date: None,
-                kap_disclosure_index: None,
+                ..PersistedIpo::default()
             });
             changed = true;
         } else if let Some(idx) = existing {
@@ -202,131 +202,491 @@ fn merge_spk_applications(
 }
 
 /// SPK onaylı halka arzları arşive birleştirir.
-/// Fiyat, lot sayısı, arz büyüklüğü gibi veriler SPK bülteninden gelir.
-fn merge_spk_approvals(
-    archive: &mut Vec<PersistedIpo>,
-    approvals: &[SpkIpoApproval],
-) -> bool {
+///
+/// SPK bülteni fiyat, lot ve arz büyüklüğü için **en yetkili** kaynaktır:
+/// izahname onayı olmadan halka arz yapılamaz. Bu yüzden eşleşen kayıt yoksa
+/// kayıt oluşturulur — eşleşme aramakla yetinen eski davranış, halkarz.com'da
+/// görünmeyen onaylı arzları sessizce düşürüyordu.
+fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoApproval]) -> bool {
     let mut changed = false;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     for approval in approvals {
-        let idx = archive.iter().position(|p| {
-            fuzzy_company_match(&p.name, &approval.company_name)
-        });
+        // Kod varsa önce onunla eşleşilir: unvan yazımları kaynaklar arasında
+        // değişiyor, kod değişmiyor.
+        let index = approval
+            .ticker
+            .as_ref()
+            .and_then(|ticker| {
+                archive
+                    .iter()
+                    .position(|p| !p.ticker.is_empty() && &p.ticker == ticker)
+            })
+            .or_else(|| {
+                archive
+                    .iter()
+                    .position(|p| fuzzy_company_match(&p.name, &approval.company_name))
+            });
 
-        if let Some(i) = idx {
-            let entry = &mut archive[i];
-
-            if approval.price > 0.0 && entry.price == 0.0 {
-                entry.price = approval.price;
-                changed = true;
-            }
-
-            if approval.ipo_size_tl > 0.0 && entry.ipo_size.is_none() {
-                let size = if approval.ipo_size_tl >= 1_000_000_000.0 {
-                    format!("{:.0} TL ({:.2} Milyar ₺)", approval.ipo_size_tl, approval.ipo_size_tl / 1_000_000_000.0)
-                } else {
-                    format!("{:.0} TL ({:.0} Milyon ₺)", approval.ipo_size_tl, approval.ipo_size_tl / 1_000_000.0)
-                };
-                entry.ipo_size = Some(size);
-                changed = true;
-            }
-
-            if approval.total_lots > 0.0 && entry.share_structure.is_none() {
-                entry.share_structure = Some(format!("{:.0} Lot", approval.total_lots));
-                changed = true;
-            }
-
-            if let Some(ref lead) = approval.consortium_lead {
-                if entry.consortium_lead.is_none() {
-                    entry.consortium_lead = Some(lead.clone());
-                    changed = true;
+        let index = match index {
+            Some(index) => index,
+            None => {
+                // Eşleşmeyen **eski** onay kayıt doğurmaz. Arşiv 2021'den
+                // beri kazınıyor, SPK arşivi 2017'ye iniyor: eşleşmeyen eski
+                // bir onay ya kapsam dışı kalmış ya da hiç gerçekleşmemiş bir
+                // arzdır. Kayıt açmak, listeye yıllardır "SPK ONAYLI" bekleyen
+                // hayalet arzlar eklerdi.
+                if !is_recent_approval(&approval.approval_date, &today) {
+                    continue;
                 }
-            }
-
-            if !approval.bulletin_no.is_empty() {
-                entry.spk_bulletin_no = Some(approval.bulletin_no.clone());
-                entry.spk_approval_date = Some(approval.approval_date.clone());
+                archive.push(PersistedIpo {
+                    ticker: approval.ticker.clone().unwrap_or_default(),
+                    name: approval.company_name.clone(),
+                    // Bülten tarihi Türkçe yazılır ("05 Ağustos 2026 Çarşamba").
+                    // ISO'ya çevrilmezse kayıt takvimde sıralanamayan taslaklarla
+                    // birlikte listenin dibine düşer.
+                    ipo_date: crate::ipo_scraper::parse_turkish_date(&approval.approval_date),
+                    status: SPK_APPROVED_STATUS.to_string(),
+                    last_seen: Some(today.clone()),
+                    data_sources: vec![SPK_BULLETIN_SOURCE.to_string()],
+                    ..PersistedIpo::default()
+                });
                 changed = true;
+                archive.len() - 1
             }
+        };
 
-            if !entry.data_sources.contains(&"SPK_BULLETIN".to_string()) {
-                entry.data_sources.push("SPK_BULLETIN".to_string());
+        let entry = &mut archive[index];
+
+        // Taslak kaydın SPK onayı gelmişse aşama ilerlemiştir.
+        if entry.status == "TASLAK" {
+            entry.status = SPK_APPROVED_STATUS.to_string();
+            changed = true;
+        }
+
+        // Şirket listelendikten sonra kodu belirir; unvanla eşleşen kodsuz
+        // kayda yazılır.
+        if entry.ticker.is_empty() {
+            if let Some(ticker) = &approval.ticker {
+                entry.ticker = ticker.clone();
                 changed = true;
             }
         }
+
+        // Fiyat **ezilir**: izahname onayı olmadan halka arz yapılamaz, yani
+        // sabit fiyatlı arzda bültendeki rakam fiyatın kendisidir. Yalnız boş
+        // alanı doldurmak, halkarz.com'un yuvarlanmış ya da eski değerini
+        // resmî rakamın önünde tutuyordu.
+        if approval.price > 0.0 && entry.price != approval.price {
+            entry.price = approval.price;
+            changed = true;
+        }
+
+        // Talep toplamalı arzlarda SPK sabit fiyat değil taban-tavan aralığı
+        // onaylar; kesin fiyat sonra açıklanır. Aralık, fiyatın yerini almaz —
+        // yanında durur ve "fiyat henüz belli değil"i görünür kılar.
+        if let Some(range) = &approval.price_range {
+            if entry.price_range.as_ref() != Some(range) {
+                entry.price_range = Some(range.clone());
+                changed = true;
+            }
+        }
+
+        // Büyüklük ve lot **ezilmez**: bültendeki rakam onaylanan tavandır,
+        // gerçekleşen arz bundan küçük olabilir. Enda Enerji 100.000.000 lotla
+        // onaylanıp 91.719.684 lot satmış. Tamamlanmış bir arzda gerçekleşen
+        // rakam tavandan daha doğrudur; tavan yalnız boşluğu doldurur.
+        //
+        // Tek istisna, **kendi türettiğimiz** değerdir: o bir kaynak ölçümü
+        // değil, bültenin o günkü okunuşudur. Ayrıştırıcı düzelince (yüz katı
+        // fiyat hatası gibi) eski türev arşivde kalıyor ve düzeltilmiş fiyatla
+        // çelişiyordu. Biçim imzası ayırt etmeye yeter: bu kalıbı yalnız
+        // `format_ipo_size` üretir, halkarz.com "～ 6,2 Milyar TL." yazar.
+        if approval.ipo_size_tl > 0.0
+            && entry
+                .ipo_size
+                .as_deref()
+                .is_none_or(is_derived_ipo_size)
+        {
+            let refreshed = format_ipo_size(approval.ipo_size_tl);
+            if entry.ipo_size.as_deref() != Some(refreshed.as_str()) {
+                entry.ipo_size = Some(refreshed);
+                changed = true;
+            }
+        }
+
+        // Pay yapısı: bülten dipnotu satan ortakların **adını** verdiğinde
+        // kırılım tam yazılır, yoksa yalnız toplam.
+        //
+        // "SPK onaylı" etiketi şart: etiketsiz sayı, başka sitelerdekiyle
+        // çeliştiğinde hangisinin ne olduğu anlaşılmıyor.
+        if let Some(structure) = format_share_structure(approval) {
+            // **Bilgi azaltılmaz.** Biçim imzasına bakan bir kural burada işe
+            // yaramıyor: kırılımı halkarz.com da birebir aynı satır başlarıyla
+            // yazıyor ("Ortak Satışı : … Lot (Ad)"), yani "bu değeri biz mi
+            // yazdık" sorusunun cevabı metinden okunamaz. Ölçüt bu yüzden
+            // içerik: yeni değer en az eskisi kadar ortak **adı** taşıyorsa
+            // resmî olan yazılır, taşımıyorsa eldeki korunur. Dipnotu
+            // okunamayan bir bültenin adsız kırılımı, halkarz'ın adlı
+            // kırılımının üstüne yazılırsa veri kaybı olurdu.
+            let replace = match entry.share_structure.as_deref() {
+                None => true,
+                // Eski tek satırlık özetimiz; kırılım her hâlükârda daha iyi.
+                Some(existing) if existing.ends_with("Lot (SPK onaylı)") => true,
+                Some(existing) => named_seller_count(&structure) >= named_seller_count(existing),
+            };
+            let stale = entry.share_structure.as_deref() != Some(structure.as_str());
+            if replace && stale {
+                entry.share_structure = Some(structure);
+                changed = true;
+            }
+        }
+
+        // Konsorsiyum liderini bülten resmî olarak yazıyor; halkarz.com'un
+        // listesi daha geniş olabildiği için yalnız **boşsa** yazılır.
+        if let Some(lead) = &approval.consortium_lead {
+            if entry.consortium_lead.is_none() {
+                entry.consortium_lead = Some(lead.clone());
+                changed = true;
+            }
+        }
+
+        // Bülten numarası ve onay tarihi yalnız SPK'dan gelir; kaydın hangi
+        // bültene dayandığı değişirse (yeniden onay) güncel olan yazılır.
+        if !approval.bulletin_no.is_empty()
+            && entry.spk_bulletin_no.as_deref() != Some(approval.bulletin_no.as_str())
+        {
+            entry.spk_bulletin_no = Some(approval.bulletin_no.clone());
+            entry.spk_approval_date = Some(approval.approval_date.clone());
+            changed = true;
+        }
+
+        changed |= add_source(entry, SPK_BULLETIN_SOURCE);
     }
 
     changed
 }
 
+/// SPK onayı almış ama henüz talep toplaması başlamamış halka arzın durumu.
+const SPK_APPROVED_STATUS: &str = "SPK ONAYLI";
+
+/// Arşivde karşılığı olmayan bir SPK onayının kayıt açabilmesi için en fazla
+/// bu kadar eski olabileceği gün sayısı.
+///
+/// Onaydan talep toplamaya birkaç hafta geçiyor; bir yıl, gecikmiş ya da
+/// halkarz.com'un henüz görmediği arzlara rahat pay bırakır.
+const APPROVAL_RECENCY_DAYS: i64 = 365;
+
+/// Onay tarihi kayıt açacak kadar yakın mı? Tarihi çözülemeyen onay
+/// kayıt açmaz — yanlış tarihli hayalet kayıt, eksik kayıttan kötüdür.
+fn is_recent_approval(approval_date: &str, today: &str) -> bool {
+    let iso = crate::ipo_scraper::parse_turkish_date(approval_date);
+    let (Some(approved), Some(today)) = (parse_any_date(&iso), parse_any_date(today)) else {
+        return false;
+    };
+    (today - approved).num_days() <= APPROVAL_RECENCY_DAYS
+}
+const SPK_BULLETIN_SOURCE: &str = "SPK_BULLETIN";
+const KAP_SOURCE: &str = "KAP";
+
+/// Bir KAP bildiriminin bir halka arza ait sayılabilmesi için kaydın arz
+/// tarihine en fazla bu kadar uzak olabileceği gün sayısı.
+///
+/// İzahname arzdan ~2 ay önce, sonuç bildirimi birkaç gün sonra yayımlanır;
+/// altı ay iki yönde de rahat pay bırakır.
+const KAP_MATCH_WINDOW_DAYS: i64 = 180;
+
+/// Bülten onayından pay yapısı metni üretir.
+///
+/// Arşivin (ve arayüzün) beklediği biçim satır satır kırılımdır:
+/// ```text
+/// Sermaye Artırımı : 37.500.000 Lot
+/// Ortak Satışı : 27.500.000 Lot (Türkerler İnşaat … AŞ)
+/// Ek Ortak Satışı : 12.500.000 Lot (Türkerler İnşaat … AŞ)
+/// ```
+/// Satan ortağın adı bültenin **dipnotundan** geliyor; dipnot okunamazsa
+/// satır adsız yazılır, hiç satış yoksa yalnız toplam yazılır.
+fn format_share_structure(approval: &SpkIpoApproval) -> Option<String> {
+    if approval.total_lots <= 0.0 {
+        return None;
+    }
+
+    // Dipnot yoksa eski özet korunur: tek satırlık toplam.
+    if approval.sellers.is_empty() && approval.share_sale_lots <= 0.0 {
+        return Some(format!("{:.0} Lot (SPK onaylı)", approval.total_lots));
+    }
+
+    let mut lines = Vec::new();
+    if approval.capital_increase_lots > 0.0 {
+        lines.push(format!(
+            "Sermaye Artırımı : {} Lot",
+            group_thousands(approval.capital_increase_lots)
+        ));
+    }
+
+    let named = |extra: bool| -> Vec<String> {
+        approval
+            .sellers
+            .iter()
+            .filter(|seller| seller.extra_sale == extra)
+            .map(|seller| {
+                format!(
+                    "{} : {} Lot ({})",
+                    if extra { "Ek Ortak Satışı" } else { "Ortak Satışı" },
+                    group_thousands(seller.lots),
+                    seller.name
+                )
+            })
+            .collect()
+    };
+
+    // Dipnot okunamadıysa sütundaki toplam adsız yazılır — sayıyı düşürmek,
+    // adı bilmemekten kötü.
+    let sale_lines = named(false);
+    if sale_lines.is_empty() {
+        if approval.share_sale_lots > 0.0 {
+            lines.push(format!("Ortak Satışı : {} Lot", group_thousands(approval.share_sale_lots)));
+        }
+    } else {
+        lines.extend(sale_lines);
+    }
+
+    let extra_lines = named(true);
+    if extra_lines.is_empty() {
+        if approval.extra_sale_lots > 0.0 {
+            lines.push(format!(
+                "Ek Ortak Satışı : {} Lot",
+                group_thousands(approval.extra_sale_lots)
+            ));
+        }
+    } else {
+        lines.extend(extra_lines);
+    }
+
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+/// Pay yapısında kaç satırda satan ortağın **adı** yazıyor?
+///
+/// Kırılımın değeri adında: lot sayısı zaten tabloda var, kimin sattığı
+/// yalnız parantez içinde. "(SPK onaylı)" bir ad değil, etikettir.
+fn named_seller_count(structure: &str) -> usize {
+    structure
+        .lines()
+        .filter(|line| line.contains('(') && !line.contains("(SPK onaylı)"))
+        .count()
+}
+
+/// "37500000" → "37.500.000".
+fn group_thousands(value: f64) -> String {
+    let digits = format!("{value:.0}");
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push('.');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Bu metni biz mi ürettik? `format_ipo_size` çıktısı "<tamsayı> TL (" ile
+/// başlar; hiçbir dış kaynak büyüklüğü böyle yazmıyor.
+fn is_derived_ipo_size(size: &str) -> bool {
+    let Some((digits, rest)) = size.split_once(" TL (") else {
+        return false;
+    };
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) && rest.ends_with(')')
+}
+
+fn format_ipo_size(size_tl: f64) -> String {
+    if size_tl >= 1_000_000_000.0 {
+        format!("{size_tl:.0} TL ({:.2} Milyar ₺)", size_tl / 1_000_000_000.0)
+    } else {
+        format!("{size_tl:.0} TL ({:.0} Milyon ₺)", size_tl / 1_000_000.0)
+    }
+}
+
+fn add_source(entry: &mut PersistedIpo, source: &str) -> bool {
+    if entry.data_sources.iter().any(|s| s == source) {
+        return false;
+    }
+    entry.data_sources.push(source.to_string());
+    true
+}
+
 /// KAP halka arz bildirimlerini arşive birleştirir.
-fn merge_kap_disclosures(
-    archive: &mut Vec<PersistedIpo>,
-    disclosures: &[KapIpoDisclosure],
-) -> bool {
+///
+/// Eşleşme yalnız **isim/kod + tarih penceresi** birlikte tuttuğunda kurulur.
+/// Bildirim başlıkları halka arza özel değildir: "Tasarruf Sahiplerine Satış
+/// Duyurusu" ve "Halka Arz Sonuçları" borsada işlem gören şirketlerin bedelli
+/// sermaye artırımlarında da kullanılıyor. Tarih penceresi olmadan, 2018'de
+/// halka arz olmuş bir şirketin bugünkü bedelli artırım bildirimi o şirketin
+/// halka arz kaydına yapışıyordu.
+fn merge_kap_disclosures(archive: &mut [PersistedIpo], disclosures: &[KapIpoDisclosure]) -> bool {
     let mut changed = false;
 
     for disclosure in disclosures {
-        // Ticker veya şirket adı ile eşleştir
-        let idx = if let Some(ref ticker) = disclosure.ticker {
-            archive.iter().position(|p| p.ticker == *ticker)
-                .or_else(|| archive.iter().position(|p| fuzzy_company_match(&p.name, &disclosure.company_name)))
-        } else {
-            archive.iter().position(|p| fuzzy_company_match(&p.name, &disclosure.company_name))
+        let Some(index) = match_disclosure(archive, disclosure) else {
+            continue;
         };
+        let entry = &mut archive[index];
 
-        if let Some(i) = idx {
-            let entry = &mut archive[i];
+        if entry.kap_disclosure_index.is_none() {
+            entry.kap_disclosure_index = Some(disclosure.disclosure_index.clone());
+            changed = true;
+        }
 
-            // KAP disclosure index kaydet
-            if entry.kap_disclosure_index.is_none() {
-                entry.kap_disclosure_index = Some(disclosure.disclosure_index.clone());
+        // Kodu henüz atanmamış bir arzın kodunu KAP bildirimi taşıyabilir.
+        if entry.ticker.is_empty() {
+            if let Some(ticker) = &disclosure.ticker {
+                entry.ticker = ticker.clone();
                 changed = true;
             }
+        }
 
-            // Extracted data varsa birleştir
-            if let Some(ref data) = disclosure.extracted_data {
-                if let Some(price) = data.price {
-                    if price > 0.0 && entry.price == 0.0 {
-                        entry.price = price;
-                        changed = true;
-                    }
-                }
-                if data.book_building_dates.is_some() && entry.book_building_dates.is_none() {
-                    entry.book_building_dates = data.book_building_dates.clone();
-                    changed = true;
-                }
-                if data.trading_start_date.is_some() && entry.trading_start_date.is_none() {
-                    entry.trading_start_date = data.trading_start_date.clone();
-                    changed = true;
-                }
-                if data.consortium_lead.is_some() && entry.consortium_lead.is_none() {
-                    entry.consortium_lead = data.consortium_lead.clone();
-                    changed = true;
-                }
-                if data.participant_count.is_some() && entry.participant_count.is_none() {
-                    entry.participant_count = data.participant_count.clone();
-                    changed = true;
-                }
-                if data.distribution_ratios.is_some() && entry.distribution_ratios.is_none() {
-                    entry.distribution_ratios = data.distribution_ratios.clone();
-                    changed = true;
-                }
-                if data.fund_usage.is_some() && entry.fund_usage.is_none() {
-                    entry.fund_usage = data.fund_usage.clone();
-                    changed = true;
-                }
-                if data.katilim_index.is_some() && entry.katilim_index.is_none() {
-                    entry.katilim_index = data.katilim_index.clone();
-                    changed = true;
-                }
-            }
+        if let Some(data) = &disclosure.extracted_data {
+            changed |= merge_extracted(entry, data);
+        }
 
-            if !entry.data_sources.contains(&"KAP".to_string()) {
-                entry.data_sources.push("KAP".to_string());
-                changed = true;
-            }
+        changed |= add_source(entry, KAP_SOURCE);
+    }
+
+    changed
+}
+
+/// Bildirimi arşivdeki bir kayda bağlar; bağlanamıyorsa `None`.
+///
+/// Unvanla eşleşme yalnız bildirimi **şirketin kendisi** yaptığında denenir.
+/// Halka arz bildirimlerini konsorsiyum lideri yapıyor; bildirimi yapanın
+/// unvanıyla eşleşme aramak, aracı kurumun kendi halka arz kaydına yabancı
+/// veri yazardı.
+fn match_disclosure(archive: &[PersistedIpo], disclosure: &KapIpoDisclosure) -> Option<usize> {
+    let candidate = archive
+        .iter()
+        .position(|p| {
+            !p.ticker.is_empty() && Some(&p.ticker) == disclosure.ticker.as_ref()
+        })
+        .or_else(|| {
+            // `or_else` şart: `or` argümanını hemen değerlendirir ve
+            // gövdesi okunmamış bir bildirimde `?` erken tetiklenip listedeki
+            // unvanı hiç denemeden `None` döndürür.
+            let name = disclosure.company_name.as_deref().or_else(|| {
+                disclosure.extracted_data.as_ref()?.company_name.as_deref()
+            })?;
+            archive.iter().position(|p| fuzzy_company_match(&p.name, name))
+        })?;
+
+    disclosure_belongs_to(&archive[candidate], disclosure).then_some(candidate)
+}
+
+/// Bildirim tarihi kaydın halka arz süreciyle örtüşüyor mu?
+///
+/// Süreci devam eden kayıtlar (taslak, SPK onaylı, talep toplayan) her zaman
+/// kabul edilir; tarihi bilinen tamamlanmış arzlarda pencere aranır.
+fn disclosure_belongs_to(entry: &PersistedIpo, disclosure: &KapIpoDisclosure) -> bool {
+    if matches!(
+        entry.status.as_str(),
+        "TASLAK" | SPK_APPROVED_STATUS | "TALEP TOPLAMA" | "AKTİF"
+    ) {
+        return true;
+    }
+
+    let (Some(ipo_date), Some(published)) = (
+        parse_any_date(&entry.ipo_date),
+        parse_any_date(&disclosure.publish_date),
+    ) else {
+        // Tarihlerden biri okunamıyorsa bağ kurulmaz: yanlış şirkete veri
+        // yazmaktansa bildirimi atlamak yeğdir.
+        return false;
+    };
+
+    (published - ipo_date).num_days().abs() <= KAP_MATCH_WINDOW_DAYS
+}
+
+/// ISO (`2026-07-14`) ya da Türkçe (`14.07.2026`, saat ekli olabilir) tarihi
+/// çözer; ikisi de tutmuyorsa `None`.
+fn parse_any_date(value: &str) -> Option<chrono::NaiveDate> {
+    let head = value.split_whitespace().next()?;
+    chrono::NaiveDate::parse_from_str(head, "%Y-%m-%d")
+        .or_else(|_| chrono::NaiveDate::parse_from_str(head, "%d.%m.%Y"))
+        .ok()
+}
+
+/// Gövdeden çıkan alanları kayda işler.
+///
+/// İki davranış var ve ayrımı **hangi kaynağın o alanı daha iyi bildiği**
+/// belirliyor:
+///
+/// * **Ezilir** — alanın tek resmî kaynağı KAP. Katılımcı sayısı, dağıtım
+///   tablosu, ilk işlem tarihi, pazar ve endeks üyeliği yalnız Borsa/KAP
+///   bildiriminde yapısal olarak var; halkarz.com'unki ikinci elden aktarım.
+/// * **Yalnız boşluğu doldurur** — halkarz.com aynı alanı daha zengin yazıyor.
+///   Talep toplama tarihini KAP "22-23-24/07/2026" diye verirken halkarz
+///   "12-13-14 Ağustos 2026 / 09:00-17:00" yazıyor; konsorsiyumu KAP tek aracı
+///   kurum olarak verirken halkarz listenin tamamını taşıyor. Bunları ezmek
+///   veriyi fakirleştirirdi.
+pub(crate) fn merge_extracted(entry: &mut PersistedIpo, data: &KapIpoExtractedData) -> bool {
+    let mut changed = false;
+
+    // Fiyat "Halka Arz Sonuçları"nda **gerçekleşen** fiyattır; en yetkili odur.
+    if let Some(price) = data.price {
+        if price > 0.0 && entry.price != price {
+            entry.price = price;
+            changed = true;
+        }
+    }
+
+    let authoritative: [(&mut Option<String>, &Option<String>); 6] = [
+        (&mut entry.trading_start_date, &data.trading_start_date),
+        (&mut entry.participant_count, &data.participant_count),
+        (&mut entry.market, &data.market),
+        (&mut entry.index_name, &data.index_name),
+        (&mut entry.major_shareholders, &data.major_shareholders),
+        (&mut entry.public_float_ratio, &data.public_float_ratio),
+    ];
+    for (target, source) in authoritative {
+        if source.is_some() && target != source {
+            *target = source.clone();
+            changed = true;
+        }
+    }
+
+    let fill_only: [(&mut Option<String>, &Option<String>); 7] = [
+        (&mut entry.book_building_dates, &data.book_building_dates),
+        (&mut entry.consortium_lead, &data.consortium_lead),
+        (&mut entry.distribution_ratios, &data.distribution_ratios),
+        (&mut entry.fund_usage, &data.fund_usage),
+        (&mut entry.katilim_index, &data.katilim_index),
+        (&mut entry.lot_amount, &data.lot_amount),
+        // Satış duyurusu pay yapısını satan ortakların adıyla veriyor; SPK
+        // bülteninden gelen "N Lot (SPK onaylı)" özeti ondan fakir ama
+        // halkarz.com'unki eşdeğer, o yüzden yalnız boşluk doldurulur.
+        (&mut entry.share_structure, &data.share_structure),
+    ];
+    for (target, source) in fill_only {
+        if target.is_none() && source.is_some() {
+            *target = source.clone();
+            changed = true;
+        }
+    }
+
+    // Dağıtım tablosu: KAP yalnız kişi sayısını verir, lot/oran sütunları "—".
+    // halkarz.com'un tablosu üçünü birden taşıdığı için **zenginlik korunur**;
+    // KAP tablosu ancak hiç tablo yokken yazılır.
+    if entry.results_table.is_none() {
+        if let Some(rows) = &data.results_table {
+            entry.results_table = Some(rows.clone());
+            changed = true;
+        }
+    }
+
+    // Büyüklük "Halka Arz Sonuçları"nda gerçekleşen tutardır.
+    if let Some(size) = data.ipo_size_tl.filter(|size| *size > 0.0) {
+        let formatted = format_ipo_size(size);
+        if entry.ipo_size.as_deref() != Some(formatted.as_str()) {
+            entry.ipo_size = Some(formatted);
+            changed = true;
         }
     }
 
@@ -335,29 +695,9 @@ fn merge_kap_disclosures(
 
 // ---------- Yardımcılar ----------
 
-/// Şirket adı fuzzy eşleştirme.
-///
-/// Türkçe karakter normalize, A.Ş. / AŞ kaldırma, büyük/küçük harf
-/// duyarsız karşılaştırma.
+/// Şirket adı fuzzy eşleştirme; tek kaynak `company_match`.
 fn fuzzy_company_match(a: &str, b: &str) -> bool {
-    normalize_company(a) == normalize_company(b)
-}
-
-fn normalize_company(name: &str) -> String {
-    let lower = name.to_lowercase();
-    let normalized = crate::spk::normalize_turkish(&lower);
-    normalized
-        .replace("a.s.", "")
-        .replace("a.s", "")
-        .replace(" as", "")
-        .replace("anonim sirketi", "")
-        .replace("gayrimenkul yatirim ortakligi", "gyo")
-        .replace("menkul degerler", "")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string()
+    crate::company_match::same_company(a, b)
 }
 
 #[cfg(test)]
@@ -382,6 +722,481 @@ mod tests {
         assert!(!fuzzy_company_match("Savur GYO", "Orzaks İlaç"));
     }
 
+    /// Bugünün tarihi, bültendeki Türkçe biçimiyle ve ISO karşılığıyla.
+    ///
+    /// Onayın yakınlık penceresine düşmesi gerekiyor; fixture'a sabit bir
+    /// tarih yazmak testi bir yıl sonra sessizce bozardı.
+    fn today_in_turkish() -> (String, String) {
+        const MONTHS: [&str; 12] = [
+            "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+            "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+        ];
+        let now = chrono::Local::now();
+        let month = MONTHS[chrono::Datelike::month0(&now) as usize];
+        (
+            format!("{} {month} {}", now.format("%d"), now.format("%Y")),
+            now.format("%Y-%m-%d").to_string(),
+        )
+    }
+
+    fn approval(name: &str, price: f64) -> SpkIpoApproval {
+        SpkIpoApproval {
+            company_name: name.to_string(),
+            ticker: None,
+            capital_increase_lots: 30_000_000.0,
+            share_sale_lots: 6_500_000.0,
+            extra_sale_lots: 0.0,
+            total_lots: 36_500_000.0,
+            price,
+            ipo_size_tl: 36_500_000.0 * price,
+            price_range: None,
+            consortium_lead: None,
+            sellers: Vec::new(),
+            bulletin_no: "2026/49".to_string(),
+            approval_date: today_in_turkish().0,
+        }
+    }
+
+    /// **Regresyon: resmî kaynak scraper'a yenilmemeli.**
+    ///
+    /// `merge_scraped` alanları koşulsuz ezer. Resmî kaynaklardan **sonra**
+    /// çalıştırıldığında SPK'nın onayladığı fiyat, halkarz.com'un değeriyle
+    /// her yenilemede değiştiriliyordu: resmî veri yazılıyor ama saniyeler
+    /// içinde üzerine yazıldığı için menüde hiç görünmüyordu.
+    #[test]
+    fn official_sources_win_over_the_scraper() {
+        let (turkish_today, iso_today) = today_in_turkish();
+
+        let scraped = crate::ipo_scraper::ScrapedIpo {
+            ticker: "KPEKS".to_string(),
+            name: "Kapeks Kimya Sanayi A.Ş.".to_string(),
+            ipo_date: iso_today.clone(),
+            // halkarz.com yuvarlamış; SPK bülteni 94,00 onaylamış.
+            price: 93.5,
+            status: "AKTİF".to_string(),
+            ..Default::default()
+        };
+
+        let mut approved = approval("Kapeks Kimya Sanayi AŞ", 94.0);
+        approved.ticker = Some("KPEKS".to_string());
+        approved.approval_date = turkish_today;
+
+        let result = PipelineResult {
+            spk_applications: Vec::new(),
+            spk_approvals: vec![approved],
+            kap_disclosures: Vec::new(),
+            kap_scan: crate::kap_ipo::IpoScan { rows: Vec::new(), complete: true },
+            scraper_ipos: vec![scraped],
+            errors: Vec::new(),
+        };
+
+        let mut archive = Vec::new();
+        merge_pipeline_into_archive(&mut archive, &result);
+
+        assert_eq!(archive.len(), 1, "iki kaynak tek kayıtta buluşmalı");
+        assert_eq!(
+            archive[0].price, 94.0,
+            "SPK'nın onayladığı fiyat halkarz.com değerini ezmeli"
+        );
+        assert_eq!(archive[0].spk_bulletin_no.as_deref(), Some("2026/49"));
+    }
+
+    /// **Regresyon: düzeltilmiş fiyat, ondan türetilmiş büyüklüğü de düzeltmeli.**
+    ///
+    /// Selva'nın fiyatı bültenden yüz katı okunmuştu ve arşivdeki büyüklük o
+    /// fiyattan türemişti (7,96 milyar TL). Ayrıştırıcı düzelip fiyat 3,06'ya
+    /// inince, "büyüklük ezilmez" kuralı eski türevi olduğu gibi bırakıyor ve
+    /// kayıt kendi içinde çelişik kalıyordu.
+    #[test]
+    fn a_size_we_derived_ourselves_is_refreshed_with_the_price() {
+        let mut archive = vec![PersistedIpo {
+            name: "Selva Gıda Sanayi A.Ş.".to_string(),
+            price: 306.0,
+            ipo_size: Some(format_ipo_size(36_500_000.0 * 306.0)),
+            ..PersistedIpo::default()
+        }];
+
+        let mut corrected = approval("Selva Gıda Sanayi AŞ", 3.06);
+        corrected.approval_date = today_in_turkish().0;
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&corrected));
+
+        assert_eq!(archive[0].price, 3.06);
+        assert_eq!(
+            archive[0].ipo_size.as_deref(),
+            Some(format_ipo_size(36_500_000.0 * 3.06).as_str()),
+            "kendi türettiğimiz büyüklük fiyatla birlikte tazelenmeli"
+        );
+    }
+
+    /// **Regresyon: adsız kırılım, adlı kırılımın üstüne yazılmamalı.**
+    ///
+    /// halkarz.com pay yapısını bizimle birebir aynı satır başlarıyla yazıyor,
+    /// dolayısıyla "bu değeri biz mi yazdık" sorusu biçimden okunamaz. Dipnotu
+    /// okunamamış bir bültenin adsız kırılımı, elde duran adlı kırılımın
+    /// üstüne yazılırsa satan ortağın kim olduğu kaybolur.
+    #[test]
+    fn an_unnamed_breakdown_never_replaces_a_named_one() {
+        let named = "Sermaye Artırımı : 30.000.000 Lot\n\
+                     Ortak Satışı : 6.500.000 Lot (Türkerler İnşaat AŞ)";
+        let mut archive = vec![PersistedIpo {
+            name: "Örnek Sanayi A.Ş.".to_string(),
+            share_structure: Some(named.to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        // Dipnotu okunamamış onay: satış var ama ad yok.
+        let mut approval = approval("Örnek Sanayi AŞ", 30.0);
+        approval.approval_date = today_in_turkish().0;
+        assert!(approval.sellers.is_empty());
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approval));
+
+        assert_eq!(archive[0].share_structure.as_deref(), Some(named));
+    }
+
+    /// Dipnot okunduğunda resmî kırılım yazılır: aynı zenginlikte ama kaynağı
+    /// bülten olan değer tercih edilir.
+    #[test]
+    fn a_named_breakdown_from_the_bulletin_is_written() {
+        let mut archive = vec![PersistedIpo {
+            name: "Örnek Sanayi A.Ş.".to_string(),
+            share_structure: Some("36500000 Lot (SPK onaylı)".to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        let mut approval = approval("Örnek Sanayi AŞ", 30.0);
+        approval.approval_date = today_in_turkish().0;
+        approval.sellers = vec![crate::spk::SpkShareSeller {
+            name: "Tunçlar Yatırım Holding AŞ".to_string(),
+            lots: 6_500_000.0,
+            extra_sale: false,
+        }];
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approval));
+
+        assert_eq!(
+            archive[0].share_structure.as_deref(),
+            Some(
+                "Sermaye Artırımı : 30.000.000 Lot\n\
+                 Ortak Satışı : 6.500.000 Lot (Tunçlar Yatırım Holding AŞ)"
+            )
+        );
+    }
+
+    /// Dış kaynağın yazdığı büyüklük **korunmalı**: gerçekleşen arz, onaylanan
+    /// tavandan küçük olabilir ve tavan onun yerini almamalı.
+    #[test]
+    fn a_scraped_size_still_survives_the_approval() {
+        let mut archive = vec![PersistedIpo {
+            name: "Şa-Ra Enerji İnşaat Tic. ve San. A.Ş.".to_string(),
+            ipo_size: Some("～ 6,2 Milyar TL.".to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        let mut approved = approval("Şa-Ra Enerji İnşaat Tic. ve San. AŞ", 70.0);
+        approved.approval_date = today_in_turkish().0;
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approved));
+
+        assert_eq!(archive[0].ipo_size.as_deref(), Some("～ 6,2 Milyar TL."));
+    }
+
+    /// KAP'ın tek resmî kaynak olduğu alanlar scraper değerini ezmeli;
+    /// halkarz.com'un daha zengin yazdığı alanlar korunmalı.
+    #[test]
+    fn kap_overwrites_only_the_fields_it_owns() {
+        let mut entry = PersistedIpo {
+            ticker: "MASFN".to_string(),
+            name: "Masfen Enerji A.Ş.".to_string(),
+            // halkarz.com'dan gelmiş taban
+            participant_count: Some("1.000.000".to_string()),
+            trading_start_date: Some("29 Temmuz 2026".to_string()),
+            book_building_dates: Some("22-23-24 Temmuz 2026 / 09:00-17:00".to_string()),
+            consortium_lead: Some("Deniz Yatırım / Ünlü Menkul / Gedik Yatırım".to_string()),
+            ..PersistedIpo::default()
+        };
+
+        let data = KapIpoExtractedData {
+            // KAP'ın tek kaynak olduğu alanlar
+            participant_count: Some("1.093.898".to_string()),
+            trading_start_date: Some("2026-07-30".to_string()),
+            // halkarz.com'un daha zengin yazdığı alanlar
+            book_building_dates: Some("22-23-24/07/2026".to_string()),
+            consortium_lead: Some("Deniz Yatırım Menkul Kıymetler A.Ş.".to_string()),
+            ..KapIpoExtractedData::default()
+        };
+
+        assert!(merge_extracted(&mut entry, &data));
+
+        assert_eq!(entry.participant_count.as_deref(), Some("1.093.898"));
+        assert_eq!(entry.trading_start_date.as_deref(), Some("2026-07-30"));
+        assert_eq!(
+            entry.book_building_dates.as_deref(),
+            Some("22-23-24 Temmuz 2026 / 09:00-17:00"),
+            "saat bilgisi taşıyan zengin değer korunmalı"
+        );
+        assert_eq!(
+            entry.consortium_lead.as_deref(),
+            Some("Deniz Yatırım / Ünlü Menkul / Gedik Yatırım"),
+            "konsorsiyumun tamamı tek aracı kuruma indirgenmemeli"
+        );
+    }
+
+    /// Şirketin **kendi** yaptığı bir bildirim; unvan listeden bilinir.
+    fn disclosure(company: &str, published: &str) -> KapIpoDisclosure {
+        KapIpoDisclosure {
+            company_name: Some(company.to_string()),
+            filer_name: company.to_string(),
+            ticker: None,
+            disclosure_type: crate::kap_ipo::KapIpoDisclosureType::SaleNotice,
+            publish_date: published.to_string(),
+            disclosure_index: "1645150".to_string(),
+            url: "https://www.kap.org.tr/tr/Bildirim/1645150".to_string(),
+            extracted_data: None,
+        }
+    }
+
+    /// SPK onayı halka arzın kesinleştiğini gösterir; arşivde karşılığı yoksa
+    /// kayıt oluşturulmalı. Eşleşme aramakla yetinen eski davranış, yalnız
+    /// halkarz.com'un gördüğü arzları kaydediyordu.
+    #[test]
+    fn spk_approvals_create_missing_records() {
+        let mut archive = Vec::new();
+        assert!(merge_spk_approvals(
+            &mut archive,
+            &[approval("Kapeks Kimya Sanayi AŞ", 94.0)]
+        ));
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].name, "Kapeks Kimya Sanayi AŞ");
+        assert_eq!(archive[0].status, SPK_APPROVED_STATUS);
+        assert_eq!(archive[0].price, 94.0);
+        assert_eq!(archive[0].spk_bulletin_no.as_deref(), Some("2026/49"));
+        // Pay yapısı kalem kalem yazılır; dipnot okunmadığı için satış satırı
+        // adsız kalır ama sayı düşmez.
+        assert_eq!(
+            archive[0].share_structure.as_deref(),
+            Some("Sermaye Artırımı : 30.000.000 Lot\nOrtak Satışı : 6.500.000 Lot")
+        );
+        // Türkçe bülten tarihi ISO'ya çevrilmeli; yoksa takvimde sıralanamaz.
+        assert_eq!(archive[0].ipo_date, today_in_turkish().1);
+    }
+
+    /// Arşiv 2021'den beri kazınıyor, SPK arşivi 2017'ye iniyor. Eşleşmeyen
+    /// eski bir onay ya kapsam dışıdır ya da hiç gerçekleşmemiş bir arzdır;
+    /// kayıt açmak listeye yıllardır "SPK ONAYLI" bekleyen hayalet arzlar
+    /// eklerdi.
+    #[test]
+    fn old_unmatched_approvals_do_not_create_records() {
+        let mut archive = Vec::new();
+        let mut old = approval("Vaktiyle Onaylanmış AŞ", 12.0);
+        old.approval_date = "2018-04-11".to_string();
+
+        assert!(!merge_spk_approvals(&mut archive, &[old]));
+        assert!(archive.is_empty());
+    }
+
+    /// Geçmiş onay, arşivde karşılığı **varsa** kaydı zenginleştirmeli:
+    /// fiyat/lot/büyüklük için en yetkili kaynak odur.
+    #[test]
+    fn old_approvals_still_enrich_existing_records() {
+        let mut archive = vec![PersistedIpo {
+            name: "Vaktiyle Onaylanmış AŞ".to_string(),
+            ipo_date: "2018-05-02".to_string(),
+            status: "TAMAMLANDI".to_string(),
+            ..PersistedIpo::default()
+        }];
+        let mut old = approval("Vaktiyle Onaylanmış AŞ", 12.0);
+        old.approval_date = "2018-04-11".to_string();
+
+        assert!(merge_spk_approvals(&mut archive, &[old]));
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].price, 12.0);
+        assert_eq!(archive[0].spk_bulletin_no.as_deref(), Some("2026/49"));
+    }
+
+    /// Şirket listelendikten sonra kodu belirir; onay kodu taşıyorsa kodsuz
+    /// kayda yazılmalı ve sonraki turlarda kod üzerinden eşleşmeli.
+    #[test]
+    fn approval_ticker_lands_on_the_record() {
+        let mut archive = vec![PersistedIpo {
+            name: "Kapeks Kimya Sanayi AŞ".to_string(),
+            status: "TASLAK".to_string(),
+            ..PersistedIpo::default()
+        }];
+        let mut with_code = approval("Kapeks Kimya Sanayi AŞ", 94.0);
+        with_code.ticker = Some("KPEKS".to_string());
+
+        merge_spk_approvals(&mut archive, &[with_code.clone()]);
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].ticker, "KPEKS");
+
+        // Unvan başka yazılsa da kod eşleşmeyi kurar.
+        let mut renamed = with_code;
+        renamed.company_name = "Kapeks Kimya San. ve Tic. A.Ş.".to_string();
+        merge_spk_approvals(&mut archive, &[renamed]);
+        assert_eq!(archive.len(), 1, "kod eşleşmesi mükerrer kaydı önlemeli");
+    }
+
+    /// Aynı şirket farklı yazımlarla geldiğinde mükerrer kayıt oluşmamalı.
+    #[test]
+    fn spk_approvals_update_matching_draft() {
+        let mut archive = vec![PersistedIpo {
+            name: "Savur Gayrimenkul Yatırım Ortaklığı A.Ş.".to_string(),
+            status: "TASLAK".to_string(),
+            ..PersistedIpo::default()
+        }];
+        merge_spk_approvals(&mut archive, &[approval("Savur GYO", 3.64)]);
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].status, SPK_APPROVED_STATUS);
+        assert_eq!(archive[0].price, 3.64);
+    }
+
+    /// Regresyon: "Tasarruf Sahiplerine Satış Duyurusu" bedelli sermaye
+    /// artırımlarında da kullanılıyor. Tarih penceresi olmadan, yıllar önce
+    /// halka arz olmuş bir şirketin bugünkü artırım bildirimi o şirketin
+    /// halka arz kaydına yapışıyordu.
+    #[test]
+    fn kap_disclosure_outside_the_window_is_ignored() {
+        let mut archive = vec![PersistedIpo {
+            name: "Hektaş Ticaret T.A.Ş.".to_string(),
+            ticker: "HEKTS".to_string(),
+            ipo_date: "2018-03-15".to_string(),
+            status: "TAMAMLANDI".to_string(),
+            ..PersistedIpo::default()
+        }];
+        let changed = merge_kap_disclosures(
+            &mut archive,
+            &[disclosure("Hektaş Ticaret T.A.Ş.", "14.07.2026 11:58:43")],
+        );
+        assert!(!changed);
+        assert!(archive[0].kap_disclosure_index.is_none());
+    }
+
+    #[test]
+    fn kap_disclosure_inside_the_window_attaches() {
+        let mut archive = vec![PersistedIpo {
+            name: "Kapeks Kimya Sanayi AŞ".to_string(),
+            ipo_date: "2026-08-20".to_string(),
+            status: "TAMAMLANDI".to_string(),
+            ..PersistedIpo::default()
+        }];
+        assert!(merge_kap_disclosures(
+            &mut archive,
+            &[disclosure("Kapeks Kimya Sanayi AŞ", "14.07.2026 11:58:43")]
+        ));
+        assert_eq!(archive[0].kap_disclosure_index.as_deref(), Some("1645150"));
+        assert!(archive[0].data_sources.iter().any(|s| s == "KAP"));
+    }
+
+    /// Süreci devam eden kayıtlarda tarih henüz belli olmayabilir; bildirim
+    /// yine de bağlanmalı.
+    #[test]
+    fn kap_disclosure_attaches_to_pending_record() {
+        let mut archive = vec![PersistedIpo {
+            name: "Kapeks Kimya Sanayi AŞ".to_string(),
+            ipo_date: "Hazırlanıyor...".to_string(),
+            status: SPK_APPROVED_STATUS.to_string(),
+            ..PersistedIpo::default()
+        }];
+        assert!(merge_kap_disclosures(
+            &mut archive,
+            &[disclosure("Kapeks Kimya Sanayi AŞ", "14.07.2026 11:58:43")]
+        ));
+    }
+
+    #[test]
+    fn dates_parse_in_both_shapes() {
+        assert!(parse_any_date("2026-07-14").is_some());
+        assert!(parse_any_date("14.07.2026 11:58:43").is_some());
+        assert!(parse_any_date("Hazırlanıyor...").is_none());
+    }
+
+    /// Uçtan uca: dört kaynağı da çeker, arşive işler ve özet basar.
+    /// Kaynakların sözleşmesi bozulduğunda (gövde biçimi, alan adı, sayfa
+    /// düzeni) burada görünür — birim testleri sabit fixture'larla çalışır.
+    #[tokio::test]
+    #[ignore = "canlı ağ erişimi gerektirir ve ~/.fraude_ipos.json dosyasını günceller"]
+    async fn live_pipeline_refreshes_archive() {
+        let client = crate::http_client();
+        let result = run_full_pipeline(&client).await;
+
+        println!("SPK başvuru      : {}", result.spk_applications.len());
+        println!("SPK bülten onayı : {}", result.spk_approvals.len());
+        println!("KAP bildirimi    : {}", result.kap_disclosures.len());
+        println!("halkarz.com      : {}", result.scraper_ipos.len());
+        println!("hatalar          : {:?}", result.errors);
+
+        assert!(
+            !result.spk_applications.is_empty(),
+            "SPK başvuru listesi boş döndü"
+        );
+        assert!(
+            !result.kap_disclosures.is_empty(),
+            "KAP halka arz bildirimi boş döndü"
+        );
+
+        let before = crate::ipo_store::load();
+        let mut archive = before.clone();
+        merge_pipeline_into_archive(&mut archive, &result);
+        println!("arşiv            : {} → {}", before.len(), archive.len());
+
+        for ipo in &archive {
+            assert!(
+                ipo.name.chars().any(char::is_alphabetic),
+                "unvansız kayıt: {ipo:?}"
+            );
+            assert!(ipo.price < 100_000.0, "olanaksız fiyat: {ipo:?}");
+        }
+    }
+
+    /// **Resmî veri bir yenileme turundan sağ çıkıyor mu?**
+    ///
+    /// Asıl sınama budur: alanın *yazılması* yetmez, bir sonraki turda yerinde
+    /// **durması** gerekir. `merge_scraped` alanları koşulsuz ezdiği için
+    /// resmî kaynaklardan sonra çalıştığı sürece SPK'nın fiyatı ve KAP'ın
+    /// katılımcı sayısı her turda halkarz.com'un değerine geri dönüyordu —
+    /// menüye bakan kullanıcı resmî veriyi hiç görmüyordu.
+    ///
+    /// Turu **iki kez** çalıştırır: tek tur, ezilmenin bir sonraki turda
+    /// olduğu bu hatayı yakalayamaz.
+    #[tokio::test]
+    #[ignore = "canlı ağ erişimi gerektirir ve ~/.fraude_ipos.json dosyasını günceller"]
+    async fn live_official_values_survive_a_refresh() {
+        let client = crate::http_client();
+
+        crate::corporate_actions::refresh_ipo_base(&client).await;
+        let first = crate::ipo_store::load();
+        crate::corporate_actions::refresh_ipo_base(&client).await;
+        let second = crate::ipo_store::load();
+
+        // SPK bülteninin onayladığı fiyatı taşıyan kayıtlar iki tur boyunca
+        // aynı kalmalı.
+        let mut checked = 0;
+        for record in second.iter().filter(|r| r.spk_bulletin_no.is_some()) {
+            let Some(before) = first.iter().find(|r| r.name == record.name) else {
+                continue;
+            };
+            if before.price == 0.0 {
+                continue;
+            }
+            assert_eq!(
+                before.price, record.price,
+                "{} fiyatı tur arasında değişti — scraper resmî değeri eziyor",
+                record.name
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "SPK onaylı hiç kayıt bulunamadı");
+        println!("{checked} SPK onaylı kaydın fiyatı iki tur boyunca sabit kaldı");
+
+        // KAP'ın tek kaynak olduğu alanlar da kaybolmamalı.
+        for record in first.iter().filter(|r| r.participant_count.is_some()) {
+            let after = second.iter().find(|r| r.name == record.name);
+            assert!(
+                after.is_some_and(|r| r.participant_count.is_some()),
+                "{} katılımcı sayısı yenilemede kayboldu",
+                record.name
+            );
+        }
+    }
+
     #[test]
     fn spk_applications_create_drafts() {
         let mut archive = Vec::new();
@@ -398,6 +1213,20 @@ mod tests {
         assert!(archive[0].data_sources.contains(&"SPK".to_string()));
     }
 
+    /// Regresyon: sıra numarası unvan sanıldığında arşive sahte kayıt düşüyordu.
+    #[test]
+    fn spk_applications_reject_nameless_rows() {
+        let mut archive = Vec::new();
+        let apps = vec![SpkApplication {
+            company_name: "17".to_string(),
+            application_date: "15.03.2026".to_string(),
+            status: "SPK_APPLICATION".to_string(),
+            source: "SPK".to_string(),
+        }];
+        assert!(!merge_spk_applications(&mut archive, &apps));
+        assert!(archive.is_empty());
+    }
+
     #[test]
     fn spk_applications_do_not_duplicate() {
         let mut archive = vec![PersistedIpo {
@@ -406,25 +1235,8 @@ mod tests {
             ipo_date: "15.03.2026".to_string(),
             price: 0.0,
             status: "TASLAK".to_string(),
-            book_building_dates: None,
-            trading_start_date: None,
-            distribution_type: None,
-            participant_count: None,
-            last_seen: None,
-            split_factor: None,
-            split_checked: None,
-            fund_usage: None,
-            share_structure: None,
-            ipo_size: None,
-            katilim_index: None,
-            lockup_period: None,
-            consortium_lead: None,
-            t1_t2_available: None,
-            distribution_ratios: None,
             data_sources: vec!["SPK".to_string()],
-            spk_bulletin_no: None,
-            spk_approval_date: None,
-            kap_disclosure_index: None,
+            ..Default::default()
         }];
         let apps = vec![SpkApplication {
             company_name: "Test Şirketi A.Ş.".to_string(),
