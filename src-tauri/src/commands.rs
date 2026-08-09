@@ -263,6 +263,15 @@ pub async fn get_capital_increases(
 }
 
 #[tauri::command]
+pub async fn get_analyst_reports(
+    state: State<'_, AppState>,
+    ticker: Option<String>,
+    force_refresh: Option<bool>,
+) -> Result<crate::domain::AnalystReportPayload, String> {
+    api::get_analyst_reports(&state, ticker, force_refresh).await
+}
+
+#[tauri::command]
 pub async fn get_ipo_calendar(
     state: State<'_, AppState>,
     force_refresh: Option<bool>,

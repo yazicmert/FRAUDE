@@ -428,16 +428,121 @@ fn adjusted_closes(result: &YahooResult) -> Option<Vec<f64>> {
     (!values.is_empty()).then_some(values)
 }
 
+/// Canlı fiyatla son kapanış arasında bu orandan büyük fark bölünme ölçeğinde
+/// sayılır. BIST'te günlük marj ±%10'dur; %50'lik bir açık hiçbir seansta
+/// gerçek fiyat hareketiyle açıklanamaz, sağlayıcı hatasıdır. Eşiği düşürmek
+/// oynak sembollerde sağlam seriyi bozma riski taşır.
+const SCALE_BREAK_RATIO: f64 = 1.5;
+
+/// Ölçek kopmasının başladığı bar aranırken anormal sayılan bar-bar sıçraması.
+/// Fiyat marjı ±%10 olduğundan %35'lik bir sıçrama zaten olağan seans hareketi
+/// değildir.
+const SCALE_STEP_RATIO: f64 = 1.35;
+
+/// Onarılan dikişte kalmasına izin verilen artık hareket. Kopma barının kendisi
+/// de o gün gerçekten hareket etmiş olabilir; çarpan uygulandıktan sonra dikişin
+/// tam kapanması beklenmez, olağan bir seans hareketi kadar yaklaşması beklenir.
+const SCALE_SEAM_TOLERANCE: f64 = 0.25;
+
+/// Sağlayıcının bölünme düzeltmesini serinin **yanlış tarafına** uygulamasını onarır.
+///
+/// Bedelsiz/bölünme sonrası düzeltilmesi gereken taraf geçmiştir: eski barlar
+/// yeni sermayeye bölünür, canlı fiyat olduğu gibi kalır. Yahoo bunu ters
+/// çevirdiğinde seri kendi içinde iki ayrı ölçeğe ayrılır. 2026-08'de DERHL.IS
+/// böyleydi: 29 Temmuz'dan sonraki tüm barlar ~5,01'e bölünmüş, `regularMarketPrice`
+/// ise 10,80'de doğru kalmıştı. Bundan türeyen her şey bozulur — günlük değişim
+/// canlı fiyatı bozuk kapanışa oranladığı için +%415 çıkar, RSI/SMA kopuk seriyi
+/// okur, mum grafiği son barlarda tabana yapışır.
+///
+/// Onarım canlı fiyatı çapa alır: son kapanış canlı fiyattan bölünme mertebesinde
+/// ayrılıyorsa seri bozuktur. Kopmanın başladığı bar sondan geriye aranır ve o
+/// bardan itibaren çarpan uygulanır; seri tek ölçeğe döner, son bar canlı fiyata
+/// oturur. Kopma pencerede yoksa (sağlayıcı geçmişi hiç düzeltmemişse ya da kopma
+/// istenen aralıktan eski) seri bütün olarak ölçeklenir — bu da gerçek bölünme
+/// düzeltmesinin ta kendisidir ve serinin şeklini bozmaz.
+///
+/// `None`, "seri sağlam, dokunma" demektir.
+fn scale_break(closes: &[f64], live_price: f64) -> Option<(usize, f64)> {
+    let last = *closes.last()?;
+    if !live_price.is_finite() || live_price <= 0.0 || !last.is_finite() || last <= 0.0 {
+        return None;
+    }
+    let factor = live_price / last;
+    if factor < SCALE_BREAK_RATIO && factor > 1.0 / SCALE_BREAK_RATIO {
+        return None;
+    }
+    let seam = (1..closes.len()).rev().find(|&index| {
+        let (previous, current) = (closes[index - 1], closes[index]);
+        previous > 0.0 && current > 0.0 && {
+            let step = current / previous;
+            step > SCALE_STEP_RATIO || step < 1.0 / SCALE_STEP_RATIO
+        }
+    });
+    // Dikiş çarpanla kapanıyorsa kopma oradan başlar; kapanmıyorsa bulunan
+    // sıçrama gerçek bir kurumsal olaydır ve seri bütün olarak ölçeklenir.
+    let from = seam
+        .filter(|&index| ((closes[index] / closes[index - 1]) * factor - 1.0).abs() <= SCALE_SEAM_TOLERANCE)
+        .unwrap_or(0);
+    Some((from, factor))
+}
+
+/// `scale_break` onarımını düz bir kapanış serisine uygular.
+fn repair_closes(closes: &mut [f64], live_price: Option<f64>) {
+    let Some((from, factor)) = live_price.and_then(|price| scale_break(closes, price)) else {
+        return;
+    };
+    for close in closes.iter_mut().skip(from) {
+        *close *= factor;
+    }
+}
+
+/// `scale_break` onarımını OHLC mumlarına uygular: dört fiyat da aynı çarpanla
+/// ölçeklenir, hacme dokunulmaz (bölünme hatası fiyatı kaydırır, lot sayısını değil).
+fn repair_candles(candles: &mut [(f64, f64, f64, f64)], live_price: Option<f64>) {
+    let closes: Vec<f64> = candles.iter().map(|row| row.3).collect();
+    let Some((from, factor)) = live_price.and_then(|price| scale_break(&closes, price)) else {
+        return;
+    };
+    for row in candles.iter_mut().skip(from) {
+        row.0 *= factor;
+        row.1 *= factor;
+        row.2 *= factor;
+        row.3 *= factor;
+    }
+}
+
+/// `previousClose` alanı canlı fiyatla aynı ölçekte mi? Sağlayıcı seriyi yanlış
+/// ölçeklediğinde bu alanı da kaydırabilir; kaydırmışsa onarılmış serinin bir
+/// önceki kapanışı ona tercih edilir.
+fn same_scale(previous_close: f64, price: f64) -> bool {
+    previous_close > 0.0
+        && price > 0.0
+        && previous_close / price < SCALE_BREAK_RATIO
+        && previous_close / price > 1.0 / SCALE_BREAK_RATIO
+}
+
 fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, index_memberships: Vec<String>) -> EquityRow {
-    let candles = quote_rows(&result);
+    let mut candles = quote_rows(&result);
+    // Değişim yüzdeleri de göstergeler de tek ölçekli seri ister; sağlayıcının
+    // kaydırdığı barlar burada, herhangi bir türetmeden önce yerine oturtulur.
+    repair_candles(&mut candles, result.meta.regular_market_price);
     let closes: Vec<f64> = candles.iter().map(|row| row.3).collect();
     let highs: Vec<f64> = candles.iter().map(|row| row.1).collect();
     let lows: Vec<f64> = candles.iter().map(|row| row.2).collect();
-    let indicator_closes = adjusted_closes(&result).unwrap_or_else(|| closes.clone());
+    let indicator_closes = adjusted_closes(&result)
+        .map(|mut series| {
+            // adjclose ayrı bir dizidir (quote_rows eksik alanlı barları eler),
+            // bu yüzden onarım aynı çapayla ama bağımsız uygulanır. Son barın
+            // adjclose'u ham kapanışa eşit olduğundan çapa ortaktır.
+            repair_closes(&mut series, result.meta.regular_market_price);
+            series
+        })
+        .unwrap_or_else(|| closes.clone());
     let price = result.meta.regular_market_price
         .or_else(|| closes.last().copied())
         .unwrap_or_default();
     let previous_close = result.meta.previous_close
+        .filter(|previous| same_scale(*previous, price))
         .or_else(|| closes.iter().rev().nth(1).copied())
         .unwrap_or(price);
     let change_pct = if previous_close > 0.0 {
@@ -572,9 +677,11 @@ fn select_previous_close(
     if closes.len() >= 2 {
         return closes[closes.len() - 2];
     }
+    // Seri onarıldığında bu alanlar onarımın dışında kalır; canlı fiyattan
+    // bölünme mertebesinde ayrılan bir "önceki kapanış" sahte bir değişim üretir.
     meta_previous
         .or(chart_previous)
-        .filter(|p| *p > 0.0)
+        .filter(|previous| same_scale(*previous, price))
         .unwrap_or(price)
 }
 
@@ -663,7 +770,8 @@ async fn fetch_market_metrics_uncached(client: &reqwest::Client) -> Vec<MarketMe
         tasks.push(tokio::spawn(async move {
             let result = chart_with_retry(&client_clone, ticker, "5d").await.ok()?;
 
-            let candles = quote_rows(&result);
+            let mut candles = quote_rows(&result);
+            repair_candles(&mut candles, result.meta.regular_market_price);
             let price = result.meta.regular_market_price
                 .or_else(|| candles.last().map(|row| row.3)).unwrap_or_default();
             let previous = select_previous_close(
@@ -870,7 +978,8 @@ async fn fetch_market_quotes_direct(
             // borsa eki yalnız HTTP sınırında eklenir (XU100.IS).
             let provider_symbol = symbol(&requested_symbol);
             let result = chart_with_retry(&client, &provider_symbol, "5d").await.ok()?;
-            let candles = quote_rows(&result);
+            let mut candles = quote_rows(&result);
+            repair_candles(&mut candles, result.meta.regular_market_price);
             let price = result.meta.regular_market_price
                 .or_else(|| candles.last().map(|row| row.3))?;
             let previous_close = select_previous_close(
@@ -1098,12 +1207,119 @@ async fn fetch_price_history_direct(client: &reqwest::Client, ticker: &str, rang
             });
         }
     }
+    // Sağlayıcının yanlış ölçeklediği barlar onarılmazsa mum grafiği kopma
+    // noktasından sonra tabana yapışır ve fiyat ekseni okunamaz hale gelir.
+    let mut candles: Vec<(f64, f64, f64, f64)> = historical
+        .iter()
+        .map(|row| (row.open, row.high, row.low, row.close))
+        .collect();
+    repair_candles(&mut candles, result.meta.regular_market_price);
+    for (row, candle) in historical.iter_mut().zip(candles) {
+        (row.open, row.high, row.low, row.close) = candle;
+    }
     Ok(historical)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sağlam seriye dokunulmaz: en çok artan/azalan listesini besleyen bu
+    /// yoldan geçen her sembolün ezici çoğunluğu buraya düşer.
+    #[test]
+    fn healthy_series_is_left_alone() {
+        let closes = [10.0, 10.4, 10.2, 10.5, 10.8];
+        assert!(scale_break(&closes, 10.8).is_none());
+        // Seans içi normal hareket de kopma sayılmaz.
+        assert!(scale_break(&closes, 11.6).is_none());
+        assert!(scale_break(&[], 10.0).is_none());
+        assert!(scale_break(&closes, 0.0).is_none());
+    }
+
+    /// DERHL.IS, 2026-08-07: sağlayıcı 29 Temmuz'dan sonraki barları ~5,01'e
+    /// bölmüş, canlı fiyatı 10,80'de bırakmıştı. Onarım öncesi günlük değişim
+    /// +%415,73 çıkıyordu; İş Yatırım'ın aynı gün için verdiği doğru değer +%2,86.
+    #[test]
+    fn repairs_provider_split_applied_to_wrong_side() {
+        let mut candles: Vec<(f64, f64, f64, f64)> = [
+            11.46, 10.80, 10.77, // gerçek ölçek
+            2.050236, 2.064198, 2.062203, 2.060209, 2.070181, 2.074170, 2.094114, 2.153945,
+        ]
+        .into_iter()
+        .map(|close| (close, close, close, close))
+        .collect();
+        repair_candles(&mut candles, Some(10.8));
+
+        let closes: Vec<f64> = candles.iter().map(|row| row.3).collect();
+        // Kopmadan önceki barlar zaten doğru ölçekteydi, olduğu gibi kalır.
+        assert!((closes[2] - 10.77).abs() < 1e-9, "kopma öncesi bar değişmemeli: {}", closes[2]);
+        // Son bar canlı fiyata oturur.
+        assert!((closes[closes.len() - 1] - 10.8).abs() < 1e-6, "son bar canlı fiyata oturmalı: {}", closes[closes.len() - 1]);
+        // Ve günlük değişim İş Yatırım'ın verdiği değere denk gelir.
+        let previous = closes[closes.len() - 2];
+        let change = (10.8 - previous) / previous * 100.0;
+        assert!((change - 2.86).abs() < 0.01, "günlük değişim +%2,86 olmalı: {change}");
+        // Mumun dört fiyatı da aynı çarpanla taşınır.
+        let last = candles[candles.len() - 1];
+        assert!((last.0 - last.3).abs() < 1e-9 && (last.1 - last.3).abs() < 1e-9);
+    }
+
+    /// Kopma istenen pencereden eskiyse (örn. 5 günlük istekte tüm barlar bozuk
+    /// ölçekte) seri bütün olarak taşınır; şekli — dolayısıyla değişim yüzdesi —
+    /// korunur.
+    #[test]
+    fn rescales_whole_window_when_break_predates_it() {
+        let mut closes = [2.060209, 2.070181, 2.074170, 2.094114, 2.153945];
+        repair_closes(&mut closes, Some(10.8));
+        assert!((closes[4] - 10.8).abs() < 1e-6, "{}", closes[4]);
+        let change = (closes[4] - closes[3]) / closes[3] * 100.0;
+        assert!((change - 2.86).abs() < 0.01, "değişim korunmalı: {change}");
+    }
+
+    /// Gerçek bir kurumsal olayın sıçraması çarpanla kapanmıyorsa dikişten
+    /// bölünmez; seri bütün olarak taşınır ve olay yerinde kalır.
+    #[test]
+    fn genuine_corporate_event_is_not_treated_as_seam() {
+        let closes = [100.0, 102.0, 20.0, 20.4, 20.2];
+        // 5:1 bedelsiz düzeltilmemiş: canlı fiyat serinin son barıyla aynı
+        // ölçekte olduğundan onarım hiç tetiklenmez.
+        assert!(scale_break(&closes, 20.2).is_none());
+    }
+
+    /// Ölçeği kaymış `previousClose`, onarılmış seriye tercih edilmez.
+    #[test]
+    fn previous_close_out_of_scale_is_rejected() {
+        assert!(same_scale(10.5, 10.8));
+        assert!(!same_scale(2.094, 10.8));
+    }
+
+    /// BIST payında günlük değişim fiyat marjını (±%10) aşamaz. Sağlayıcı
+    /// serinin bir bölümünü yanlış ölçeklediğinde bu sınır delinir; DERHL
+    /// 2026-08'de tam olarak böyle +%415 görünüyordu.
+    #[tokio::test]
+    #[ignore = "requires live Yahoo access"]
+    async fn live_bist_daily_change_stays_within_price_limits() {
+        let client = reqwest::Client::new();
+        for ticker in ["DERHL", "THYAO", "ASELS", "EREGL", "GARAN"] {
+            let row = fetch_equity(&client, ticker, ticker).await.unwrap();
+            println!("{ticker}: {:.2} ({:+.2}%)", row.price, row.change_pct);
+            assert!(
+                row.change_pct.abs() <= 25.0,
+                "{ticker} günlük değişimi fiyat marjını aşıyor: {:+.2}%",
+                row.change_pct
+            );
+            // Çok dönemli değişimler de aynı seriden türer; ölçek kopuğsa
+            // bunlar da yüzlerce yüzdeye fırlar.
+            for (label, change) in [("1h", row.change_1w), ("1a", row.change_1m)] {
+                if let Some(change) = change {
+                    assert!(
+                        change.abs() <= 300.0,
+                        "{ticker} {label} değişimi ölçek kopuğuna işaret ediyor: {change:+.2}%"
+                    );
+                }
+            }
+        }
+    }
 
     /// Yeniden adlandırılan semboller görünen ada çözülür; yerel arama eşlemesi
     /// (services::ticker_snapshot) bu haritaya dayanır.

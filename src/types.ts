@@ -476,6 +476,32 @@ export interface CorporateEventsPayload {
   ready: boolean;
 }
 
+/** Aracı kurum/banka analiz raporu (core/src/research_reports.rs). */
+export interface AnalystReport {
+  id: string;
+  broker: string;
+  scope: 'domestic' | 'global';
+  kind: 'company' | 'sector' | 'strategy' | 'bulletin' | 'other';
+  title: string;
+  summary?: string | null;
+  url: string;
+  pdf_url?: string | null;
+  published: string;
+  published_ts: number;
+  tickers: string[];
+  analyst?: string | null;
+  rating?: string | null;
+  target_price?: number | null;
+  source_id: string;
+}
+
+export interface AnalystReportPayload {
+  reports: AnalystReport[];
+  last_updated: string | null;
+  /** Dolu ise bazı kurumlar çekilemedi; liste yine de gösterilir. */
+  errors: string[];
+}
+
 export interface IpoCalendarPayload {
   records: IpoRecord[];
   last_updated: string | null;

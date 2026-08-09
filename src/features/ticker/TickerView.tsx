@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { openUrl } from '../../lib/openExternal';
-import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, getFinancialStatements, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
+import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getAnalystReports, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, getFinancialStatements, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
+import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, AnalystReport, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
 import PriceChart from './PriceChart';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
@@ -92,6 +92,8 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [selectedKapDoc, setSelectedKapDoc] = useState<KapAnnouncement | null>(null);
   const [dividends, setDividends] = useState<DividendRecord[]>([]);
   const [capitalIncreases, setCapitalIncreases] = useState<CapitalIncrease[]>([]);
+  const [analystReports, setAnalystReports] = useState<AnalystReport[]>([]);
+  const [analystLoading, setAnalystLoading] = useState(true);
   const [shareholders, setShareholders] = useState<ShareholderSnapshot | null>(null);
   const [shareholdersLoading, setShareholdersLoading] = useState(true);
   const [shareholdersError, setShareholdersError] = useState<string | null>(null);
@@ -191,6 +193,21 @@ export default function TickerView({ ticker }: { ticker: string }) {
         if (cap.status === 'fulfilled') setCapitalIncreases(cap.value);
       })
       .finally(() => setHistoryLoading(false));
+  }, [ticker, corporate]);
+
+  // Aracı kurum analiz raporları. Yalnız kurumsal enstrümanlarda anlamlı; fon
+  // ya da emtia için kurum raporu yayımlanmaz.
+  useEffect(() => {
+    setAnalystReports([]);
+    if (!corporate) {
+      setAnalystLoading(false);
+      return;
+    }
+    setAnalystLoading(true);
+    getAnalystReports(ticker)
+      .then((payload) => setAnalystReports(payload.reports))
+      .catch((err: unknown) => console.error('Failed to load analyst reports:', err))
+      .finally(() => setAnalystLoading(false));
   }, [ticker, corporate]);
 
   // Hisseyi tutan fonlar: yerelde biriken PDR dizininden okunur, ağa çıkmaz.
@@ -1002,6 +1019,59 @@ export default function TickerView({ ticker }: { ticker: string }) {
           )}
         </section>
       </div>
+      )}
+
+      {corporate && (
+      <section className="panel" style={{ marginTop: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+          <h2 style={{ marginBottom: '4px' }}>{t('analystReports')}</h2>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('analystReportsHint')}</span>
+        </div>
+        {analystLoading ? (
+          <div className="empty-state" style={{ padding: '20px' }}>{t('loadingData')}</div>
+        ) : analystReports.length === 0 ? (
+          <div className="empty-state" style={{ padding: '20px', fontSize: '0.82rem' }}>{t('analystReportsNotFound')}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+            {analystReports.slice(0, 12).map((report) => (
+              <button
+                key={report.id}
+                type="button"
+                onClick={() => openUrl(report.pdf_url || report.url)}
+                style={{
+                  display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left',
+                  background: 'var(--bg-panel)', border: '1px solid var(--border-color)',
+                  borderRadius: '8px', padding: '10px 12px', cursor: 'pointer', width: '100%'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '0.66rem', fontWeight: 'bold', background: '#58a6ff22', color: '#58a6ff' }}>
+                    {report.broker}
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{report.published}</span>
+                  {report.rating && (
+                    <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '0.66rem', fontWeight: 'bold', background: '#3fb95022', color: '#3fb950' }}>
+                      {report.rating}
+                    </span>
+                  )}
+                  {report.target_price != null && (
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: '#d29922' }}>
+                      {t('targetPriceLabel')}: ₺{report.target_price.toFixed(2)}
+                    </span>
+                  )}
+                  {report.pdf_url && (
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>PDF</span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.84rem', fontWeight: 600 }}>{report.title}</div>
+                {report.analyst && (
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{report.analyst}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
       )}
 
       <section className="panel" style={{ marginTop: '16px' }}>

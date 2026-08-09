@@ -351,6 +351,14 @@ export function getCapitalIncreases(ticker: string) {
   return invoke<import('../types').CapitalIncrease[]>('get_capital_increases', { ticker });
 }
 
+/**
+ * Analiz raporları. `ticker` verilmezse piyasa geneli akış döner; verilirse
+ * kurumun o hisseye ait etiket akışı da canlı olarak taranır.
+ */
+export function getAnalystReports(ticker?: string, forceRefresh?: boolean) {
+  return invoke<import('../types').AnalystReportPayload>('get_analyst_reports', { ticker, forceRefresh });
+}
+
 export function getCorporateEvents() {
   return invoke<import('../types').CorporateEventsPayload>('get_corporate_events');
 }

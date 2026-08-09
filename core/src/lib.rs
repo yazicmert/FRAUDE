@@ -37,6 +37,7 @@ pub mod news_tagger;
 pub mod persist;
 pub mod providers;
 pub mod research;
+pub mod research_reports;
 pub mod retry;
 pub mod secrets;
 pub mod services;

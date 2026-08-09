@@ -672,6 +672,61 @@ pub async fn get_capital_increases(
     crate::corporate_actions::fetch_capital_increases(&state.http, &ticker).await
 }
 
+/// Aracı kurum/banka analiz raporları.
+///
+/// Arşiv diskte tutulur; `force_refresh` gelmedikçe gün içinde bir kez
+/// tazelenir. Kaynakların hepsi düşse bile eldeki arşiv döner — rapor listesi
+/// tek bir sitenin erişilebilirliğine bağlı kalmaz.
+pub async fn get_analyst_reports(
+    state: &AppState,
+    ticker: Option<String>,
+    force_refresh: Option<bool>,
+) -> Result<crate::domain::AnalystReportPayload, String> {
+    use crate::research_reports as reports;
+
+    let mut archive = reports::load();
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let stale = archive
+        .last_updated
+        .as_deref()
+        .map_or(true, |stamp| !stamp.starts_with(&today));
+
+    let mut errors = Vec::new();
+    if force_refresh.unwrap_or(false) || stale {
+        // İlk kurulumda arşiv boş olur; o turda geriye doğru derin taranır.
+        let deep = archive.reports.is_empty();
+        let (_, source_errors) = reports::refresh(&state.http, deep).await;
+        errors = source_errors;
+        archive = reports::load();
+    }
+
+    let records = match ticker.as_deref().filter(|code| !code.trim().is_empty()) {
+        Some(code) => {
+            // Arşiv derinliği sınırlı; hisse açıldığında kurumun etiket akışı
+            // o hissenin tam geçmişini tek istekte verir.
+            let universe: std::collections::HashSet<String> =
+                crate::bist_universe::load(&state.http)
+                    .await
+                    .into_iter()
+                    .map(|(symbol, _)| symbol)
+                    .collect();
+            let live = reports::fetch_ticker_feed(&state.http, code, &universe).await;
+            if !live.is_empty() {
+                reports::merge(&mut archive, live);
+                reports::save(&archive);
+            }
+            reports::for_ticker(&archive, code)
+        }
+        None => archive.reports.clone(),
+    };
+
+    Ok(crate::domain::AnalystReportPayload {
+        reports: records,
+        last_updated: archive.last_updated,
+        errors,
+    })
+}
+
 pub async fn get_ipo_calendar(
     state: &AppState,
     force_refresh: Option<bool>,

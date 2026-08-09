@@ -51,6 +51,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_financial_statements",
     "get_dividends",
     "get_capital_increases",
+    "get_analyst_reports",
     "get_ipo_calendar",
     "get_kap_for_ticker",
     "get_shareholders",
@@ -233,6 +234,16 @@ struct IpoCalendarArgs {
     force_refresh: Option<bool>,
 }
 
+/// `ticker` boş bırakılırsa piyasa geneli rapor akışı döner.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AnalystReportArgs {
+    #[serde(default)]
+    ticker: Option<String>,
+    #[serde(default)]
+    force_refresh: Option<bool>,
+}
+
 /// Argümanları çözüp komutu çalıştıran kısayol: hatalı gövde → 400,
 /// komut hatası → 500, başarı → `{ data }`.
 macro_rules! run {
@@ -302,6 +313,13 @@ pub async fn dispatch(
         "get_dividends" => run!(args, TickerArgs, |p| api::get_dividends(s, p.ticker)),
         "get_capital_increases" => {
             run!(args, TickerArgs, |p| api::get_capital_increases(s, p.ticker))
+        }
+        "get_analyst_reports" => {
+            run!(args, AnalystReportArgs, |p| api::get_analyst_reports(
+                s,
+                p.ticker,
+                p.force_refresh
+            ))
         }
         "get_ipo_calendar" => {
             run!(args, IpoCalendarArgs, |p| api::get_ipo_calendar(s, p.force_refresh))

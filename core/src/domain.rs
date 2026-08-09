@@ -486,6 +486,18 @@ pub struct IpoCalendarPayload {
     pub scrape_ok: bool,
 }
 
+/// Analiz raporu listesi ve tazeleme durumu.
+///
+/// `errors` boş değilse **bazı** kurumlar çekilemedi demektir; `reports` yine
+/// de doludur. Ekran bunu uyarı olarak gösterir, listeyi gizlemez.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnalystReportPayload {
+    pub reports: Vec<crate::research_reports::AnalystReport>,
+    pub last_updated: Option<String>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
 /// Açıklanmış gelecek temettü (Yahoo calendarEvents.exDividendDate).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpcomingDividend {
