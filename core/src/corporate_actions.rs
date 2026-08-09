@@ -48,6 +48,9 @@ struct YahooSplit {
     denominator: f64,
 }
 
+/// Resmî kaynağa geçilemeyen kayıtların etiketi.
+const YAHOO_SOURCE: &str = "Yahoo Finance";
+
 fn timestamp_to_date(ts: i64) -> String {
     let naive = chrono::DateTime::from_timestamp(ts, 0)
         .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap())
@@ -196,6 +199,7 @@ pub async fn fetch_dividends(client: &reqwest::Client, ticker: &str) -> Result<V
             yield_pct,
             period: year,
             installment: 0,
+            source: YAHOO_SOURCE.to_string(),
         }
     }).collect();
     let mut records: Vec<DividendRecord> = records;
@@ -215,7 +219,7 @@ pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> 
     let archive = crate::capital_store::load();
     let official = crate::capital_store::increases_for(&archive, ticker);
     if !official.is_empty() {
-        return Ok(official.into_iter().map(|row| spk_to_record(ticker, &row.increase)).collect());
+        return Ok(official.iter().map(|row| official_to_record(ticker, row)).collect());
     }
 
     let events = fetch_chart_events(client, ticker).await?;
@@ -233,21 +237,96 @@ pub async fn fetch_capital_increases(client: &reqwest::Client, ticker: &str) -> 
     Ok(records)
 }
 
-/// Yahoo'dan derlenen piyasa geneli listesini SPK arşiviyle değiştirir.
+/// Yahoo'dan derlenen temettü listesini resmî KAP kayıtlarıyla değiştirir.
 ///
-/// SPK kaydı bulunan **her hisse için Yahoo satırları tamamen atılır**, tarih
-/// eşleştirmesi yapılmaz: SPK onay tarihini, Yahoo gerçekleşme tarihini verir
-/// ve ikisi gün-hafta ayrı düşer (KTLEV: onay 29.07, gerçekleşme 03.08). Aynı
-/// artırımı iki kez listelememek için hisse bazında tek kaynak seçilir.
-///
-/// Böylece liste bedelliyi de gösterir — Yahoo split akışında bedelli hiç yok.
-fn overlay_official_increases(
-    yahoo_splits: Vec<CapitalIncrease>,
+/// Kapsama **hisse + hak kullanım tarihi** düzeyinde: KAP kaydı olan bir
+/// ödemenin Yahoo satırı düşer, olmayanlar kalır. Sermaye artırımındaki gibi
+/// hisse düzeyinde kapsamak burada yanlış olurdu — KAP tarama bütçeli
+/// ilerliyor ve bir hissenin bazı ödemeleri henüz okunmamış olabilir; hisseyi
+/// tümden kapsamak o ödemeleri listeden silerdi.
+fn overlay_official_dividends(
+    yahoo: Vec<DividendRecord>,
+    archive: &crate::capital_store::CapitalArchive,
     cutoff: &str,
-) -> Vec<CapitalIncrease> {
-    overlay_with(yahoo_splits, &crate::capital_store::load(), cutoff)
+    today: &str,
+) -> Vec<DividendRecord> {
+    let official: Vec<DividendRecord> = archive
+        .dividends
+        .iter()
+        // Hak kullanımı gelecekte olan ödeme geçmiş listesine girmez; o
+        // "yaklaşan temettü" takvimine aittir (bkz. `upcoming_from_official`).
+        .filter(|row| row.ex_date.as_str() >= cutoff && row.ex_date.as_str() <= today)
+        .map(kap_to_dividend)
+        .collect();
+
+    if official.is_empty() {
+        return yahoo;
+    }
+
+    let covered: std::collections::HashSet<(&str, &str)> = official
+        .iter()
+        .map(|row| (row.ticker.as_str(), row.ex_date.as_str()))
+        .collect();
+
+    let mut merged: Vec<DividendRecord> = yahoo
+        .into_iter()
+        .filter(|row| !covered.contains(&(row.ticker.as_str(), row.ex_date.as_str())))
+        .collect();
+    merged.extend(official);
+    merged
 }
 
+/// Hak kullanımı henüz gelmemiş resmî temettüler.
+///
+/// Yaklaşan temettü takvimi bugüne dek Yahoo'nun `quoteSummary` ucundan
+/// geliyordu; o uç kimlikli "crumb" istiyor, sık bloklanıyor ve önbellekte
+/// takvim boş kalıyordu. KAP bildirimi hak kullanım tarihini **kesinleşmiş**
+/// olarak veriyor — tahmine gerek yok.
+fn upcoming_from_official(
+    archive: &crate::capital_store::CapitalArchive,
+    today: &str,
+) -> Vec<crate::domain::UpcomingDividend> {
+    archive
+        .dividends
+        .iter()
+        .filter(|row| row.ex_date.as_str() > today)
+        .map(|row| crate::domain::UpcomingDividend {
+            ticker: row.ticker.clone(),
+            ex_date: row.ex_date.clone(),
+            // KAP yıllık oran vermez, o ödemenin tutarını verir; alan Yahoo'nun
+            // tahmini yıllık oranı için var, uydurma değer yazılmaz.
+            annual_rate: None,
+            installment: 0,
+        })
+        .collect()
+}
+
+/// KAP temettü kaydını arayüzün beklediği biçime çevirir.
+///
+/// Brüt tutar taşınır: Yahoo da brüt veriyor ve iki kaynak ancak aynı temelde
+/// karşılaştırılabilir. Verim, akış kurulurken fiyat serisinden hesaplanıyor;
+/// burada 0 bırakılır.
+fn kap_to_dividend(row: &crate::kap_dividend::KapDividend) -> DividendRecord {
+    DividendRecord {
+        ticker: row.ticker.clone(),
+        period: row.ex_date.get(..4).unwrap_or("?").to_string(),
+        ex_date: row.ex_date.clone(),
+        amount_per_share: row.gross_per_share,
+        yield_pct: 0.0,
+        installment: 0,
+        source: format!("KAP Bildirimi {}", row.disclosure_index),
+    }
+}
+
+/// Yahoo'dan derlenen piyasa geneli listesini resmî arşivle değiştirir.
+///
+/// Resmî kaydı bulunan **her hisse için Yahoo satırları tamamen atılır**,
+/// tarih eşleştirmesi yapılmaz: resmî kaynak onay/karar tarihini, Yahoo
+/// gerçekleşme tarihini verir ve ikisi gün-hafta ayrı düşer (KTLEV: onay
+/// 29.07, gerçekleşme 03.08). Aynı artırımı iki kez listelememek için hisse
+/// bazında tek kaynak seçilir.
+///
+/// Böylece liste bedelliyi de gösterir — Yahoo split akışında bedelli hiç yok.
 fn overlay_with(
     yahoo_splits: Vec<CapitalIncrease>,
     archive: &crate::capital_store::CapitalArchive,
@@ -259,7 +338,7 @@ fn overlay_with(
         .filter_map(|row| {
             let ticker = row.ticker.as_deref()?;
             (row.increase.approval_date.as_str() >= cutoff)
-                .then(|| spk_to_record(ticker, &row.increase))
+                .then(|| official_to_record(ticker, row))
         })
         .collect();
 
@@ -267,8 +346,17 @@ fn overlay_with(
         return yahoo_splits;
     }
 
-    let covered: std::collections::HashSet<&str> =
-        official.iter().map(|r| r.ticker.as_str()).collect();
+    // Kapsama **şirket** düzeyinde: artırım pay gruplarının hepsini ilgilendirir
+    // (İş Bankası ISATR/ISBTR/ISCTR). Yalnız resmî kaydın kodunu kapsamak,
+    // kardeş kodların Yahoo satırını bırakıyor ve aynı artırım listede iki kez,
+    // iki ayrı tarih ve kaynakla görünüyordu.
+    let covered: std::collections::HashSet<&str> = official
+        .iter()
+        .flat_map(|r| {
+            std::iter::once(r.ticker.as_str())
+                .chain(crate::company_match::sibling_tickers(&r.ticker))
+        })
+        .collect();
 
     let mut merged: Vec<CapitalIncrease> = yahoo_splits
         .into_iter()
@@ -278,10 +366,25 @@ fn overlay_with(
     merged
 }
 
-/// SPK kaydını arayüzün beklediği biçime çevirir.
+/// Resmî kaydı arayüzün beklediği biçime çevirir.
 ///
 /// Bir artırım hem bedelli hem bedelsiz olabilir (karma); oran metni her
 /// bileşeni mevcut sermayeye göre yüzde olarak verir.
+fn official_to_record(ticker: &str, stored: &crate::capital_store::StoredCapitalIncrease) -> CapitalIncrease {
+    let source = match stored.source {
+        crate::capital_store::CapitalSource::SpkBulletin => {
+            format!("SPK Bülteni {}", stored.increase.bulletin_no)
+        }
+        // Bülten numarası alanı KAP kayıtlarında "KAP/1644978" taşıyor;
+        // kullanıcıya bildirim numarası olarak gösterilir.
+        crate::capital_store::CapitalSource::KapDisclosure => {
+            let index = stored.increase.bulletin_no.trim_start_matches("KAP/");
+            format!("KAP Bildirimi {index}")
+        }
+    };
+    CapitalIncrease { source, ..spk_to_record(ticker, &stored.increase) }
+}
+
 fn spk_to_record(ticker: &str, increase: &crate::spk::SpkCapitalIncrease) -> CapitalIncrease {
     let bonus_pct = increase.bonus_amount() / increase.existing_capital * 100.0;
     let rights_pct = increase.rights_ratio() * 100.0;
@@ -397,10 +500,18 @@ pub async fn refresh_ipo_base(client: &reqwest::Client) -> (Vec<IpoRecord>, bool
     let mut archive = crate::ipo_store::load();
 
     // Pipeline sonuçlarını birleştir (SPK > KAP > halkarz.com)
-    let pipeline_changed = crate::ipo_pipeline::merge_pipeline_into_archive(
+    let mut pipeline_changed = crate::ipo_pipeline::merge_pipeline_into_archive(
         &mut archive,
         &pipeline_result,
     );
+
+    // Onay bültende göründükten sonra arzın geri kalanı günler içinde KAP'a
+    // damla damla düşüyor: kesin fiyat, katılımcı sayısı, ilk işlem tarihi,
+    // endeks üyeliği. İzleme turu bunları kullanıcı bir şey yapmadan toplar.
+    // Pipeline'dan **sonra** çalışır: yeni onay önce kayda dönüşmeli ki aynı
+    // turda izlemeye girebilsin.
+    pipeline_changed |=
+        crate::ipo_follow::follow_round(client, &mut archive, &pipeline_result.kap_scan).await;
 
     if pipeline_changed {
         crate::ipo_store::save(&archive);
@@ -540,12 +651,31 @@ pub async fn backfill_ipo_history(client: &reqwest::Client) -> bool {
         }
     }
 
-    // Bölünme çarpanları SPK arşivinden okunduğu için sermaye artırımları
-    // önce tazelenir; sıra ters olursa yeni onaylar bir tur geç yansır.
-    let added = crate::spk::backfill_capital_increases(client).await;
-    if added > 0 {
-        eprintln!("[spk] {added} yeni sermaye artırımı arşive eklendi");
+    // Bölünme çarpanları SPK arşivinden okunduğu için bültenler önce
+    // taranır; sıra ters olursa yeni onaylar bir tur geç yansır.
+    let (increases, approvals) = crate::spk::backfill_spk_bulletins(client).await;
+    if increases > 0 || approvals > 0 {
+        eprintln!("[spk] arşive {increases} sermaye artırımı, {approvals} halka arz onayı işlendi");
     }
+
+    // Aşağıdaki iki tur ile bu çağrıdan hemen önce çalışan halka arz izleme
+    // turu **aynı** gövde ucunu ve aynı hız sınırını paylaşıyor. Aralarında
+    // pencere beklenmezse ilk tur bütçenin tamamını yakar ve sonrakiler hiç
+    // ilerlemez; temettü arşivi tam olarak bu yüzden boş kalmıştı.
+    crate::kap_capital::body_cooldown().await;
+
+    // Bültenin göremediği artırımlar KAP'tan gelir: kayıtlı sermaye
+    // sistemindeki şirketler iç kaynaklı bedelsizi yönetim kurulu kararıyla
+    // yapıyor ve bülten onay tablosunda yayımlanmıyor. Gövde ucunun kotası
+    // yüzünden tur bütçeli; her hafta boşluk biraz daha kapanır.
+    crate::kap_capital::backfill_round(client).await;
+
+    crate::kap_capital::body_cooldown().await;
+
+    // Temettünün resmî kaynağı da KAP: "Kar Payı Dağıtım İşlemlerine İlişkin
+    // Bildirim" pay grubu bazında brüt/net tutarı ve kesinleşen hak kullanım
+    // tarihini veriyor. Yahoo yalnız henüz okunmamış ödemelerde kalır.
+    crate::kap_dividend::backfill_round(client).await;
 
     changed |= refresh_split_factors(client, &mut archive).await;
 
@@ -849,6 +979,10 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
     let mut dividends: Vec<DividendRecord> = Vec::new();
     let mut splits: Vec<CapitalIncrease> = Vec::new();
     let mut success = 0usize;
+    // Verim fiyat serisinden hesaplanıyor ve yalnız Yahoo'da var; resmî kayıt
+    // aynı ödemeyi devraldığında verimi buradan alır.
+    let mut dividend_yields: std::collections::HashMap<(String, String), f64> =
+        std::collections::HashMap::new();
 
     for res in join_all(tasks).await {
         let Ok(Some((ticker, events))) = res else { continue };
@@ -862,6 +996,7 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
                 .filter(|c| *c > 0.0)
                 .map(|c| (d.amount / c) * 100.0)
                 .unwrap_or(0.0);
+            dividend_yields.insert((ticker.clone(), ex_date.clone()), yield_pct);
             dividends.push(DividendRecord {
                 ticker: ticker.clone(),
                 period: ex_date.get(..4).unwrap_or("?").to_string(),
@@ -869,6 +1004,7 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
                 amount_per_share: d.amount,
                 yield_pct,
                 installment: 0,
+                source: YAHOO_SOURCE.to_string(),
             });
         }
         for s in events.splits {
@@ -893,7 +1029,20 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
         return;
     }
 
-    let splits = overlay_official_increases(splits, &split_cutoff);
+    // Resmî kayıtlar Yahoo satırlarının yerini alır. Arşiv bir kez okunur:
+    // iki bindirme de aynı dosyadan besleniyor.
+    let archive = crate::capital_store::load();
+    let splits = overlay_with(splits, &archive, &split_cutoff);
+    let today_iso = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let mut dividends = overlay_official_dividends(dividends, &archive, &div_cutoff, &today_iso);
+
+    // Verim, resmî kayıtlarda boş gelir (KAP tutarı verir, fiyatı vermez);
+    // aynı hisse-tarih için Yahoo'nun hesapladığı verim varsa devralınır.
+    for record in dividends.iter_mut().filter(|d| d.yield_pct == 0.0) {
+        if let Some(value) = dividend_yields.get(&(record.ticker.clone(), record.ex_date.clone())) {
+            record.yield_pct = *value;
+        }
+    }
 
     dividends.sort_by(|a, b| b.ex_date.cmp(&a.ex_date));
     let mut splits = splits;
@@ -905,6 +1054,16 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
         Some(list) => list,
         None => load_market_events().upcoming,
     };
+
+    // Resmî takvim Yahoo'nunkini ezer: aynı hissenin KAP'tan gelen kesinleşmiş
+    // tarihi varsa Yahoo'nun tahmini satırı düşer.
+    let official_upcoming = upcoming_from_official(&archive, &today_iso);
+    if !official_upcoming.is_empty() {
+        let covered: std::collections::HashSet<&str> =
+            official_upcoming.iter().map(|u| u.ticker.as_str()).collect();
+        upcoming.retain(|u| !covered.contains(u.ticker.as_str()));
+        upcoming.extend(official_upcoming);
+    }
 
     // Yaklaşan ödeme, aynı yıl içinde ödenenlerin devamı: kaçıncı taksit?
     for u in upcoming.iter_mut() {
@@ -1066,10 +1225,25 @@ mod tests {
 
     /// SPK kaydı olan hissede Yahoo satırları tamamen düşer — tarihler
     /// (onay / gerçekleşme) tutmadığı için aynı artırım iki kez listelenirdi.
+    /// Tek bültenlik kaydı arşive işleyen test yardımcısı.
+    fn archive_of(rows: Vec<crate::spk::SpkCapitalIncrease>) -> crate::capital_store::CapitalArchive {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        for row in rows {
+            crate::capital_store::merge_bulletin(
+                &mut archive,
+                crate::capital_store::BulletinExtract {
+                    bulletin_no: row.bulletin_no.clone(),
+                    increases: vec![row],
+                    approvals: Vec::new(),
+                },
+            );
+        }
+        archive
+    }
+
     #[test]
     fn official_records_replace_yahoo_rows_for_the_same_ticker() {
-        let mut archive = crate::capital_store::CapitalArchive::default();
-        crate::capital_store::merge(&mut archive, vec![
+        let archive = archive_of(vec![
             spk_row("Katılımevim Tasarruf Finansman AŞ", "2026-07-29", 2_070_000_000.0, 4_930_000_000.0, 0.0),
         ]);
 
@@ -1087,11 +1261,106 @@ mod tests {
         assert!(merged.iter().any(|r| r.ticker == "ASELS" && r.source == "Yahoo Finance"));
     }
 
+    /// Artırım pay gruplarının hepsini ilgilendirir: resmî kayıt bir koda
+    /// bağlansa da kardeş kodların Yahoo satırı düşmeli, yoksa aynı olay
+    /// listede iki kez, iki ayrı tarih ve kaynakla görünür.
+    #[test]
+    fn official_record_covers_every_share_class_of_the_company() {
+        let archive = archive_of(vec![
+            spk_row("Türkiye İş Bankası AŞ", "2026-02-22", 100.0, 150.0, 0.0),
+        ]);
+
+        let merged = super::overlay_with(
+            vec![yahoo_row("ISCTR", "2026-02-27"), yahoo_row("ISATR", "2026-02-27")],
+            &archive,
+            "2020-01-01",
+        );
+
+        assert!(
+            merged.iter().all(|r| r.source.starts_with("SPK")),
+            "kardeş pay gruplarının Yahoo satırı kalmamalı: {merged:#?}"
+        );
+        assert_eq!(merged.len(), 1);
+    }
+
+    fn kap_dividend(ticker: &str, ex_date: &str, gross: f64) -> crate::kap_dividend::KapDividend {
+        crate::kap_dividend::KapDividend {
+            ticker: ticker.into(),
+            ex_date: ex_date.into(),
+            gross_per_share: gross,
+            net_per_share: gross * 0.85,
+            payment_date: None,
+            payment_kind: "Peşin".into(),
+            disclosure_index: "1617428".into(),
+        }
+    }
+
+    fn yahoo_dividend(ticker: &str, ex_date: &str, amount: f64) -> crate::domain::DividendRecord {
+        crate::domain::DividendRecord {
+            ticker: ticker.into(),
+            ex_date: ex_date.into(),
+            amount_per_share: amount,
+            yield_pct: 4.2,
+            period: ex_date[..4].into(),
+            installment: 0,
+            source: super::YAHOO_SOURCE.into(),
+        }
+    }
+
+    /// Kapsama **hisse + tarih** düzeyinde olmalı. Hisseyi tümden kapsamak,
+    /// KAP taraması bütçeli ilerlediği için henüz okunmamış ödemeleri listeden
+    /// silerdi.
+    #[test]
+    fn official_dividends_replace_only_the_same_payment() {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        archive.dividends.push(kap_dividend("ARASE", "2026-06-24", 2.0));
+
+        let merged = super::overlay_official_dividends(
+            vec![
+                yahoo_dividend("ARASE", "2026-06-24", 1.98),
+                yahoo_dividend("ARASE", "2025-06-20", 1.20),
+                yahoo_dividend("EREGL", "2026-05-01", 3.0),
+            ],
+            &archive,
+            "2024-01-01",
+            "2026-08-08",
+        );
+
+        let arase_2026: Vec<_> = merged
+            .iter()
+            .filter(|d| d.ticker == "ARASE" && d.ex_date == "2026-06-24")
+            .collect();
+        assert_eq!(arase_2026.len(), 1, "aynı ödeme iki kez listelenmemeli");
+        assert!(arase_2026[0].source.starts_with("KAP"));
+        assert_eq!(arase_2026[0].amount_per_share, 2.0, "brüt tutar resmî kaynaktan");
+
+        // Henüz okunmamış ödemeler ve başka hisseler yerinde kalır.
+        assert!(merged.iter().any(|d| d.ex_date == "2025-06-20" && d.source == super::YAHOO_SOURCE));
+        assert!(merged.iter().any(|d| d.ticker == "EREGL"));
+    }
+
+    /// Hak kullanımı gelecekte olan ödeme geçmiş listesine değil, yaklaşan
+    /// temettü takvimine ait.
+    #[test]
+    fn future_dated_official_dividends_go_to_the_calendar() {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        archive.dividends.push(kap_dividend("ARASE", "2026-09-15", 2.0));
+
+        let merged = super::overlay_official_dividends(Vec::new(), &archive, "2024-01-01", "2026-08-08");
+        assert!(merged.is_empty(), "gelecek ödeme geçmiş listesine girmemeli");
+
+        let upcoming = super::upcoming_from_official(&archive, "2026-08-08");
+        assert_eq!(upcoming.len(), 1);
+        assert_eq!(upcoming[0].ticker, "ARASE");
+        assert_eq!(upcoming[0].ex_date, "2026-09-15");
+        // KAP yıllık oran vermiyor; uydurulmaz.
+        assert_eq!(upcoming[0].annual_rate, None);
+    }
+
     /// Pencere dışındaki resmî kayıt listeye girmemeli.
     #[test]
     fn official_records_outside_the_window_are_dropped() {
-        let mut archive = crate::capital_store::CapitalArchive::default();
-        crate::capital_store::merge(&mut archive, vec![
+        let archive = archive_of(vec![
             spk_row("Katılımevim Tasarruf Finansman AŞ", "2017-01-01", 100.0, 100.0, 0.0),
         ]);
 
@@ -1217,6 +1486,7 @@ mod tests {
             yield_pct: 0.0,
             period: ex_date[..4].into(),
             installment: 0,
+            source: super::YAHOO_SOURCE.into(),
         };
         let mut records = vec![
             rec("EREGL", "2026-12-15"),

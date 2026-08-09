@@ -399,6 +399,8 @@ export interface DividendRecord {
   yield_pct: number;
   period: string;
   installment: number;
+  /** "KAP Bildirimi 1617428" / "Yahoo Finance" — kaydın geldiği kaynak. */
+  source?: string;
 }
 
 export interface CapitalIncrease {
