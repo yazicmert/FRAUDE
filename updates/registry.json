@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-09-tam-senkron-gunluk-degisim-eksigi",
+      "date": "2026-08-09",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Tam senkron da günlük değişimi resmi değerle eziyor (eksik kalan yol tamamlandı)",
+        "en": "The full sync now also overwrites the daily change with the official value (the missing path)"
+      },
+      "summary": {
+        "tr": "Önceki sürümde günlük değişim düzeltmesi YALNIZ artımlı senkron yoluna konmuştu. 'Verileri Eşitle' düğmesi tam senkron çalıştırdığı için düzeltme hiç devreye girmiyor, DUNYH ekranda +%36,11'de kalmaya devam ediyordu — yeni sürüm kurulup eşitlense bile. Sebep: enrich_all (tam senkronun BIST katmanı) haftalık/aylık/yıllık getirileri yazıyordu ama günlük değişimi yazmıyordu, dolayısıyla Yahoo'nun donmuş serisinden türeyen değer olduğu gibi kalıyordu. Artık fiyat ve günlük değişim tam senkronda da birlikte ve tek kaynaktan (İş Yatırım resmi ekranı) yazılıyor; ikisinin birlikte yazılması, fiyatı bir kaynaktan değişimi başka kaynaktan alıp tutarsız bir çift üretmeyi engelliyor. Buna bağlı ikinci bir koruma eklendi: Yahoo'nun bir sembol için ürettiği günlük değişim resmi değerden 5 puandan fazla ayrılıyorsa o sembolün Yahoo serisi güvenilmez sayılır ve seriden türeyen, başka kaynağı olmayan 6 aylık değer gösterilmez (yanlış sayı yerine boş). BIST günlük marjı ±%10 olduğundan 5 puanlık ayrışma fiyat hareketiyle açıklanamaz; eşik temettü kaynaklı küçük farkların üstünde tutuldu. Sağlam serilerde 6 aylık korunur. Ayrıca test kalitesi düzeltildi: ilk yazılan birim testler enrich_all mantığının bir KOPYASINI çalıştırıyordu, yani gerçek kod bozulsa bile geçebilirlerdi. Mantık apply_ratios adlı saf bir fonksiyona çıkarıldı ve testler artık gerçek kodu çağırıyor; ayrıca tam senkron yolunu canlı veriyle uçtan uca çalıştıran bir entegrasyon testi eklendi. Canlı doğrulama: DUNYH 148,50 (−%1,66), VKGYO 2,53 (%0,00), THYAO 306,25 (−%1,61) ve THYAO sağlam serisi olduğu için 6 aylık değerini koruyor.",
+        "en": "In the previous release the daily-change fix was wired into the incremental sync path ONLY. Because the 'Sync Data' button runs a full sync, the fix never engaged and DUNYH stayed at +36.11% on screen even after installing the new build and syncing. The cause: enrich_all (the full sync's BIST layer) wrote the weekly, monthly and yearly returns but not the daily change, so the value derived from Yahoo's frozen series survived untouched. Price and daily change are now written together from a single source (İş Yatırım's official screen) on the full sync path as well; writing them together prevents pairing a price from one source with a change from another. A second guard came out of this: if Yahoo's daily change for a symbol diverges from the official value by more than 5 points, that symbol's Yahoo series is treated as untrustworthy and the six-month value derived from it — which has no other source — is hidden rather than shown wrong. With BIST's ±10% daily limit a 5-point divergence cannot be explained by price movement, and the threshold sits above small dividend-driven differences. Healthy series keep their six-month figure. Test quality was also corrected: the first unit tests ran a COPY of the enrich_all logic, meaning they could pass even if the real code broke. The logic was extracted into a pure apply_ratios function that the tests now call directly, and an integration test was added that exercises the full-sync path end to end against live data. Live verification: DUNYH 148.50 (−1.66%), VKGYO 2.53 (0.00%), THYAO 306.25 (−1.61%), with THYAO keeping its six-month value because its series is sound."
+      }
+    },
+    {
       "id": "2026-08-09-tradingview-uzun-donem-getiriler",
       "date": "2026-08-09",
       "author": "yazicmert",

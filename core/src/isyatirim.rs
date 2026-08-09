@@ -11,6 +11,14 @@ const PAGE_URL: &str = "https://www.isyatirim.com.tr/tr-tr/analiz/hisse/Sayfalar
 const SCREENER_URL: &str = "https://www.isyatirim.com.tr/tr-tr/analiz/_Layouts/15/IsYatirim.Website/StockInfo/CompanyInfoAjax.aspx/getScreenerDataNEW";
 const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 
+/// Yahoo'nun türettiği günlük değişim, resmi değerden bu kadar puan ayrılırsa
+/// o sembolün Yahoo serisi güvenilmez sayılır.
+///
+/// BIST'te günlük marj ±%10 olduğundan iki kaynağın 5 puandan fazla ayrılması
+/// fiyat hareketiyle açıklanamaz; seri donmuş ya da bölünme yanlış tarafa
+/// uygulanmıştır. Eşik, temettü kaynaklı küçük farkların üstünde tutulmuştur.
+const SERIES_TRUST_LIMIT: f64 = 5.0;
+
 #[derive(Clone, Debug, Default)]
 struct CurrentRatios {
     pe: Option<f64>,
@@ -69,7 +77,14 @@ static CACHE: OnceLock<Mutex<Option<(Instant, RatioMap)>>> = OnceLock::new();
 /// Turkish market convention users compare against.
 pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) -> usize {
     let Some(ratios) = load_ratios(client).await else { return 0 };
+    apply_ratios(equities, &ratios)
+}
 
+/// Ratio haritasını satırlara uygular; dokunulan satır sayısını döndürür.
+///
+/// `enrich_all`'dan ayrı tutulur ki ağ olmadan test edilebilsin — testin
+/// mantığın bir kopyasını değil, gerçek kodu çalıştırması gerekir.
+fn apply_ratios(equities: &mut [EquityRow], ratios: &RatioMap) -> usize {
     let mut updated = 0;
     for equity in equities {
         let Some(current) = ratios.get(&equity.ticker) else { continue };
@@ -85,6 +100,27 @@ pub async fn enrich_all(client: &reqwest::Client, equities: &mut [EquityRow]) ->
         equity.free_float_ratio = current.free_float_ratio.or(equity.free_float_ratio);
         equity.foreign_ratio = current.foreign_ratio.or(equity.foreign_ratio);
         equity.market_cap = current.market_cap.or(equity.market_cap);
+
+        // Fiyat ve GÜNLÜK değişim, BIST payları için birlikte ve tek kaynaktan
+        // alınır. Artımlı senkron bunu zaten yapıyordu ama tam senkron
+        // yapmıyordu: "Verileri Eşitle" tam senkron çalıştırdığı için DUNYH
+        // +%36,11'de kalıyordu — Yahoo'nun donmuş serisinden türetilen değer
+        // hiç ezilmiyordu. İkisi birlikte yazılır ki fiyat bir kaynaktan,
+        // değişim başka kaynaktan gelip tutarsız bir çift oluşmasın.
+        let official_change = current.change_pct.filter(|value| value.is_finite());
+        if let (Some(close), Some(change)) = (current.close.filter(|v| *v > 0.0), official_change) {
+            // Yahoo'nun bu sembol için ürettiği değişim resmi değerden ciddi
+            // ölçüde ayrılıyorsa seri o sembolde bozuktur (donmuş bar, yanlış
+            // tarafa uygulanmış bölünme). Bu durumda seriden türeyen ve başka
+            // kaynağı olmayan 6 aylık değer gösterilmez — yanlış sayı yerine
+            // boş göstermek doğrudur.
+            if (equity.change_pct - change).abs() > SERIES_TRUST_LIMIT {
+                equity.change_6m = None;
+            }
+            equity.price = close;
+            equity.change_pct = change;
+        }
+
         // Dönemsel getiriler düzeltilmiş seriden gelir; Yahoo'nun ham
         // kapanışından türetilen karşılıkları bedelsiz/temettü düzeltmesini
         // taşımadığı için uzun dönemde sapıyordu. 6 aylık karşılığı bu ekranda
@@ -333,6 +369,69 @@ fn number(row: &HashMap<String, String>, key: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::EquityRow;
+
+    /// Tam senkron yolu da günlük değişimi resmi değere oturtmalı.
+    ///
+    /// Regresyon: düzeltme yalnız artımlı yola konmuştu; "Verileri Eşitle" tam
+    /// senkron çalıştırdığı için DUNYH ekranda +%36,11'de kalıyordu.
+    #[test]
+    fn full_sync_overwrites_daily_change_with_official_value() {
+        let mut equities = vec![EquityRow {
+            ticker: "DUNYH".into(),
+            price: 148.5,
+            change_pct: 36.11,   // Yahoo'nun donmuş serisinden
+            change_6m: Some(36.11),
+            ..Default::default()
+        }];
+        let ratios = RatioMap::from([("DUNYH".to_string(), CurrentRatios {
+            close: Some(148.5),
+            change_pct: Some(-1.66),
+            change_1w: Some(-4.38),
+            change_1m: Some(2.70),
+            change_1y: Some(80.0),
+            ..Default::default()
+        })]);
+
+        apply_ratios(&mut equities, &ratios);
+        assert!((equities[0].change_pct + 1.66).abs() < 1e-9, "günlük: {}", equities[0].change_pct);
+        assert_eq!(equities[0].change_1w, Some(-4.38));
+        assert_eq!(equities[0].change_1y, Some(80.0));
+        // Yahoo serisi bu sembolde güvenilmez çıktı; 6 aylık gösterilmez.
+        assert_eq!(equities[0].change_6m, None, "bozuk seriden gelen 6 aylık düşmeli");
+    }
+
+    /// Seri sağlamsa 6 aylık korunur — güven eşiği sağlam veriyi silmemeli.
+    #[test]
+    fn healthy_series_keeps_its_six_month_value() {
+        let mut equities = vec![EquityRow {
+            ticker: "THYAO".into(),
+            price: 306.25,
+            change_pct: -1.60,
+            change_6m: Some(0.16),
+            ..Default::default()
+        }];
+        let ratios = RatioMap::from([("THYAO".to_string(), CurrentRatios {
+            close: Some(306.25),
+            change_pct: Some(-1.61),
+            ..Default::default()
+        })]);
+
+        apply_ratios(&mut equities, &ratios);
+        assert_eq!(equities[0].change_6m, Some(0.16), "sağlam seride 6 aylık korunmalı");
+        assert!((equities[0].change_pct + 1.61).abs() < 1e-9);
+    }
+
+    /// Ekranda olmayan sembole (global hisse, emtia) dokunulmaz.
+    #[test]
+    fn non_bist_rows_are_untouched() {
+        let mut equities = vec![EquityRow {
+            ticker: "GC=F".into(), price: 2100.0, change_pct: 5.0, ..Default::default()
+        }];
+        apply_ratios(&mut equities, &RatioMap::new());
+        assert_eq!(equities[0].price, 2100.0);
+        assert_eq!(equities[0].change_pct, 5.0);
+    }
 
     #[test]
     fn parses_current_ratios_by_ticker() {
@@ -443,5 +542,42 @@ mod tests {
             .filter(|(ticker, _)| rows.contains_key(*ticker))
             .count();
         assert!(covered * 100 / crate::yahoo::BIST_TICKERS.len() >= 90);
+    }
+
+    /// Uçtan uca: tam senkronun kullandığı gerçek yol (`enrich_all`) canlı
+    /// veriyle çalıştırılır ve bozuk Yahoo değerlerinin ezildiği doğrulanır.
+    ///
+    /// Ekranda kalan +%36,11'in sebebi tam olarak buydu: düzeltme artımlı yola
+    /// konmuştu, tam senkron yolu ezmiyordu. Birim test mantığı doğrular; bu
+    /// test yolun gerçekten bağlı olduğunu doğrular.
+    #[tokio::test]
+    #[ignore = "requires live İş Yatırım access"]
+    async fn live_full_sync_overwrites_broken_yahoo_values() {
+        let client = reqwest::Client::new();
+        // Yahoo'dan gelmiş gibi bozuk değerlerle başla.
+        let mut equities = vec![
+            EquityRow { ticker: "DUNYH".into(), price: 148.5, change_pct: 36.11, change_6m: Some(36.11), ..Default::default() },
+            EquityRow { ticker: "VKGYO".into(), price: 2.53, change_pct: 27.54, change_6m: Some(11.65), ..Default::default() },
+            EquityRow { ticker: "THYAO".into(), price: 306.25, change_pct: -1.61, change_6m: Some(0.16), ..Default::default() },
+        ];
+
+        let touched = enrich_all(&client, &mut equities).await;
+        assert!(touched >= 3, "üç pay da ekranda olmalı: {touched}");
+
+        for row in &equities {
+            println!(
+                "{}: {:.2} ({:+.2}%) 1H={:?} 1A={:?} 6A={:?} 1Y={:?}",
+                row.ticker, row.price, row.change_pct,
+                row.change_1w, row.change_1m, row.change_6m, row.change_1y
+            );
+            assert!(
+                row.change_pct.abs() <= 25.0,
+                "{} günlük değişimi fiyat marjını aşıyor: {:+.2}%",
+                row.ticker, row.change_pct
+            );
+        }
+        // Sağlam seri (THYAO) 6 aylık değerini korumalı.
+        let thyao = equities.iter().find(|r| r.ticker == "THYAO").unwrap();
+        assert_eq!(thyao.change_6m, Some(0.16), "sağlam seride 6 aylık silinmemeli");
     }
 }
