@@ -538,13 +538,17 @@ pub(crate) fn merge_extracted(entry: &mut PersistedIpo, data: &KapIpoExtractedDa
         }
     }
 
-    let fill_only: [(&mut Option<String>, &Option<String>); 6] = [
+    let fill_only: [(&mut Option<String>, &Option<String>); 7] = [
         (&mut entry.book_building_dates, &data.book_building_dates),
         (&mut entry.consortium_lead, &data.consortium_lead),
         (&mut entry.distribution_ratios, &data.distribution_ratios),
         (&mut entry.fund_usage, &data.fund_usage),
         (&mut entry.katilim_index, &data.katilim_index),
         (&mut entry.lot_amount, &data.lot_amount),
+        // Satış duyurusu pay yapısını satan ortakların adıyla veriyor; SPK
+        // bülteninden gelen "N Lot (SPK onaylı)" özeti ondan fakir ama
+        // halkarz.com'unki eşdeğer, o yüzden yalnız boşluk doldurulur.
+        (&mut entry.share_structure, &data.share_structure),
     ];
     for (target, source) in fill_only {
         if target.is_none() && source.is_some() {
