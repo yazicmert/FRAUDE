@@ -321,13 +321,22 @@ fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoAppro
         // "SPK onaylı" etiketi şart: etiketsiz sayı, başka sitelerdekiyle
         // çeliştiğinde hangisinin ne olduğu anlaşılmıyor.
         if let Some(structure) = format_share_structure(approval) {
-            // Kendi yazdığımız özeti tazeleriz (dipnot okunmaya başlayınca
-            // eski "N Lot (SPK onaylı)" satırı olduğu yerde kalıyordu), ama
-            // halkarz.com'un kırılımına dokunmayız: o da ortak adlarını
-            // taşıyor ve iki kaynağı yarıştırmanın kazancı yok.
-            let ours = entry.share_structure.as_deref().is_some_and(is_derived_structure);
+            // **Bilgi azaltılmaz.** Biçim imzasına bakan bir kural burada işe
+            // yaramıyor: kırılımı halkarz.com da birebir aynı satır başlarıyla
+            // yazıyor ("Ortak Satışı : … Lot (Ad)"), yani "bu değeri biz mi
+            // yazdık" sorusunun cevabı metinden okunamaz. Ölçüt bu yüzden
+            // içerik: yeni değer en az eskisi kadar ortak **adı** taşıyorsa
+            // resmî olan yazılır, taşımıyorsa eldeki korunur. Dipnotu
+            // okunamayan bir bültenin adsız kırılımı, halkarz'ın adlı
+            // kırılımının üstüne yazılırsa veri kaybı olurdu.
+            let replace = match entry.share_structure.as_deref() {
+                None => true,
+                // Eski tek satırlık özetimiz; kırılım her hâlükârda daha iyi.
+                Some(existing) if existing.ends_with("Lot (SPK onaylı)") => true,
+                Some(existing) => named_seller_count(&structure) >= named_seller_count(existing),
+            };
             let stale = entry.share_structure.as_deref() != Some(structure.as_str());
-            if (entry.share_structure.is_none() || ours) && stale {
+            if replace && stale {
                 entry.share_structure = Some(structure);
                 changed = true;
             }
@@ -457,14 +466,15 @@ fn format_share_structure(approval: &SpkIpoApproval) -> Option<String> {
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 
-/// Pay yapısını biz mi yazdık? İki biçimimiz var: eski tek satırlık özet ve
-/// dipnottan kurulan kırılım. halkarz.com ikisini de böyle yazmıyor
-/// ("(SPK onaylı)" etiketi yalnız bizde, kırılımda da satır başları sabit).
-fn is_derived_structure(structure: &str) -> bool {
-    structure.ends_with("Lot (SPK onaylı)")
-        || structure
-            .lines()
-            .all(|line| line.starts_with("Sermaye Artırımı : ") || line.starts_with("Ortak Satışı : ") || line.starts_with("Ek Ortak Satışı : "))
+/// Pay yapısında kaç satırda satan ortağın **adı** yazıyor?
+///
+/// Kırılımın değeri adında: lot sayısı zaten tabloda var, kimin sattığı
+/// yalnız parantez içinde. "(SPK onaylı)" bir ad değil, etikettir.
+fn named_seller_count(structure: &str) -> usize {
+    structure
+        .lines()
+        .filter(|line| line.contains('(') && !line.contains("(SPK onaylı)"))
+        .count()
 }
 
 /// "37500000" → "37.500.000".
@@ -815,6 +825,59 @@ mod tests {
             archive[0].ipo_size.as_deref(),
             Some(format_ipo_size(36_500_000.0 * 3.06).as_str()),
             "kendi türettiğimiz büyüklük fiyatla birlikte tazelenmeli"
+        );
+    }
+
+    /// **Regresyon: adsız kırılım, adlı kırılımın üstüne yazılmamalı.**
+    ///
+    /// halkarz.com pay yapısını bizimle birebir aynı satır başlarıyla yazıyor,
+    /// dolayısıyla "bu değeri biz mi yazdık" sorusu biçimden okunamaz. Dipnotu
+    /// okunamamış bir bültenin adsız kırılımı, elde duran adlı kırılımın
+    /// üstüne yazılırsa satan ortağın kim olduğu kaybolur.
+    #[test]
+    fn an_unnamed_breakdown_never_replaces_a_named_one() {
+        let named = "Sermaye Artırımı : 30.000.000 Lot\n\
+                     Ortak Satışı : 6.500.000 Lot (Türkerler İnşaat AŞ)";
+        let mut archive = vec![PersistedIpo {
+            name: "Örnek Sanayi A.Ş.".to_string(),
+            share_structure: Some(named.to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        // Dipnotu okunamamış onay: satış var ama ad yok.
+        let mut approval = approval("Örnek Sanayi AŞ", 30.0);
+        approval.approval_date = today_in_turkish().0;
+        assert!(approval.sellers.is_empty());
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approval));
+
+        assert_eq!(archive[0].share_structure.as_deref(), Some(named));
+    }
+
+    /// Dipnot okunduğunda resmî kırılım yazılır: aynı zenginlikte ama kaynağı
+    /// bülten olan değer tercih edilir.
+    #[test]
+    fn a_named_breakdown_from_the_bulletin_is_written() {
+        let mut archive = vec![PersistedIpo {
+            name: "Örnek Sanayi A.Ş.".to_string(),
+            share_structure: Some("36500000 Lot (SPK onaylı)".to_string()),
+            ..PersistedIpo::default()
+        }];
+
+        let mut approval = approval("Örnek Sanayi AŞ", 30.0);
+        approval.approval_date = today_in_turkish().0;
+        approval.sellers = vec![crate::spk::SpkShareSeller {
+            name: "Tunçlar Yatırım Holding AŞ".to_string(),
+            lots: 6_500_000.0,
+            extra_sale: false,
+        }];
+        merge_spk_approvals(&mut archive, std::slice::from_ref(&approval));
+
+        assert_eq!(
+            archive[0].share_structure.as_deref(),
+            Some(
+                "Sermaye Artırımı : 30.000.000 Lot\n\
+                 Ortak Satışı : 6.500.000 Lot (Tunçlar Yatırım Holding AŞ)"
+            )
         );
     }
 
