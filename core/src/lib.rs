@@ -50,6 +50,7 @@ pub mod storage;
 pub mod subsidiaries;
 pub mod tefas;
 pub mod tefas_issuer;
+pub mod tradingview;
 pub mod yahoo;
 
 use storage::AppStore;

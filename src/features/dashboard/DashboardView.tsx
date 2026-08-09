@@ -33,7 +33,7 @@ export default function DashboardView({ onSelectTicker }: DashboardViewProps) {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [showAllType, setShowAllType] = useState<{ type: 'gainers' | 'losers' | 'risk_watch', timeframe?: '1d' | '1w' | '1m' | '6m' | '1y' } | null>(null);
+  const [showAllType, setShowAllType] = useState<{ type: 'gainers' | 'losers' | 'risk_watch', timeframe?: '1d' | '1w' | '1m' | '6m' | '1y' | '5y' | 'all' } | null>(null);
   const [showDataSourcesModal, setShowDataSourcesModal] = useState(false);
   const [showAddModuleModal, setShowAddModuleModal] = useState(false);
   const [customTickerInput, setCustomTickerInput] = useState('');
@@ -1253,6 +1253,8 @@ export default function DashboardView({ onSelectTicker }: DashboardViewProps) {
                       case '1m': return row.change_1m ?? 0;
                       case '6m': return row.change_6m ?? 0;
                       case '1y': return row.change_1y ?? 0;
+                      case '5y': return row.change_5y ?? 0;
+                      case 'all': return row.change_all ?? 0;
                       default: return row.change_pct;
                     }
                   };
@@ -1360,7 +1362,7 @@ interface EquityTableProps {
   onShowAll: (timeframe: Timeframe) => void;
 }
 
-type Timeframe = '1d' | '1w' | '1m' | '6m' | '1y';
+type Timeframe = '1d' | '1w' | '1m' | '6m' | '1y' | '5y' | 'all';
 
 function EquityTable({ title, type, equities, onSelectTicker, isEditing, onClose, onMoveUp, onMoveDown, onShowAll }: EquityTableProps) {
   const { t } = useTranslation();
@@ -1375,6 +1377,8 @@ function EquityTable({ title, type, equities, onSelectTicker, isEditing, onClose
         case '1m': return row.change_1m ?? 0;
         case '6m': return row.change_6m ?? 0;
         case '1y': return row.change_1y ?? 0;
+        case '5y': return row.change_5y ?? 0;
+        case 'all': return row.change_all ?? 0;
         default: return row.change_pct;
       }
     };
@@ -1418,7 +1422,7 @@ function EquityTable({ title, type, equities, onSelectTicker, isEditing, onClose
         <div style={{ display: 'flex', gap: '6px' }}>
           {(type === 'gainers' || type === 'losers') && (
             <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-              {([['1d', 'G'], ['1w', 'H'], ['1m', 'A'], ['6m', '6A'], ['1y', 'Y']] as const).map(([val, label]) => (
+              {([['1d', 'G'], ['1w', 'H'], ['1m', 'A'], ['6m', '6A'], ['1y', 'Y'], ['5y', '5Y'], ['all', 'TÜM']] as const).map(([val, label]) => (
                 <button
                   key={val}
                   type="button"
@@ -1433,7 +1437,7 @@ function EquityTable({ title, type, equities, onSelectTicker, isEditing, onClose
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
                   }}
-                  title={val === '1d' ? t('periodDaily') : val === '1w' ? t('periodWeekly') : val === '1m' ? t('periodMonthly') : val === '6m' ? t('period6m') : t('periodYearly')}
+                  title={val === '1d' ? t('periodDaily') : val === '1w' ? t('periodWeekly') : val === '1m' ? t('periodMonthly') : val === '6m' ? t('period6m') : val === '1y' ? t('periodYearly') : val === '5y' ? t('period5y') : t('periodAll')}
                 >
                   {label}
                 </button>

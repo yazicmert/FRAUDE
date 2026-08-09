@@ -52,6 +52,13 @@ pub struct EquityRow {
     pub change_1m: Option<f64>,
     pub change_6m: Option<f64>,
     pub change_1y: Option<f64>,
+    /// 5 yıllık ve listelenmeden bugüne getiri.
+    ///
+    /// Bu iki dönemin ne Yahoo'nun bir yıllık penceresinde ne de İş Yatırım
+    /// ekranında (kriter 16-20 yalnız günlük…YTD) karşılığı var; TradingView
+    /// tarayıcısından gelir (bkz. `tradingview`).
+    pub change_5y: Option<f64>,
+    pub change_all: Option<f64>,
     pub volume: u64,
     pub rsi: f64,
     pub macd: f64,

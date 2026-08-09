@@ -45,6 +45,9 @@ export interface EquityRow {
   change_1m?: number | null;
   change_6m?: number | null;
   change_1y?: number | null;
+  /** 5 yıllık ve listelenmeden bugüne getiri (TradingView tarayıcısı). */
+  change_5y?: number | null;
+  change_all?: number | null;
   volume: number;
   rsi: number;
   macd: number;

@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-09-tradingview-uzun-donem-getiriler",
+      "date": "2026-08-09",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "5 yıllık ve tüm zamanlık getiriler eklendi (TradingView tarayıcısı); Yahoo dışı kaynaklar haritalandı",
+        "en": "Five-year and all-time returns added (TradingView scanner); non-Yahoo sources mapped"
+      },
+      "summary": {
+        "tr": "Hisse verisi için Yahoo dışı kaynaklar canlı test edildi. Çalışanlar: (1) TradingView tarayıcısı — tek keysiz POST'ta 619 BIST payının tamamı, tam OHLC, hacim, RSI, F/K, ROE ve kritik olarak 5 YILLIK ile TÜM ZAMANLIK getiri; (2) İş Yatırım HisseTekil ucu — çerezsiz GET, tek istekte 2005'ten bugüne 5416 bar ve yüksek/düşük/hacim/ağırlıklı ortalama/sermaye/piyasa değeri/dolar bazlı fiyatlar. Çalışmayanlar: Stooq (BIST yok), BigPara API (404), doviz.com (404), Borsa İstanbul denenen uç HTML döndürdü, Mynet yalnız HTML kazımayla. Bu sırada projedeki bir bilgi düzeltildi: 'İş Yatırım hiçbir public uçta OHLC vermez' notu yanlıştı — 401 dönen uç HisseTekSirket'ti, HisseTekil ise açık ve yüksek/düşük/hacim veriyor. Yine de AÇILIŞ alanı yok, yani tam mum için Yahoo hâlâ tek ücretsiz kaynak; ama ATR, hacim ve 52 hafta verileri artık 21 yıllık derinlikle İş Yatırım'dan karşılanabilir durumda. Bu sürümde TradingView entegre edildi ve YALNIZ uzun dönem getirileri besliyor: EquityRow'a change_5y ve change_all alanları, panoya 5Y ve TÜM zaman dilimi düğmeleri eklendi. Katman sırası bilinçli — kısa dönemlerde otorite İş Yatırım'ın resmi düzeltilmiş ekranında kalır; aynı dönem iki kaynaktan okunmaz, çünkü bu hangisinin doğru olduğu belirsiz iki farklı sayı üretir. Kaynak düşerse senkron başarısız sayılmaz, sessizce boş haritaya düşer ve diğer veriler gelmeye devam eder. Önbellek 30 dakika, tek istekte tüm evren; sembol başına istek yok. Canlı doğrulandı: 619 payın 619'unda hem 5 yıllık hem tüm zamanlık getiri dolu ve hiçbiri −%100'ün altında değil. Not: TradingView'in kullanım şartları otomatik erişimi kısıtlar; bu kaynak kullanıcının bilinçli tercihiyle eklenmiştir ve rehberdeki veri kaynakları bölümünde ayrıca listelenir.",
+        "en": "Non-Yahoo sources for equity data were tested live. What works: (1) the TradingView scanner — all 619 BIST shares in a single keyless POST, with full OHLC, volume, RSI, P/E, ROE and crucially FIVE-YEAR and ALL-TIME returns; (2) İş Yatırım's HisseTekil endpoint — a cookie-free GET returning 5416 bars back to 2005 in one request, with high/low/volume/VWAP/capital/market-cap and dollar-denominated prices. What does not: Stooq (no BIST), the BigPara API (404), doviz.com (404), the Borsa İstanbul endpoint tried returns HTML, and Mynet only via HTML scraping. A long-standing project belief was corrected along the way: the note claiming 'no İş Yatırım public endpoint exposes OHLC' was wrong — the endpoint returning 401 was HisseTekSirket, whereas HisseTekil is open and does serve high/low/volume. It still has no OPEN field, so Yahoo remains the only free source for true candles; but ATR, volume and 52-week figures can now be sourced from İş Yatırım with 21 years of depth. This release integrates TradingView for long-term returns ONLY: change_5y and change_all were added to EquityRow, and 5Y and ALL buttons to the dashboard timeframes. The layering is deliberate — İş Yatırım's official adjusted screen stays authoritative for shorter periods, and no period is read from two sources, since that would produce two different numbers with no way to tell which is right. If the source goes down the sync is not treated as failed; it falls back to an empty map and the rest of the data still arrives. Cached for 30 minutes, whole universe per request, no per-symbol calls. Verified live: 619 of 619 shares carry both the five-year and all-time return and none falls below −100%. Note: TradingView's terms of use restrict automated access; this source was added as a deliberate user choice and is listed separately in the guide's data-sources section."
+      }
+    },
+    {
       "id": "2026-08-09-donemsel-getiriler-duzeltilmis-seriden",
       "date": "2026-08-09",
       "author": "yazicmert",

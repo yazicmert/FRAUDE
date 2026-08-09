@@ -591,6 +591,9 @@ fn equity_from_result(ticker: &str, fallback_name: &str, result: YahooResult, in
         change_1m,
         change_6m,
         change_1y,
+        // Bir yıllık pencereden türetilemez; TradingView katmanı doldurur.
+        change_5y: None,
+        change_all: None,
         volume: result.meta.regular_market_volume.unwrap_or_default(),
         // Kapanış tabanlı göstergeler düzeltilmiş seriden; ATR gerçek işlem
         // aralığını ölçtüğü için ham mumlarla kalır.
@@ -834,6 +837,8 @@ pub async fn fetch_equity(client: &reqwest::Client, ticker: &str, name: &str) ->
     let result = chart_with_retry(client, &ticker, "1y").await?;
     let mut rows = vec![equity_from_result(&ticker, name, result, memberships)];
     crate::isyatirim::enrich_all(client, &mut rows).await;
+    let long_term = crate::tradingview::long_term_performance(client).await;
+    crate::tradingview::apply(&mut rows, &long_term);
     rows.pop().ok_or_else(|| format!("No enriched data for {ticker}"))
 }
 
@@ -934,6 +939,10 @@ pub async fn fetch_all_equities_report(
     }
     let fetched = equities.len();
     crate::isyatirim::enrich_all(client, &mut equities).await;
+    // Uzun dönem getiriler en sonda bindirilir; yalnız 5 yıllık ve tüm zamanlık
+    // alanlara dokunur, kısa dönemlerin otoritesi İş Yatırım'da kalır.
+    let long_term = crate::tradingview::long_term_performance(client).await;
+    crate::tradingview::apply(&mut equities, &long_term);
 
     // --- Synthetic Commodity Computation ---
     // Extract ONS prices and USD/TRY
