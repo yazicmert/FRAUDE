@@ -13,6 +13,7 @@ import WatchlistJournal from './WatchlistJournal';
 import FlashValue from '../../components/FlashValue';
 import { useLiveQuotes } from '../../hooks/useLiveQuotes';
 import { hasCorporateData } from '../../lib/instrumentKind';
+import { formatDividendAmount, isForeignDividendCurrency } from '../../lib/dividendCurrency';
 import { BellIcon, SparklesIcon, StarIcon } from '../../components/icons';
 import FundDetail from '../funds/FundDetail';
 import KapDocumentViewerModal from '../kap/KapDocumentViewerModal';
@@ -958,7 +959,11 @@ export default function TickerView({ ticker }: { ticker: string }) {
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '6px 8px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', textAlign: 'right', color: '#3fb950', fontWeight: 'bold', borderBottom: '1px solid #21262d' }}>₺{d.amount_per_share.toFixed(4)}</td>
+                    {/* Lira işareti koşullu: bir avuç şirket kâr payını dövizle
+                        açıklıyor ve KAP kaydındaki tutar o birimde. */}
+                    <td style={{ padding: '6px 8px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', textAlign: 'right', color: isForeignDividendCurrency(d.currency) ? '#d29922' : '#3fb950', fontWeight: 'bold', borderBottom: '1px solid #21262d' }}>
+                      {formatDividendAmount(d.amount_per_share, d.currency)}
+                    </td>
                     <td style={{ padding: '6px 8px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', textAlign: 'right', borderBottom: '1px solid #21262d' }}>{d.yield_pct > 0 ? `%${d.yield_pct.toFixed(2)}` : '—'}</td>
                   </tr>
                 ))}

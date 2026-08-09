@@ -200,6 +200,9 @@ pub async fn fetch_dividends(client: &reqwest::Client, ticker: &str) -> Result<V
             period: year,
             installment: 0,
             source: YAHOO_SOURCE.to_string(),
+            // Yahoo akışı ödemeyi her zaman lira karşılığıyla taşır; dövizli
+            // ödemenin gerçek birimi ancak KAP kaydında görünür.
+            currency: crate::kap_dividend::DEFAULT_CURRENCY.to_string(),
         }
     }).collect();
     let mut records: Vec<DividendRecord> = records;
@@ -297,6 +300,7 @@ fn upcoming_from_official(
             // tahmini yıllık oranı için var, uydurma değer yazılmaz.
             annual_rate: None,
             installment: 0,
+            currency: row.currency.clone(),
         })
         .collect()
 }
@@ -315,6 +319,7 @@ fn kap_to_dividend(row: &crate::kap_dividend::KapDividend) -> DividendRecord {
         yield_pct: 0.0,
         installment: 0,
         source: format!("KAP Bildirimi {}", row.disclosure_index),
+        currency: row.currency.clone(),
     }
 }
 
@@ -1005,6 +1010,7 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
                 yield_pct,
                 installment: 0,
                 source: YAHOO_SOURCE.to_string(),
+                currency: crate::kap_dividend::DEFAULT_CURRENCY.to_string(),
             });
         }
         for s in events.splits {
@@ -1168,7 +1174,13 @@ async fn fetch_upcoming_dividends(
             responded += 1;
             if let Some((ticker, ex_date, annual_rate)) = item {
                 if ex_date.as_str() >= today.as_str() {
-                    upcoming.push(crate::domain::UpcomingDividend { ticker, ex_date, annual_rate, installment: 0 });
+                    upcoming.push(crate::domain::UpcomingDividend {
+                        ticker,
+                        ex_date,
+                        annual_rate,
+                        installment: 0,
+                        currency: crate::kap_dividend::DEFAULT_CURRENCY.to_string(),
+                    });
                 }
             }
         }
@@ -1291,6 +1303,7 @@ mod tests {
             net_per_share: gross * 0.85,
             payment_date: None,
             payment_kind: "Peşin".into(),
+            currency: "TRY".into(),
             disclosure_index: "1617428".into(),
         }
     }
@@ -1304,6 +1317,7 @@ mod tests {
             period: ex_date[..4].into(),
             installment: 0,
             source: super::YAHOO_SOURCE.into(),
+            currency: "TRY".into(),
         }
     }
 
@@ -1487,6 +1501,7 @@ mod tests {
             period: ex_date[..4].into(),
             installment: 0,
             source: super::YAHOO_SOURCE.into(),
+            currency: "TRY".into(),
         };
         let mut records = vec![
             rec("EREGL", "2026-12-15"),

@@ -401,6 +401,11 @@ export interface DividendRecord {
   installment: number;
   /** "KAP Bildirimi 1617428" / "Yahoo Finance" — kaydın geldiği kaynak. */
   source?: string;
+  /**
+   * Tutarın para birimi ("TRY", "USD", "EUR"). "TRY" dışında bir değerde
+   * `amount_per_share` lira **değildir**; eski kayıtlarda alan bulunmaz.
+   */
+  currency?: string;
 }
 
 export interface CapitalIncrease {
@@ -468,12 +473,23 @@ export interface UpcomingDividend {
   ex_date: string;
   annual_rate: number | null;
   installment: number;
+  /** Ödemenin para birimi; bkz. `DividendRecord.currency`. */
+  currency?: string;
+}
+
+/** Kâr payını lira dışında bir para biriminde açıklayan şirket. */
+export interface FxDividendPayer {
+  ticker: string;
+  currency: string;
+  source: string;
 }
 
 export interface CorporateEventsPayload {
   dividends: DividendRecord[];
   splits: CapitalIncrease[];
   upcoming: UpcomingDividend[];
+  /** Temettü ekranındaki döviz notunu besleyen liste. */
+  fx_payers?: FxDividendPayer[];
   last_updated: string | null;
   ready: boolean;
 }

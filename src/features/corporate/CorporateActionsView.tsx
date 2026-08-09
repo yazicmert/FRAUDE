@@ -3,6 +3,7 @@ import { getCorporateEvents, getIpoCalendar, getPriceHistory } from '../../api/t
 import { useTranslation } from '../../api/i18n';
 import type { CorporateEventsPayload, HistoricalQuote, IpoCalendarPayload, IpoRecord } from '../../types';
 import PriceChart from '../ticker/PriceChart';
+import { isForeignDividendCurrency } from '../../lib/dividendCurrency';
 
 type ActiveTab = 'dividends' | 'capital' | 'ipo';
 
@@ -27,6 +28,28 @@ const HORIZONTAL_SCROLLER: React.CSSProperties = {
 
 /** Yatay kaydırmayı içteki sarmalayıcıya bırakan dış kap. */
 const HORIZONTAL_SCROLL_HOST: React.CSSProperties = { overflowX: 'clip' };
+
+/**
+ * Döviz rozeti — tutarın yanında, taksit rozetiyle aynı dilde.
+ *
+ * Tablo başlığı "Hisse Başı (TL)" olduğu için dövizli satırların işaretsiz
+ * gösterilmesi yanıltıcı olurdu: 0,15 USD ile 0,15 TL aynı hücrede yan yana
+ * durur.
+ */
+function currencyBadge(currency: string, title: string) {
+  return (
+    <span
+      title={title}
+      style={{
+        marginLeft: '8px', padding: '2px 8px', borderRadius: '10px',
+        fontSize: '0.65rem', fontWeight: 'bold',
+        background: '#d2992222', color: '#d29922', letterSpacing: '0.04em',
+      }}
+    >
+      {currency.trim().toUpperCase()}
+    </span>
+  );
+}
 
 interface CorporateActionsViewProps {
   onSelectTicker?: (ticker: string) => void;
@@ -1245,6 +1268,16 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
   const filteredUpcoming = (events?.upcoming ?? []).filter(
     (u) => !normalizedFilter || u.ticker.startsWith(normalizedFilter)
   );
+
+  // Kâr payını dövizle açıklayan şirketler. Liste tablodan türetilemez:
+  // Yahoo satırı tutarı lira karşılığıyla verdiği için dövizli olduğu
+  // görünmez, KAP kaydı ise arşiv o bildirimi okuyana dek listede yoktur.
+  // Bu yüzden çekirdek ayrı bir liste gönderiyor; filtre kutusu ona da
+  // uygulanır ki "MAALT" yazınca not da daralsın.
+  const fxPayers = (events?.fx_payers ?? [])
+    .filter((p) => isForeignDividendCurrency(p.currency))
+    .filter((p) => !normalizedFilter || p.ticker.startsWith(normalizedFilter))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker));
   const daysUntil = (iso: string) => {
     const diff = Math.round((new Date(iso).getTime() - Date.now()) / 86400000);
     return diff <= 0 ? t('today') : t('caDaysLeft', { n: diff });
@@ -1378,6 +1411,29 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
           <div className="empty-state">{normalizedFilter ? t('caNoDivFiltered', { f: normalizedFilter }) : t('caNoDividends')}</div>
         ) : (
           <>
+          {fxPayers.length > 0 && (
+            <div className="panel" style={{ marginBottom: '16px', border: '1px solid #d2992255', background: '#d2992208' }}>
+              <div style={{ color: '#d29922', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '6px' }}>
+                💱 {t('caFxTitle', { n: fxPayers.length })}
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '10px' }}>
+                {t('caFxNote')}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {fxPayers.map((payer) => (
+                  <span key={payer.ticker} title={payer.source} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '10px', background: '#d2992216', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                    {onSelectTicker ? (
+                      <button type="button" onClick={() => onSelectTicker(payer.ticker)}
+                        style={{ background: 'none', border: 'none', padding: 0, color: '#58a6ff', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'var(--font-mono)', fontSize: '0.74rem', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                        {payer.ticker}
+                      </button>
+                    ) : <strong>{payer.ticker}</strong>}
+                    <span style={{ color: '#d29922', fontWeight: 'bold' }}>{payer.currency.toUpperCase()}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {filteredUpcoming.length > 0 && (
             <div className="panel" style={{ overflowX: 'auto', marginBottom: '16px', border: '1px solid #23863655' }}>
               <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'baseline', gap: '10px' }}>
@@ -1417,7 +1473,10 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                           {daysUntil(u.ex_date)}
                         </span>
                       </td>
-                      <td style={tdStyle}>{u.annual_rate ? `₺${u.annual_rate.toFixed(2)}` : '—'}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        {u.annual_rate ? `₺${u.annual_rate.toFixed(2)}` : '—'}
+                        {isForeignDividendCurrency(u.currency) && currencyBadge(u.currency!, t('caFxTip', { c: (u.currency ?? '').toUpperCase() }))}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1457,7 +1516,10 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                           </span>
                         )}
                     </td>
-                    <td style={{ ...tdStyle, color: '#3fb950', fontWeight: 'bold' }}>{(d.amount_per_share ?? 0).toFixed(4)}</td>
+                    <td style={{ ...tdStyle, color: isForeignDividendCurrency(d.currency) ? '#d29922' : '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                      {(d.amount_per_share ?? 0).toFixed(4)}
+                      {isForeignDividendCurrency(d.currency) && currencyBadge(d.currency!, t('caFxTip', { c: (d.currency ?? '').toUpperCase() }))}
+                    </td>
                     <td style={tdStyle}>{(d.yield_pct ?? 0) > 0 ? `%${(d.yield_pct ?? 0).toFixed(2)}` : '—'}</td>
                                       <td style={{ ...tdStyle, color: '#8b949e' }}>{d.source || '—'}</td>
                   </tr>

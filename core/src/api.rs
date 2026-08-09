@@ -613,6 +613,9 @@ pub async fn get_corporate_events() -> Result<crate::domain::CorporateEventsPayl
         dividends: cache.dividends,
         splits: cache.splits,
         upcoming: cache.upcoming,
+        // Liste piyasa taramasından değil, gömülü tarama + KAP arşivinden
+        // gelir; günlük cache boşken de not görünsün diye burada okunur.
+        fx_payers: crate::kap_dividend::foreign_payers(&crate::capital_store::load()),
     })
 }
 

@@ -403,6 +403,15 @@ pub struct DividendRecord {
     /// Resmî kaynağa geçiş sürerken hangi satırın nereden geldiği görünür olmalı.
     #[serde(default)]
     pub source: String,
+    /// Tutarın para birimi. Bir avuç şirket kâr payını dövizle açıklıyor ve
+    /// KAP bildiriminde tutar o birimde yazılı; "TRY" dışında bir değer
+    /// gördüğünde `amount_per_share` lira **değildir**.
+    #[serde(default = "try_currency")]
+    pub currency: String,
+}
+
+fn try_currency() -> String {
+    crate::kap_dividend::DEFAULT_CURRENCY.to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -500,6 +509,9 @@ pub struct UpcomingDividend {
     /// Aynı yıl içinde daha önce ödenenler dahil kaçıncı taksit olacağı.
     #[serde(default)]
     pub installment: u32,
+    /// Ödemenin para birimi; bkz. [`DividendRecord::currency`].
+    #[serde(default = "try_currency")]
+    pub currency: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -510,12 +522,29 @@ pub struct AgentAnalysisResult {
     pub tickers: Vec<String>,
 }
 
+/// Kâr payını lira dışında bir para biriminde açıklayan şirket.
+///
+/// Liste ayrı taşınır çünkü temettü satırlarından türetilemez: Yahoo satırı
+/// tutarı **lira karşılığıyla** verir ve dövizli olduğu oradan anlaşılmaz;
+/// KAP kaydı ise arşiv o bildirimi okuyana dek listede yoktur.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FxDividendPayer {
+    pub ticker: String,
+    /// "USD", "EUR" — KAP bildirimindeki "Para Birimi" alanı.
+    pub currency: String,
+    /// Bilginin geldiği yer ("KAP Bildirimi 1636716" / "KAP taraması").
+    pub source: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CorporateEventsPayload {
     pub dividends: Vec<DividendRecord>,
     pub splits: Vec<CapitalIncrease>,
     #[serde(default)]
     pub upcoming: Vec<UpcomingDividend>,
+    /// Kâr payını dövizle açıklayan şirketler; temettü ekranındaki not.
+    #[serde(default)]
+    pub fx_payers: Vec<FxDividendPayer>,
     pub last_updated: Option<String>,
     /// false ise piyasa taraması henüz tamamlanmadı (ilk açılış)
     pub ready: bool,

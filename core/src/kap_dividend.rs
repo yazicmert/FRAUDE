@@ -34,6 +34,27 @@ const COL_PAY_DATE: &str = "Ödeme Tarihi (3)";
 
 const FIELD_CASH_MODE: &str = "Nakit Kar Payı Ödeme Şekli";
 
+/// Tutarların hangi para biriminde verildiği. Alan **yalnız ödeme yapılacak
+/// bildirimlerde** bulunuyor; "Ödenmeyecek" kararlarında hiç yazılmıyor.
+///
+/// Sütun başlıkları şirket ne söylerse söylesin "(TL)" yazar — KAP formu sabit
+/// metin. Tutarın gerçek birimi bu alandır; TRY dışı bir değer gördüğünde
+/// tablodaki sayı lira değildir.
+const FIELD_CURRENCY: &str = "Para Birimi";
+
+/// Alanın yokluğunda varsayılan. Ödeme lirayla yapılır; bildirimlerin ezici
+/// çoğunluğu böyle ve eski arşiv kayıtlarında alan hiç bulunmuyor.
+pub const DEFAULT_CURRENCY: &str = "TRY";
+
+fn default_currency() -> String {
+    DEFAULT_CURRENCY.to_string()
+}
+
+/// Ödeme lira dışı bir para biriminde mi?
+pub fn is_foreign(currency: &str) -> bool {
+    !matches!(currency.trim().to_ascii_uppercase().as_str(), "" | "TRY" | "TL")
+}
+
 /// Bir bildirimden çıkan, tek bir pay grubuna ait temettü ödemesi.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KapDividend {
@@ -48,6 +69,9 @@ pub struct KapDividend {
     pub payment_date: Option<String>,
     /// "Peşin", "1. Taksit" — taksitli dağıtımda her taksit ayrı kayıttır.
     pub payment_kind: String,
+    /// Tutarların para birimi ("TRY", "USD", "EUR"). Bkz. [`FIELD_CURRENCY`].
+    #[serde(default = "default_currency")]
+    pub currency: String,
     pub disclosure_index: String,
 }
 
@@ -77,6 +101,11 @@ pub fn parse_dividend_form(form: &KapForm, disclosure_index: &str) -> Vec<KapDiv
         return Vec::new();
     };
     let dates = form.table(COL_EX_DATE_FINAL);
+    let currency = form
+        .field(FIELD_CURRENCY)
+        .map(|value| value.trim().to_ascii_uppercase())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(default_currency);
 
     let mut out = Vec::new();
     for row in &amounts.rows {
@@ -117,6 +146,7 @@ pub fn parse_dividend_form(form: &KapForm, disclosure_index: &str) -> Vec<KapDiv
             net_per_share: net,
             payment_date: iso_date(dates.cell(date_row, COL_PAY_DATE)),
             payment_kind: kind,
+            currency: currency.clone(),
             disclosure_index: disclosure_index.to_string(),
         });
     }
@@ -167,6 +197,78 @@ fn iso_date(raw: Option<&str>) -> Option<String> {
         return None;
     }
     Some(format!("{year}-{month}-{day}"))
+}
+
+// ─── Dövizle kâr payı dağıtan şirketler ─────────────────────────────────
+
+/// Uygulamayla gelen taranmış liste. Bkz. `core/data/dividend_currency.json`.
+///
+/// Liste **niye gömülü**: arşiv KAP'ın gövde kotası yüzünden tur başına on
+/// bildirim ilerliyor ve tarama haftada bir çalışıyor; iki yıllık birikimi
+/// canlı okumak yıllar alır. Oysa bir şirketin kâr payını hangi para
+/// biriminde açıkladığı yıllar boyu değişmeyen bir nitelik. Gömülü liste
+/// ilk açılışta doğru notu verir, canlı arşiv de üzerine yazar.
+const SEEDED_FX_PAYERS: &str = include_str!("../data/dividend_currency.json");
+
+#[derive(serde::Deserialize)]
+struct FxSeed {
+    #[allow(dead_code)]
+    note: String,
+    /// Taramanın kapsadığı bildirim aralığı; listenin yaşını gösterir.
+    scanned: String,
+    /// Hisse kodu → para birimi.
+    payers: std::collections::BTreeMap<String, String>,
+}
+
+/// Kâr payını dövizle açıklayan şirketler: gömülü tarama + canlı KAP arşivi.
+///
+/// Canlı kayıt gömülü listeyi **ezer**; bir şirket para birimi değiştirirse
+/// arşiv o bildirimi okur okumaz doğru değeri verir.
+pub fn foreign_payers(
+    archive: &crate::capital_store::CapitalArchive,
+) -> Vec<crate::domain::FxDividendPayer> {
+    let mut found: std::collections::BTreeMap<String, crate::domain::FxDividendPayer> =
+        Default::default();
+
+    match serde_json::from_str::<FxSeed>(SEEDED_FX_PAYERS) {
+        Ok(seed) => {
+            for (ticker, currency) in seed.payers {
+                if !is_foreign(&currency) {
+                    continue;
+                }
+                found.insert(
+                    ticker.clone(),
+                    crate::domain::FxDividendPayer {
+                        ticker,
+                        currency,
+                        source: format!("KAP taraması ({})", seed.scanned),
+                    },
+                );
+            }
+        }
+        Err(error) => eprintln!("[kap] gömülü döviz temettü listesi okunamadı: {error}"),
+    }
+
+    // Aynı şirketin birden çok bildirimi varsa en yenisi geçerlidir; hak
+    // kullanım tarihine göre artan gidip üzerine yazmak bunu sağlar.
+    let mut live: Vec<&KapDividend> = archive
+        .dividends
+        .iter()
+        .filter(|row| is_foreign(&row.currency))
+        .collect();
+    live.sort_by(|a, b| a.ex_date.cmp(&b.ex_date));
+    for row in live {
+        found.insert(
+            row.ticker.clone(),
+            crate::domain::FxDividendPayer {
+                ticker: row.ticker.clone(),
+                currency: row.currency.clone(),
+                source: format!("KAP Bildirimi {}", row.disclosure_index),
+            },
+        );
+    }
+
+    found.into_values().collect()
 }
 
 /// Verilen aralıktaki temettü bildirimlerini listeler.
@@ -246,6 +348,7 @@ mod tests {
             &["Karar Tarihi", "13.03.2026"],
             &["Kar Payı Dağıtımı Konusu Görüşüldü mü?", "Görüşüldü"],
             &["Nakit Kar Payı Ödeme Şekli", "Peşin"],
+            &["Para Birimi", "TRY"],
             &["Pay Biçiminde Ödeme", "Ödenmeyecek"],
             &["Nakit Kar Payı Ödeme Tutar ve Oranları"],
             &[
@@ -302,7 +405,7 @@ mod tests {
     #[test]
     fn zero_amounts_are_skipped() {
         let mut rows = arase_form().rows;
-        for row in rows.iter_mut().skip(6).take(3) {
+        for row in rows.iter_mut().skip(7).take(3) {
             row[2] = "0,0000000".to_string();
         }
         assert!(parse_dividend_form(&KapForm { rows }, "1").is_empty());
@@ -345,10 +448,111 @@ mod tests {
     #[test]
     fn falls_back_to_the_proposed_ex_date() {
         let mut rows = arase_form().rows;
-        rows[11][2] = "-".to_string();
+        rows[12][2] = "-".to_string();
         let parsed = parse_dividend_form(&KapForm { rows }, "1");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].ex_date, "2026-06-24");
+    }
+
+    /// Ödeme lirayla yapılıyorsa kayıt "TRY" taşır ve arayüzde rozet çıkmaz.
+    #[test]
+    fn the_currency_field_is_carried_into_the_record() {
+        let rows = parse_dividend_form(&arase_form(), "1617428");
+        assert_eq!(rows[0].currency, "TRY");
+        assert!(!is_foreign(&rows[0].currency));
+    }
+
+    /// Dövizli bildirimde tutar lira **değildir**: sütun başlığı KAP formunda
+    /// sabit "(TL)" yazsa da geçerli birim "Para Birimi" alanıdır. Kayıt bunu
+    /// taşımazsa 0,15 USD ile 0,15 TL aynı sütunda ayırt edilemez.
+    #[test]
+    fn a_foreign_currency_payment_keeps_its_own_unit() {
+        let mut rows = arase_form().rows;
+        rows[3][1] = "USD".to_string();
+        let parsed = parse_dividend_form(&KapForm { rows }, "1");
+
+        assert_eq!(parsed.len(), 1, "{parsed:#?}");
+        assert_eq!(parsed[0].currency, "USD");
+        assert!(is_foreign(&parsed[0].currency));
+        // Tutar dönüştürülmez; bildirimde yazan sayı olduğu gibi taşınır.
+        assert_eq!(parsed[0].gross_per_share, 2.0);
+    }
+
+    /// Alan yoksa (eski bildirimler ve "Ödenmeyecek" kararları) lira sayılır.
+    #[test]
+    fn a_missing_currency_field_means_lira() {
+        let rows: Vec<Vec<String>> = arase_form()
+            .rows
+            .into_iter()
+            .filter(|row| row.first().map(String::as_str) != Some("Para Birimi"))
+            .collect();
+        assert_eq!(parse_dividend_form(&KapForm { rows }, "1")[0].currency, "TRY");
+    }
+
+    fn archive_with(rows: Vec<KapDividend>) -> crate::capital_store::CapitalArchive {
+        crate::capital_store::CapitalArchive {
+            dividends: rows,
+            ..Default::default()
+        }
+    }
+
+    fn record(ticker: &str, ex_date: &str, currency: &str, index: &str) -> KapDividend {
+        KapDividend {
+            ticker: ticker.into(),
+            ex_date: ex_date.into(),
+            gross_per_share: 1.0,
+            net_per_share: 1.0,
+            payment_date: None,
+            payment_kind: "Peşin".into(),
+            currency: currency.into(),
+            disclosure_index: index.into(),
+        }
+    }
+
+    /// Gömülü liste ilk açılışta notu doldurur; canlı arşiv bulduklarını
+    /// üstüne yazar. Yalnız canlıya güvenmek notu yıllarca boş bırakırdı —
+    /// gövde kotası tur başına on bildirim ilerliyor.
+    #[test]
+    fn the_seeded_list_and_the_live_archive_are_merged() {
+        let seeded = foreign_payers(&archive_with(Vec::new()));
+        assert!(
+            seeded.iter().all(|payer| is_foreign(&payer.currency)),
+            "gömülü listede lira kaydı olmamalı: {seeded:#?}"
+        );
+
+        let merged = foreign_payers(&archive_with(vec![record("XXXXX", "2026-06-01", "USD", "1")]));
+        assert_eq!(merged.len(), seeded.len() + 1);
+        let added = merged.iter().find(|payer| payer.ticker == "XXXXX").unwrap();
+        assert_eq!(added.currency, "USD");
+        assert_eq!(added.source, "KAP Bildirimi 1");
+    }
+
+    /// Lira ödemeleri listeye girmez; not yalnız dövizli şirketler içindir.
+    #[test]
+    fn lira_payments_stay_out_of_the_note() {
+        let payers = foreign_payers(&archive_with(vec![record("EREGL", "2026-06-01", "TRY", "1")]));
+        assert!(payers.iter().all(|payer| payer.ticker != "EREGL"));
+    }
+
+    /// Bir şirket para birimi değiştirirse **en yeni** bildirim geçerlidir.
+    #[test]
+    fn the_latest_disclosure_wins_for_a_company() {
+        let payers = foreign_payers(&archive_with(vec![
+            record("XXXXX", "2024-06-01", "USD", "1"),
+            record("XXXXX", "2026-06-01", "EUR", "2"),
+        ]));
+        let row = payers.iter().find(|payer| payer.ticker == "XXXXX").unwrap();
+        assert_eq!(row.currency, "EUR");
+        assert_eq!(row.source, "KAP Bildirimi 2");
+    }
+
+    #[test]
+    fn only_non_lira_codes_count_as_foreign() {
+        assert!(is_foreign("USD"));
+        assert!(is_foreign("eur"));
+        assert!(!is_foreign("TRY"));
+        assert!(!is_foreign("TL"));
+        assert!(!is_foreign(""));
     }
 
     #[test]
