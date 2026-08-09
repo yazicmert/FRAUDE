@@ -1,5 +1,10 @@
 {
-  "note": "Kâr payını lira dışında bir para biriminde açıklayan şirketler. Kaynak: KAP 'Kar Payı Dağıtım İşlemlerine İlişkin Bildirim' formundaki 'Para Birimi' alanı. SPK bültenleri taranmıştır ve kâr payı dağıtımı taşımaz — bültenlerde 'Kâr Payından' yalnızca sermaye artırımı tablosunun bir sütunudur.",
-  "scanned": "",
-  "payers": {}
+  "note": "Kâr payını lira dışında bir para biriminde açıklayan BIST şirketleri. İki ayrı bildirim biçimi taranarak çıkarıldı. (1) Yapısal biçim: KAP'ın 'Kar Payı Dağıtım İşlemlerine İlişkin Bildirim' formundaki 'Para Birimi' alanı — bu biçimi uygulama canlı olarak da okuyor, arşiv ilerledikçe liste kendiliğinden büyür. (2) Serbest metinli biçim: yabancı ihraççılar yapısal formu kullanmıyor, tutarı 'Özel Durum Açıklaması (Genel)' ekinde açıklıyor; bunlar ancak elle çıkarılabildiği için burada duruyor. BIST pay piyasasındaki tek yabancı ihraççı DO & CO Aktiengesellschaft'tır (KAP şirket listesi, 09.08.2026). SPK bültenleri bu iş için kaynak DEĞİL: bültenlerde kâr payı dağıtımı yayımlanmıyor, 'Kâr Payından' yalnızca sermaye artırımı tablosunun bir sütunu.",
+  "scanned": "2026-08-09",
+  "payers": {
+    "DOCO": {
+      "currency": "EUR",
+      "source": "KAP Bildirimi 1611833"
+    }
+  }
 }

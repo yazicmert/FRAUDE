@@ -214,10 +214,17 @@ const SEEDED_FX_PAYERS: &str = include_str!("../data/dividend_currency.json");
 struct FxSeed {
     #[allow(dead_code)]
     note: String,
-    /// Taramanın kapsadığı bildirim aralığı; listenin yaşını gösterir.
+    #[allow(dead_code)]
     scanned: String,
-    /// Hisse kodu → para birimi.
-    payers: std::collections::BTreeMap<String, String>,
+    /// Hisse kodu → kayıt.
+    payers: std::collections::BTreeMap<String, FxSeedEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct FxSeedEntry {
+    currency: String,
+    /// Bilginin çıkarıldığı bildirim ("KAP Bildirimi 1611833").
+    source: String,
 }
 
 /// Kâr payını dövizle açıklayan şirketler: gömülü tarama + canlı KAP arşivi.
@@ -232,16 +239,16 @@ pub fn foreign_payers(
 
     match serde_json::from_str::<FxSeed>(SEEDED_FX_PAYERS) {
         Ok(seed) => {
-            for (ticker, currency) in seed.payers {
-                if !is_foreign(&currency) {
+            for (ticker, entry) in seed.payers {
+                if !is_foreign(&entry.currency) {
                     continue;
                 }
                 found.insert(
                     ticker.clone(),
                     crate::domain::FxDividendPayer {
                         ticker,
-                        currency,
-                        source: format!("KAP taraması ({})", seed.scanned),
+                        currency: entry.currency,
+                        source: entry.source,
                     },
                 );
             }
@@ -507,6 +514,21 @@ mod tests {
             currency: currency.into(),
             disclosure_index: index.into(),
         }
+    }
+
+    /// Gömülü liste gerçekten çözümlenebiliyor mu?
+    ///
+    /// [`foreign_payers`] çözümleme hatasını yutup boş dönüyor — bozuk bir
+    /// JSON notu sessizce kapatırdı. Bilinen kayıt DOCO: BIST pay
+    /// piyasasındaki tek yabancı ihraççı ve kâr payını EUR açıklıyor (KAP
+    /// bildirimi 1611833, hisse başına 2,50 EUR). Yapısal formu kullanmadığı
+    /// için canlı ayrıştırıcı onu göremez; liste tam olarak bunun için var.
+    #[test]
+    fn the_seeded_list_parses_and_names_the_known_payer() {
+        let seed: FxSeed = serde_json::from_str(SEEDED_FX_PAYERS).expect("gömülü liste bozuk");
+        let doco = seed.payers.get("DOCO").expect("DOCO listede yok");
+        assert_eq!(doco.currency, "EUR");
+        assert!(doco.source.contains("1611833"), "{}", doco.source);
     }
 
     /// Gömülü liste ilk açılışta notu doldurur; canlı arşiv bulduklarını
