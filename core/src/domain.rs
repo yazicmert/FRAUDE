@@ -399,6 +399,10 @@ pub struct DividendRecord {
     /// Aynı takvim yılı içindeki kaçıncı ödeme (1 tabanlı). 0 = hesaplanmadı.
     #[serde(default)]
     pub installment: u32,
+    /// Kaydın geldiği kaynak ("KAP Bildirimi 1617428" / "Yahoo Finance").
+    /// Resmî kaynağa geçiş sürerken hangi satırın nereden geldiği görünür olmalı.
+    #[serde(default)]
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

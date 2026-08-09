@@ -272,31 +272,14 @@ fn combine_records(mut base: PersistedIpo, extra: PersistedIpo) -> PersistedIpo 
     base
 }
 
-/// Şirket unvanını karşılaştırılabilir bir anahtara indirir: küçük harf,
-/// hukuki form ekleri ("A.Ş.", "Anonim Şirketi") ve bağlaçlar atılır,
-/// harf/rakam dışındaki her şey silinir.
+/// Şirket unvanını karşılaştırılabilir bir anahtara indirir; tek kaynak
+/// `company_match`.
+///
+/// Yerel bir kopya duruyordu ve "sanayii" (çift i) ekini ayırt edici sayıyordu:
+/// "Pilsan Plastik ve Oyuncak Sanayii A.Ş." ile "… Sanayi A.Ş." arşivde iki
+/// ayrı kayıt olarak kalıyordu.
 fn normalized_company_key(name: &str) -> String {
-    let lowered = name.to_lowercase().replace('İ', "i").replace('I', "ı");
-    let mut key = String::with_capacity(lowered.len());
-
-    for word in lowered.split_whitespace() {
-        let cleaned: String = word
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect();
-        // Neredeyse her unvanda geçen ekler ayırt edici değil; "Joy Game" ile
-        // "Joygame" gibi boşluk farkları da anahtarda kaybolur.
-        if matches!(
-            cleaned.as_str(),
-            "aş" | "as" | "anonim" | "şirketi" | "sirketi" | "ve" | "ile" | "sanayi"
-                | "san" | "ticaret" | "tic" | "tıc" | "limited" | "ltd" | "şti" | "sti"
-        ) {
-            continue;
-        }
-        key.push_str(&cleaned);
-    }
-
-    key
+    crate::company_match::company_key(name)
 }
 
 /// Unvanı hiç harf içermeyen kayıtları düşürür ve düşürdüyse `true` döner.
@@ -510,13 +493,21 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
         if ipo.ticker.is_empty() && ipo.name.is_empty() {
             continue;
         }
+        // İsim eşleşmesi birebir değil normalleştirilmiş anahtarla yapılır:
+        // SPK bülteni "Kapeks Kimya Sanayi AŞ", halkarz.com "Kapeks Kimya
+        // Sanayi A.Ş." yazıyor ve birebir kıyas ikisini ayrı kayıt sanıyordu.
+        let name_match = |p: &PersistedIpo| crate::company_match::same_company(&p.name, &ipo.name);
         let idx = if ipo.ticker.is_empty() {
-            archive.iter().position(|p| p.name == ipo.name)
+            archive.iter().position(name_match)
         } else {
             archive
                 .iter()
                 .position(|p| p.ticker == ipo.ticker)
-                .or_else(|| archive.iter().position(|p| p.ticker.is_empty() && p.name == ipo.name))
+                .or_else(|| {
+                    archive
+                        .iter()
+                        .position(|p| p.ticker.is_empty() && name_match(p))
+                })
         };
         if let Some(i) = idx {
             let existing = &mut archive[i];
@@ -535,7 +526,13 @@ pub fn merge_scraped(archive: &mut Vec<PersistedIpo>, scraped: &[ScrapedIpo]) ->
             if !ipo.name.is_empty() {
                 existing.name = ipo.name.clone();
             }
-            existing.status = ipo.status.clone();
+            // Kazınan durum aşamayı geri almamalı. SPK onayı halka arzın
+            // kesinleştiğinin resmî kanıtı; halkarz.com aynı şirketi hâlâ
+            // "Hazırlanıyor" listesinde tutuyor olabilir ve kaydı taslağa
+            // düşürüp onay bilgisini görünmez kılıyordu.
+            if !(existing.status == "SPK ONAYLI" && ipo.status == "TASLAK") {
+                existing.status = ipo.status.clone();
+            }
             if looks_like_iso_date(&ipo.ipo_date) {
                 existing.ipo_date = ipo.ipo_date.clone();
             }
@@ -699,6 +696,47 @@ mod tests {
             status: status.into(),
             ..Default::default()
         }
+    }
+
+    /// SPK onayı halka arzın kesinleştiğinin resmî kanıtı; halkarz.com aynı
+    /// şirketi hâlâ "Hazırlanıyor" listesinde tutuyor olabilir. Kazınan durum
+    /// aşamayı geri alıp onay bilgisini görünmez kılıyordu.
+    #[test]
+    fn a_scraped_draft_does_not_undo_spk_approval() {
+        let mut archive = vec![PersistedIpo {
+            name: "KPEKS A.Ş.".into(),
+            ticker: "KPEKS".into(),
+            status: "SPK ONAYLI".into(),
+            spk_bulletin_no: Some("2026/49".into()),
+            ..Default::default()
+        }];
+
+        merge_scraped(&mut archive, &[scraped("KPEKS", 0.0, "TASLAK")]);
+        assert_eq!(archive[0].status, "SPK ONAYLI");
+
+        // Gerçek ilerleme yine de yazılmalı.
+        merge_scraped(&mut archive, &[scraped("KPEKS", 94.0, "TALEP TOPLAMA")]);
+        assert_eq!(archive[0].status, "TALEP TOPLAMA");
+    }
+
+    /// İsim eşleşmesi birebir değil normalleştirilmiş anahtarla yapılmalı:
+    /// SPK "Kapeks Kimya Sanayi AŞ", halkarz.com "Kapeks Kimya Sanayi A.Ş."
+    /// yazıyor ve birebir kıyas ikisini ayrı kayıt sanıyordu.
+    #[test]
+    fn scrape_matches_a_codeless_record_across_spellings() {
+        let mut archive = vec![PersistedIpo {
+            name: "Kapeks Kimya Sanayi AŞ".into(),
+            status: "SPK ONAYLI".into(),
+            ..Default::default()
+        }];
+
+        let mut row = scraped("KPEKS", 94.0, "TALEP TOPLAMA");
+        row.name = "Kapeks Kimya Sanayi A.Ş.".into();
+        merge_scraped(&mut archive, &[row]);
+
+        assert_eq!(archive.len(), 1, "{archive:#?}");
+        assert_eq!(archive[0].ticker, "KPEKS");
+        assert_eq!(archive[0].price, 94.0);
     }
 
     /// Aynı şirket, iki kaynaktan iki yazımla: SPK başvuru listesi ("Joy Game
