@@ -532,7 +532,7 @@ pub struct FxDividendPayer {
     pub ticker: String,
     /// "USD", "EUR" — KAP bildirimindeki "Para Birimi" alanı.
     pub currency: String,
-    /// Bilginin geldiği yer ("KAP Bildirimi 1636716" / "KAP taraması").
+    /// Bilginin çıkarıldığı bildirim ("KAP Bildirimi 1611833").
     pub source: String,
 }
 
