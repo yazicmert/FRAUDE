@@ -1390,6 +1390,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     <th style={thStyle}>{t('ticker')}</th>
                     <th style={thStyle}>{t('caExDate')}</th>
                     <th style={thStyle}>{t('caRemaining')}</th>
+                    <th style={thStyle}>{t('caGrossPerShare')}</th>
                     <th style={thStyle}>{t('caAnnualDividend')}</th>
                   </tr>
                 </thead>
@@ -1403,6 +1404,12 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                             {u.ticker}
                           </button>
                         ) : u.ticker}
+                        {u.official && (
+                          <span title={t('caOfficialSourceHint')}
+                            style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '6px', fontSize: '0.6rem', fontWeight: 'bold', background: '#23863622', color: '#3fb950', letterSpacing: '0.04em' }}>
+                            {t('caOfficialSource')}
+                          </span>
+                        )}
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         {u.ex_date}
@@ -1416,6 +1423,9 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                         <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 'bold', background: '#23863622', color: '#3fb950' }}>
                           {daysUntil(u.ex_date)}
                         </span>
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: u.gross_per_share ? 'bold' : 'normal' }}>
+                        {u.gross_per_share ? `₺${u.gross_per_share.toFixed(4)}` : '—'}
                       </td>
                       <td style={tdStyle}>{u.annual_rate ? `₺${u.annual_rate.toFixed(2)}` : '—'}</td>
                     </tr>

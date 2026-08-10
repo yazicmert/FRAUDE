@@ -9,7 +9,7 @@ mod research_worker;
 pub use fraude_core::{
     ai_tagger, bist, bist_indices, bist_universe, corporate_actions, domain,
     economic_calendar, fql, fundamentals, indicators, ipo_scraper, ipo_store, isyatirim,
-    isyatirim_price, kap, kap_pdr, keychain, live_quotes, market_calendar, monitor, news,
+    isyatirim_price, kap, kap_dividend, kap_pdr, keychain, live_quotes, market_calendar, monitor, news,
     news_tagger, persist, providers, refresh_ipo_cache, research, secrets, services, shareholders,
     spk, storage, subsidiaries, tefas, tefas_issuer, yahoo, AppState, IpoCache,
     IPO_REFRESH_INTERVAL_SECS,
@@ -104,6 +104,19 @@ pub fn run() {
 
                     tokio::time::sleep(std::time::Duration::from_secs(IPO_REFRESH_INTERVAL_SECS)).await;
                 }
+            });
+
+            // Temettü tarayıcısı: KAP "Kar Payı Dağıtım İşlemlerine İlişkin
+            // Bildirim"leri temettünün resmî kaynağı. Kendi döngüsünde çalışır
+            // çünkü haftalık backfill'in bütçesi akışın gerisinde kalıyordu;
+            // kuyruk kalıcı, ilerleme her turda diske yazılıyor.
+            let dividend_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Açılış trafiği yatışsın; ilk turun aceleyle KAP'a yüklenmesi
+                // kullanıcının beklediği isteklerden pay götürürdü.
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                let state = dividend_handle.state::<AppState>();
+                kap_dividend::crawl(&state.http).await;
             });
 
             // PDR ters dizin taraması: en büyük fonların aylık portföy dağılım

@@ -509,7 +509,8 @@ pub struct AnalystReportPayload {
     pub errors: Vec<String>,
 }
 
-/// Açıklanmış gelecek temettü (Yahoo calendarEvents.exDividendDate).
+/// Açıklanmış gelecek temettü: KAP kar payı bildirimi ya da — resmî kaydı
+/// olmayan hisselerde — Yahoo calendarEvents.exDividendDate.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpcomingDividend {
     pub ticker: String,
@@ -519,6 +520,14 @@ pub struct UpcomingDividend {
     /// Aynı yıl içinde daha önce ödenenler dahil kaçıncı taksit olacağı.
     #[serde(default)]
     pub installment: u32,
+    /// **O ödemenin** hisse başına brüt tutarı. Yalnız resmî kayıtta bulunur:
+    /// Yahoo tahmini yıllık oran verir, tek ödemenin tutarını değil.
+    #[serde(default)]
+    pub gross_per_share: Option<f64>,
+    /// Kayıt KAP bildiriminden mi geldi? Tahmin ile resmî rakam arayüzde
+    /// ayrılmalı — biri şirketin kesinleşmiş kararı, diğeri sağlayıcı tahmini.
+    #[serde(default)]
+    pub official: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

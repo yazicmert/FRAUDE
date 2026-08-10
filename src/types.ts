@@ -471,6 +471,10 @@ export interface UpcomingDividend {
   ex_date: string;
   annual_rate: number | null;
   installment: number;
+  /** O ödemenin hisse başına brüt tutarı; yalnız KAP kaynaklı satırda dolu. */
+  gross_per_share: number | null;
+  /** KAP kar payı bildiriminden mi geldi (tahmin değil, kesinleşmiş karar)? */
+  official: boolean;
 }
 
 export interface CorporateEventsPayload {

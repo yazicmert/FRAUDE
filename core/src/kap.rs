@@ -707,20 +707,42 @@ async fn fetch_disclosure_form_once(
     disclosure_index: &str,
 ) -> Result<KapForm, String> {
     let url = format!("{BASE_URL}/api/notification/export/excel/{disclosure_index}");
+    fetch_form_from(client, &url, "KAP bildirim gövdesi").await
+}
+
+/// Bildirimin **görüntüleme sayfası** üzerinden aynı formu okur.
+///
+/// Excel dışa aktarma ucuyla aynı tabloları taşır — ölçümde ASTOR'un
+/// (1645625) tutar ve hak kullanım tabloları iki uçta hücre hücre aynı çıktı —
+/// ama kotası kıyaslanamayacak kadar geniş: excel ucu ardışık **2 istekte**
+/// 429'a düşerken bu uç aynı ritimde **68 istek** taşıdı ve ceza penceresi
+/// ~20 saniyede kapandı.
+///
+/// Sunucu tarafında işlenmiş HTML döndüğü için tablolar belgede hazır;
+/// ayrıştırma [`parse_form`] ile ortaktır, iki uç için ayrı okuyucu yoktur.
+pub async fn fetch_disclosure_page(
+    client: &Client,
+    disclosure_index: &str,
+) -> Result<KapForm, String> {
+    let url = format!("{BASE_URL}/Bildirim/{disclosure_index}");
+    fetch_form_from(client, &url, "KAP bildirim sayfası").await
+}
+
+async fn fetch_form_from(client: &Client, url: &str, context: &str) -> Result<KapForm, String> {
     let _permit = crate::retry::kap_permit().await;
 
     let response = client
-        .get(&url)
+        .get(url)
         .timeout(REQUEST_TIMEOUT)
         .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("KAP bildirim gövdesi isteği: {e}"))?;
-    let response = crate::retry::check_status(response, "KAP bildirim gövdesi")?;
+        .map_err(|e| format!("{context} isteği: {e}"))?;
+    let response = crate::retry::check_status(response, context)?;
     let html = response
         .text()
         .await
-        .map_err(|e| format!("KAP bildirim gövdesi okunamadı: {e}"))?;
+        .map_err(|e| format!("{context} okunamadı: {e}"))?;
 
     Ok(parse_form(&html))
 }
