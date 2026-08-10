@@ -85,11 +85,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Paketler kök `target/` altına düşer: .cargo/config.toml
+          # target-dir'i oraya çeviriyor ki core/server/src-tauri tek önbelleği
+          # paylaşsın. Glob src-tauri/target'a bakarsa derleme başarılı olur
+          # ama yükleme adımı dosyayı bulamaz ve release varlıksız kalır.
           - os: macos-latest
-            bundle_glob: 'src-tauri/target/release/bundle/dmg/*.dmg'
+            bundle_glob: 'target/release/bundle/dmg/*.dmg'
             asset_name: FRAUDE-Terminal_macos_arm64.dmg
           - os: windows-latest
-            bundle_glob: 'src-tauri/target/release/bundle/nsis/*-setup.exe'
+            bundle_glob: 'target/release/bundle/nsis/*-setup.exe'
             asset_name: FRAUDE-Terminal_windows_x64-setup.exe
     runs-on: ${{ matrix.os }}
     steps:
