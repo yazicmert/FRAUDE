@@ -30,6 +30,7 @@ pub mod kap_capital;
 pub mod kap_dividend;
 pub mod kap_ipo;
 pub mod kap_pdr;
+pub mod kap_tssd;
 pub mod keychain;
 pub mod live_quotes;
 pub mod market_cache;

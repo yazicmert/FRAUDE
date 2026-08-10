@@ -62,6 +62,21 @@ impl KapIpoDisclosureType {
                 | KapIpoDisclosureType::IndexChange
         )
     }
+
+    /// İçeriği gövdede değil PDF **ekinde** olan tür.
+    ///
+    /// Satış duyurusu (TSSD) arzın fiyatını ve talep toplama tarihlerini
+    /// taşıyan tek resmî belge ve arzdan **önce** yayımlanıyor; yapısal
+    /// bildirimler bu ikisini ancak arz bitince veriyor. Gövdesi boş olduğu
+    /// için `has_form_body` false, ama eki okunmaya değer — bkz.
+    /// [`crate::kap_tssd`].
+    ///
+    /// İzahname ve fiyat tespit raporu buraya **girmiyor**: ekleri 250-300
+    /// sayfa, şirket başına onlarca ayrı bildirime bölünmüş ve aradığımız
+    /// alanların çoğu düz metin içinde dağınık.
+    pub fn has_pdf_attachment(self) -> bool {
+        matches!(self, KapIpoDisclosureType::SaleNotice)
+    }
 }
 
 /// Bir halka arz bildiriminin gövdesinden çıkan alanlar.
@@ -89,6 +104,8 @@ pub struct KapIpoExtractedData {
     pub public_float_ratio: Option<String>,
     pub index_name: Option<String>,
     pub major_shareholders: Option<String>,
+    /// Sermaye artırımı / ortak satışı kırılımı; satış duyurusundan gelir.
+    pub share_structure: Option<String>,
     /// Yatırımcı grubu bazında katılım tablosu.
     pub results_table: Option<Vec<crate::ipo_scraper::IpoResultRow>>,
 }

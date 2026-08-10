@@ -895,29 +895,59 @@ fn format_price_range(low: f64, high: f64) -> String {
 }
 
 /// "150.000.000" → 150000000, "73,70" → 73.7. Biçime uymayan metin `None`.
+///
+/// **Nokta her zaman binlik ayracı değildir.** Bülten fiyat sütununu kimi yıl
+/// Türkçe biçimde ("73,70") kimi yıl İngilizce biçimde ("3.06") yazıyor ve
+/// noktayı koşulsuz silen sürüm ikincisini **yüz katına** çıkarıyordu: Selva
+/// 3,06 TL yerine 306 TL, Oncosem 17,50 yerine 1.750, EYG 14,23 yerine 1.423,
+/// Çan2 3,90 yerine 390. Arz büyüklüğü de fiyattan türetildiği için onunla
+/// birlikte, getiri yüzdesi de fiyata bölündüğü için ayrıca bozuluyordu.
+///
+/// Ayrım biçimin kendisinden okunur: Türkçe binlik ayracı grupları **her zaman
+/// üçer** basamaktır, dolayısıyla ilkten sonra üç basamaklı olmayan bir grup
+/// binlik ayracı değildir. Tek nokta + 1-2 basamak ondalıktır ("3.06", "10.5");
+/// bunun dışındaki uyumsuz gruplama bozuk metindir ve uydurmak yerine
+/// reddedilir ("132.00.000" 13.200.000 diye okunmamalı).
 fn parse_turkish_number(token: &str) -> Option<f64> {
     let (integer, fraction) = match token.split_once(',') {
         Some((integer, fraction)) => (integer, Some(fraction)),
         None => (token, None),
     };
 
-    let groups_valid = !integer.is_empty()
-        && integer
-            .split('.')
-            .all(|group| !group.is_empty() && group.bytes().all(|b| b.is_ascii_digit()));
-    let fraction_valid = fraction
-        .is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()));
+    let digits_only = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
 
-    if !groups_valid || !fraction_valid {
+    let groups: Vec<&str> = integer.split('.').collect();
+    if !groups.iter().all(|group| digits_only(group)) {
+        return None;
+    }
+    if !fraction.is_none_or(digits_only) {
         return None;
     }
 
-    let mut normalized = integer.replace('.', "");
-    if let Some(fraction) = fraction {
-        normalized.push('.');
-        normalized.push_str(fraction);
+    // Noktasız metin olduğu gibi sayıdır; noktalıysa ilk grup 1-3 basamak,
+    // sonrakiler tam üç basamak olduğunda noktalar binlik ayracıdır.
+    let grouped_as_thousands = groups.len() == 1
+        || (groups[0].len() <= 3 && groups[1..].iter().all(|group| group.len() == 3));
+
+    if grouped_as_thousands {
+        let mut normalized = integer.replace('.', "");
+        if let Some(fraction) = fraction {
+            normalized.push('.');
+            normalized.push_str(fraction);
+        }
+        return normalized.parse().ok();
     }
-    normalized.parse().ok()
+
+    // Virgül zaten ondalığı işaretlemişse nokta binlik ayracı olmak zorundaydı;
+    // gruplama tutmuyorsa metin bozuktur.
+    if fraction.is_some() {
+        return None;
+    }
+
+    match groups.as_slice() {
+        [whole, decimals] if decimals.len() <= 2 => format!("{whole}.{decimals}").parse().ok(),
+        _ => None,
+    }
 }
 
 /// Ardışık boşlukları teke indirir; PDF metni sütun hizası için çok boşluk taşır.
@@ -1267,7 +1297,9 @@ const CAPITAL_FETCH_CONCURRENCY: usize = 4;
 ///    şirket birincinin satış türüne yutulmuyordu.
 /// 5: noktasız "TAŞ" eki tanınıyor — "Türk Anonim Şirketi" unvanlı şirketlerin
 ///    (Ereğli, Tüpraş, Hektaş, Türk Traktör…) artırımları hiç okunmuyordu.
-pub const BULLETIN_PARSER_VERSION: u32 = 5;
+/// 6: İngilizce biçimli fiyat ("3.06") artık binlik ayracı sanılmıyor; Selva,
+///    Çan2, Oncosem ve EYG arşivde yüz katı fiyatla duruyordu.
+pub const BULLETIN_PARSER_VERSION: u32 = 6;
 
 /// Bir bültenden çıkan iki tablo.
 struct ParsedBulletin {
@@ -2203,8 +2235,51 @@ Gelecek  Varlık  Yönetimi  AŞ  126.500.000  139.700.000  13.200.000  -  8.800
         assert_eq!(parse_turkish_number("150.000.000"), Some(150_000_000.0));
         assert_eq!(parse_turkish_number("73,70"), Some(73.70));
         assert_eq!(parse_turkish_number("266.367.619,6"), Some(266_367_619.6));
+        assert_eq!(parse_turkish_number("65000000"), Some(65_000_000.0));
         assert_eq!(parse_turkish_number("-"), None);
         assert_eq!(parse_turkish_number("TL"), None);
+    }
+
+    /// Bülten fiyat sütununu kimi yıl İngilizce biçimde yazıyor. Noktayı
+    /// koşulsuz binlik ayracı sayan sürüm dördünü de yüz katına çıkarmıştı:
+    /// Selva (2021/29) 3.06, Çan2 (2021/20) 3.90, Oncosem ve EYG (2022/70)
+    /// 17.50 / 14.23 — arşivde 306, 390, 1750, 1423 TL olarak duruyorlardı.
+    #[test]
+    fn dot_is_a_decimal_separator_when_grouping_says_so() {
+        assert_eq!(parse_turkish_number("3.06"), Some(3.06));
+        assert_eq!(parse_turkish_number("3.90"), Some(3.90));
+        assert_eq!(parse_turkish_number("17.50"), Some(17.50));
+        assert_eq!(parse_turkish_number("14.23"), Some(14.23));
+        assert_eq!(parse_turkish_number("10.5"), Some(10.5));
+
+        // Üçer gruplama sürdükçe nokta binlik ayracıdır; "3.060" 3,06 değildir.
+        assert_eq!(parse_turkish_number("3.060"), Some(3060.0));
+    }
+
+    /// Gruplaması hiçbir biçime uymayan metin **uydurulmaz**. "132.00.000"
+    /// 13.200.000 diye okunursa yanlış lot sessizce arşive girer.
+    #[test]
+    fn inconsistent_grouping_is_rejected() {
+        assert_eq!(parse_turkish_number("132.00.000"), None);
+        assert_eq!(parse_turkish_number("1.2345"), None);
+        // Virgül ondalığı zaten aldıysa nokta binlik ayracı olmak zorundadır.
+        assert_eq!(parse_turkish_number("1.23.456,7"), None);
+    }
+
+    /// Fiyatı İngilizce biçimde yazılmış gerçek bir satır uçtan uca doğru
+    /// okunmalı: Selva Gıda, 2021/29 bülteni (sütunlar birebir).
+    #[test]
+    fn reads_the_selva_row_with_an_english_formatted_price() {
+        let text = "1.  İlk Halka Arzlar
+
+Selva Gıda Sanayi A.Ş.  65.000.000  78.000.000  13.000.000  -  13.000.000  -  3.06
+";
+        let approvals = extract_ipo_approvals_from_text(text, "2021/29", "10 Haziran 2021");
+        assert_eq!(approvals.len(), 1, "satır düşmemeli: {approvals:?}");
+        assert_eq!(approvals[0].price, 3.06);
+        assert_eq!(approvals[0].total_lots, 26_000_000.0);
+        // Arşivde 7,96 milyar TL yazıyordu: fiyat yüz katı olunca büyüklük de.
+        assert_eq!(approvals[0].ipo_size_tl, 79_560_000.0);
     }
 
     /// Sütun sayısı beklenenden farklıysa kayıt üretilmemeli: yarım okunmuş bir

@@ -85,6 +85,14 @@ pub struct FollowState {
     /// pencerelerin bildirimlerini kalıcı olarak kaybettirir.
     #[serde(default)]
     pub last_scan: Option<String>,
+    /// Metin katmanı olmayan (taranmış) satış duyuruları.
+    ///
+    /// Okunamadıkları için kuyruktan düşerler, ama **iz bırakmadan**
+    /// düşmemeleri gerekiyor: hangi arzların fiyat ve talep tarihi bu yüzden
+    /// eksik kaldığı ancak bu listeyle görülebiliyor. İleride görüntüden
+    /// okuma eklenirse okunacak küme de budur.
+    #[serde(default)]
+    pub scanned_notices: Vec<PendingDisclosure>,
 }
 
 /// İlk taramanın kaç gün geriye bakacağı.
@@ -92,6 +100,14 @@ pub struct FollowState {
 /// İzahname arzdan ~2 ay önce, endeks duyurusu ilk işlemden birkaç gün sonra
 /// yayımlanıyor; 90 gün sürecin tamamını rahatça kapsıyor.
 const FULL_SCAN_DAYS: u32 = 90;
+
+/// Bir turda indirilecek en fazla satış duyurusu eki.
+///
+/// Ekler yüz kilobaytlarca ve indirme iki istek (ek listesi + dosya); aynı
+/// kotayı gövde okumalarıyla paylaşıyorlar. Duyuru arz başına bir kez
+/// yayımlandığı için dar bütçe gecikme yaratmaz: kuyrukta bekleyen bir sonraki
+/// turda okunur.
+const ATTACHMENT_BUDGET: usize = 2;
 
 /// Artımlı taramada, en son taramanın üzerine eklenen gün payı.
 ///
@@ -269,9 +285,22 @@ async fn run_round(
     // karşılaştırması aynı sonucu veriyor, ama sekiz basamağa geçildiğinde
     // "10000000" < "9999999" olur ve kuyruk sessizce en eskiden başlar.
     state.pending.sort_by_key(|p| std::cmp::Reverse(p.index.parse::<u64>().unwrap_or(0)));
+
+    // Kuyruk ikiye ayrılır: gövdeli bildirimler ortak form ucundan, satış
+    // duyurusu ise PDF ekinden okunuyor. İkisi aynı kotayı paylaştığı için
+    // duyuru bütçesi ayrı ve dar tutulur — ekler megabaytlarca ve duyuru arz
+    // başına bir kez yayımlanıyor, acelesi yok.
+    let attachments: Vec<PendingDisclosure> = state
+        .pending
+        .iter()
+        .filter(|p| p.kind.has_pdf_attachment())
+        .take(ATTACHMENT_BUDGET)
+        .cloned()
+        .collect();
     let batch: Vec<PendingDisclosure> = state
         .pending
         .iter()
+        .filter(|p| p.kind.has_form_body())
         .take(crate::kap_capital::FETCH_BUDGET)
         .cloned()
         .collect();
@@ -294,42 +323,44 @@ async fn run_round(
         // izlenen hiçbir arza ait olmayan bildirim de bir daha indirilmemeli.
         state.processed.insert(index.clone());
         state.pending.retain(|p| &p.index != index);
-        if data.is_empty() {
-            continue;
-        }
+        changed |= apply_extracted(archive, &watch, candidate, &data);
+    }
 
-        let target = match_by_ticker(&watch, candidate.ticker.as_deref())
-            .or_else(|| match_by_name(&watch, &data));
-        let Some(target) = target else { continue };
-        let entry = &mut archive[watch[target].index];
-
-        // Kodsuz kaydın kodu bildirimden gelir; köprünün asıl kazancı budur.
-        // Şirket kodunu ancak listelenirken alıyor, o âna kadar arşivde
-        // yalnız unvanla duruyor ve sonraki turlarda ad benzerliğine muhtaç
-        // kalıyordu. Kod bir kez yazılınca eşleşme kesinleşir.
-        if entry.ticker.is_empty() {
-            if let Some(ticker) = &candidate.ticker {
-                entry.ticker = ticker.clone();
-                changed = true;
-                eprintln!("[ipo_follow] {} kodu atandı: {ticker}", entry.name);
+    // Satış duyurusu ayrı yoldan okunur: gövdesi boş, içerik PDF ekinde.
+    let mut notices_read = 0;
+    for candidate in &attachments {
+        match crate::kap_tssd::fetch_tssd(client, &candidate.index).await {
+            Ok(crate::kap_tssd::TssdSource::Text(text)) => {
+                notices_read += 1;
+                state.processed.insert(candidate.index.clone());
+                state.pending.retain(|p| p.index != candidate.index);
+                let data = crate::kap_tssd::parse_tssd(&text);
+                changed |= apply_extracted(archive, &watch, candidate, &data);
             }
-        }
-
-        if crate::ipo_pipeline::merge_extracted(entry, &data) {
-            // Kaynak rozeti kullanıcıya alanın nereden geldiğini gösteriyor;
-            // halkarz.com ile KAP aynı alanı farklı yazabildiği için ayrım
-            // önemli.
-            if !entry.data_sources.iter().any(|source| source == KAP_SOURCE) {
-                entry.data_sources.push(KAP_SOURCE.to_string());
+            Ok(crate::kap_tssd::TssdSource::Scanned { pages }) => {
+                // Duyuruların çoğu tarayıcı çıktısı. Kuyruktan düşer ki her
+                // tur yeniden indirilmesin, ama numarası saklanır: kullanıcı
+                // görüntüden okutmak isterse gereken tek şey odur.
+                notices_read += 1;
+                state.processed.insert(candidate.index.clone());
+                state.pending.retain(|p| p.index != candidate.index);
+                if !state.scanned_notices.iter().any(|n| n.index == candidate.index) {
+                    state.scanned_notices.push(candidate.clone());
+                }
+                eprintln!(
+                    "[ipo_follow] {} satış duyurusu taranmış ({pages} sayfa, metin katmanı yok); \
+                     fiyat ve talep tarihleri bu arz için okunamadı",
+                    candidate.index
+                );
             }
-            changed = true;
-            eprintln!(
-                "[ipo_follow] {} ← {:?} bildirimi işlendi",
-                if entry.ticker.is_empty() { &entry.name } else { &entry.ticker },
-                candidate.kind,
-            );
+            Err(error) => {
+                // Kuyrukta kalır: indirilemeyen ek bir sonraki turda yeniden
+                // denenir (hız sınırı, bağlantı).
+                eprintln!("[ipo_follow] {} satış duyurusu alınamadı: {error}", candidate.index);
+            }
         }
     }
+    let read = read + notices_read;
 
     // Sıra önemli: **önce veri, sonra ilerleme**. Durumu çağıran (`follow_round`)
     // bu dönüşten sonra yazar; arşiv yazılamazsa (çökme, disk hatası)
@@ -340,6 +371,57 @@ async fn run_round(
     state.last_round = Some(today.format("%Y-%m-%d").to_string());
 
     report(&watch, state.pending.len(), read, discovered);
+    changed
+}
+
+/// Bir bildirimden çıkan alanları eşleşen arşiv kaydına işler.
+///
+/// İki okuma yolu (form gövdesi ve satış duyurusunun PDF eki) burada
+/// buluşuyor: eşleştirme, kod atama ve kaynak rozeti ikisinde de aynı
+/// olmalı, yoksa aynı arz iki farklı kurala göre güncellenirdi.
+fn apply_extracted(
+    archive: &mut [PersistedIpo],
+    watch: &[Watched],
+    candidate: &PendingDisclosure,
+    data: &crate::kap_ipo::KapIpoExtractedData,
+) -> bool {
+    if data.is_empty() {
+        return false;
+    }
+
+    let target = match_by_ticker(watch, candidate.ticker.as_deref())
+        .or_else(|| match_by_name(watch, data));
+    let Some(target) = target else { return false };
+    let entry = &mut archive[watch[target].index];
+
+    let mut changed = false;
+
+    // Kodsuz kaydın kodu bildirimden gelir; köprünün asıl kazancı budur.
+    // Şirket kodunu ancak listelenirken alıyor, o âna kadar arşivde yalnız
+    // unvanla duruyor ve sonraki turlarda ad benzerliğine muhtaç kalıyordu.
+    // Kod bir kez yazılınca eşleşme kesinleşir.
+    if entry.ticker.is_empty() {
+        if let Some(ticker) = &candidate.ticker {
+            entry.ticker = ticker.clone();
+            changed = true;
+            eprintln!("[ipo_follow] {} kodu atandı: {ticker}", entry.name);
+        }
+    }
+
+    if crate::ipo_pipeline::merge_extracted(entry, data) {
+        // Kaynak rozeti kullanıcıya alanın nereden geldiğini gösteriyor;
+        // halkarz.com ile KAP aynı alanı farklı yazabildiği için ayrım önemli.
+        if !entry.data_sources.iter().any(|source| source == KAP_SOURCE) {
+            entry.data_sources.push(KAP_SOURCE.to_string());
+        }
+        changed = true;
+        eprintln!(
+            "[ipo_follow] {} ← {:?} bildirimi işlendi",
+            if entry.ticker.is_empty() { &entry.name } else { &entry.ticker },
+            candidate.kind,
+        );
+    }
+
     changed
 }
 
@@ -405,7 +487,7 @@ fn enqueue_candidates(
         let Some(kind) = crate::kap_ipo::classify_disclosure(&row.subject) else {
             continue;
         };
-        if !kind.has_form_body() {
+        if !(kind.has_form_body() || kind.has_pdf_attachment()) {
             continue;
         }
 
@@ -598,6 +680,21 @@ mod tests {
         let mut state = state;
         assert_eq!(enqueue_candidates(&mut state, &rows, &watch), 1);
         assert_eq!(state.pending[0].index, "3");
+    }
+
+    /// Satış duyurusunun gövdesi boş ama **eki okunuyor**: arzın fiyatını ve
+    /// talep toplama tarihlerini arzdan önce veren tek resmî belge o. Kuyruğa
+    /// girmezse künye o iki alan için halkarz.com'a bağlı kalır.
+    #[test]
+    fn the_sale_notice_is_queued_for_its_attachment() {
+        let watch = watch_list(&[ipo("TKNKA", "SPK ONAYLI", "2026-08-12")], today());
+        let rows = vec![row(1645150, "Tasarruf Sahiplerine Satış Duyurusu", &["TKNKA"])];
+
+        let mut state = FollowState::default();
+        assert_eq!(enqueue_candidates(&mut state, &rows, &watch), 1);
+        assert_eq!(state.pending[0].kind, KapIpoDisclosureType::SaleNotice);
+        assert!(state.pending[0].kind.has_pdf_attachment());
+        assert!(!state.pending[0].kind.has_form_body(), "gövde ucundan indirilmemeli");
     }
 
     #[test]
