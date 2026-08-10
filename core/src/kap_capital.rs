@@ -206,18 +206,38 @@ pub async fn list_disclosures(
     to: chrono::NaiveDate,
     matches: fn(&str) -> bool,
 ) -> Vec<crate::kap::RawDisclosure> {
+    list_disclosures_checked(client, from, to, matches).await.0
+}
+
+/// [`list_disclosures`] ile aynı, ek olarak **taramanın eksiksiz olduğunu**
+/// bildirir.
+///
+/// Bayrak imleç ilerleten çağıran için şart: bir pencere ağ hatasıyla
+/// düşerse ve imleç yine de ilerlerse o günlerin bildirimleri bir daha
+/// aranmaz — arşivde kalıcı bir delik açılır. Canlı turda görüldü (iki
+/// pencere "error sending request" ile atlandı).
+pub async fn list_disclosures_checked(
+    client: &Client,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+    matches: fn(&str) -> bool,
+) -> (Vec<crate::kap::RawDisclosure>, bool) {
     let mut candidates = Vec::new();
+    let mut complete = true;
     let mut cursor = from;
     while cursor <= to {
         let window_end = (cursor + chrono::Duration::days(WINDOW_DAYS - 1)).min(to);
         match crate::kap::disclosures_in_range(client, cursor, window_end).await {
             Ok(rows) => candidates.extend(rows.into_iter().filter(|row| matches(&row.subject))),
             // Bir pencere düşerse tarama sürer: eksik veri, hiç veri olmamasından iyidir.
-            Err(error) => eprintln!("[kap] {cursor}..{window_end} atlandı: {error}"),
+            Err(error) => {
+                complete = false;
+                eprintln!("[kap] {cursor}..{window_end} atlandı: {error}");
+            }
         }
         cursor = window_end + chrono::Duration::days(1);
     }
-    candidates
+    (candidates, complete)
 }
 
 /// Bütçeli gövde çekiminin sonucu.

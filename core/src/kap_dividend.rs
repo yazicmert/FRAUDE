@@ -191,6 +191,16 @@ pub async fn list_dividend_disclosures(
     crate::kap_capital::list_disclosures(client, from, to, is_dividend_disclosure).await
 }
 
+/// [`list_dividend_disclosures`] ile aynı, ek olarak taramanın eksiksiz
+/// olduğunu bildirir; bkz. [`crate::kap_capital::list_disclosures_checked`].
+async fn list_dividend_disclosures_checked(
+    client: &Client,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> (Vec<crate::kap::RawDisclosure>, bool) {
+    crate::kap_capital::list_disclosures_checked(client, from, to, is_dividend_disclosure).await
+}
+
 /// Temettü taramasının kaç gün geriye bakacağı. Akış son 24 ayı gösteriyor;
 /// pencere onu karşılar.
 const BACKFILL_DAYS: i64 = 760;
@@ -367,9 +377,17 @@ async fn discover(
 
     if scanned_from > floor {
         let chunk_start = (scanned_from - chrono::Duration::days(DISCOVERY_CHUNK_DAYS)).max(floor);
-        let older = list_dividend_disclosures(client, chunk_start, scanned_from).await;
+        let (older, complete) =
+            list_dividend_disclosures_checked(client, chunk_start, scanned_from).await;
         added += crate::capital_store::enqueue_dividends(archive, &older);
-        archive.dividend_scanned_from = Some(chunk_start.format("%Y-%m-%d").to_string());
+
+        // İmleç **yalnız eksiksiz taranan** dilimden sonra ilerler. Düşen bir
+        // pencereye rağmen ilerlemek o günleri kalıcı olarak atlatırdı: keşif
+        // bir daha oraya bakmıyor ve eksik sessiz kalıyor. Dilim bir sonraki
+        // turda baştan taranır; kuyruk zaten yinelenenleri süzüyor.
+        if complete {
+            archive.dividend_scanned_from = Some(chunk_start.format("%Y-%m-%d").to_string());
+        }
     }
 
     added
@@ -565,6 +583,25 @@ mod tests {
 
         assert_eq!(rows.len(), 1, "{rows:#?}");
         assert_eq!(rows[0], parse_dividend_form(&arase_form(), "1617428")[0]);
+    }
+
+    /// Yeni gövde kapısı — bildirimin **görüntüleme sayfası** — excel ucunun
+    /// verdiği formun aynısını veriyor mu?
+    ///
+    /// Tarama tümüyle bu kapıya taşındı; sayfa düzeni değişirse ayrıştırıcı
+    /// sessizce boş döner ve arşiv büyümeyi bırakırdı. Aynı bildirim (ARASE
+    /// 1617428) fixture ile karşılaştırılıyor: iki kapı aynı kaydı vermeli.
+    #[tokio::test]
+    #[ignore = "canlı KAP erişimi gerektirir"]
+    async fn live_disclosure_page_matches_the_fixture() {
+        let client = crate::http_client();
+        let form = crate::kap::fetch_disclosure_page(&client, "1617428")
+            .await
+            .expect("bildirim sayfası okunmalı");
+        assert_eq!(
+            parse_dividend_form(&form, "1617428"),
+            parse_dividend_form(&arase_form(), "1617428")
+        );
     }
 
     /// Bütçeli tur temettü arşivini gerçekten ilerletiyor mu?
