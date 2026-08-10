@@ -1,5 +1,6 @@
 import { BrandMark, Wordmark } from './components/Brand';
 import { navigate, usePath } from './lib/router';
+import { isRecoveryLink } from './lib/recovery';
 import { displayName, useSession } from './lib/useSession';
 import { useI18n } from './lib/i18n';
 import Landing from './pages/Landing';
@@ -17,7 +18,9 @@ export default function App() {
   const { t, lang, setLang } = useI18n();
 
   let content: JSX.Element;
-  if (path === '/sifre-yenile') {
+  // Kurtarma jetonu adreste ise yol ne olursa olsun yenileme ekranı açılır;
+  // allowlist eksikse Supabase jetonu site köküne bırakıyor (bkz. recovery.ts).
+  if (isRecoveryLink || path === '/sifre-yenile') {
     content = <ResetPassword />;
   } else if (path === '/lisans-iptal') {
     content = <LicenseAbuse />;

@@ -27,8 +27,18 @@ export type AuthError =
   | 'confirm-email'
   | 'weak-password'
   | 'oauth-unavailable'
+  | 'rate-limited'
   | 'network'
   | 'unknown';
+
+/**
+ * Şifre yenileme bağlantısının açılacağı sayfa. Masaüstünde yeni şifre
+ * belirleme ekranı yok; bağlantı sitedeki hazır sayfaya (site/src/pages/
+ * ResetPassword.tsx) düşer, kullanıcı şifresini orada belirleyip uygulamaya
+ * yeni şifreyle girer. Site de aynı adresi kullandığından Supabase'in
+ * Redirect URL allowlist'ine ek giriş gerekmez.
+ */
+export const PASSWORD_RESET_URL = 'https://fraude.intelligentverseconnection.com/sifre-yenile';
 
 function toUser(user: User | null | undefined): AuthUser | null {
   if (!user || !user.email) return null;
@@ -71,6 +81,10 @@ function mapError(message: string): AuthError {
   if (text.includes('invalid login credentials')) return 'invalid-credentials';
   if (text.includes('email not confirmed')) return 'confirm-email';
   if (text.includes('password') && (text.includes('weak') || text.includes('at least'))) return 'weak-password';
+  // GoTrue yenileme e-postalarını sınırlar: "For security purposes, you can
+  // only request this after N seconds" / "email rate limit exceeded".
+  if (text.includes('rate limit') || text.includes('only request this after') || text.includes('too many'))
+    return 'rate-limited';
   if (text.includes('fetch') || text.includes('network')) return 'network';
   return 'unknown';
 }
@@ -111,6 +125,26 @@ export async function signIn(email: string, password: string): Promise<AuthUser 
     });
     if (error) return mapError(error.message);
     return toUser(data.user)!;
+  } catch {
+    return 'network';
+  }
+}
+
+/**
+ * Şifre yenileme e-postası ister. Adres kayıtlı değilse Supabase yine de
+ * başarı döner (adres taraması olmasın diye); bu yüzden arayüzde her durumda
+ * "bağlantı gönderildi" denir.
+ */
+export async function requestPasswordReset(
+  email: string,
+): Promise<Exclude<AuthError, 'confirm-email'> | null> {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: PASSWORD_RESET_URL,
+    });
+    if (!error) return null;
+    const mapped = mapError(error.message);
+    return mapped === 'confirm-email' ? 'unknown' : mapped;
   } catch {
     return 'network';
   }

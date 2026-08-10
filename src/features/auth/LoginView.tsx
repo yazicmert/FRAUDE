@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { EyeIcon, EyeOffIcon, LockIcon, MailIcon, UserIcon } from '../../components/icons';
-import { signIn, signInWithGitHub, signUp, type AuthError } from './session';
+import { requestPasswordReset, signIn, signInWithGitHub, signUp, type AuthError } from './session';
 import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import './auth.css';
 
@@ -10,9 +10,12 @@ const ERROR_KEYS: Record<Exclude<AuthError, 'confirm-email'>, string> = {
   'invalid-credentials': 'authErrInvalidCredentials',
   'weak-password': 'authErrPasswordShort',
   'oauth-unavailable': 'authErrOAuthUnavailable',
+  'rate-limited': 'authErrRateLimited',
   network: 'authErrNetwork',
   unknown: 'authErrUnknown',
 };
+
+type Mode = 'signin' | 'signup' | 'forgot';
 
 const EMAIL_RE = /.+@.+\..+/;
 
@@ -82,7 +85,7 @@ function GitHubIcon() {
  */
 export default function LoginView() {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<Mode>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -102,6 +105,17 @@ export default function LoginView() {
     setError(null);
     setInfo(null);
     if (!EMAIL_RE.test(email.trim())) return setError(t('authErrEmailInvalid'));
+    if (mode === 'forgot') {
+      setBusy(true);
+      try {
+        const failure = await requestPasswordReset(email);
+        if (failure) setError(t(ERROR_KEYS[failure]));
+        else setInfo(t('authResetSent'));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (mode === 'signup') {
       if (!name.trim()) return setError(t('authErrNameRequired'));
       if (password.length < 8 || passwordScore(password) < 2) return setError(t('authErrPasswordShort'));
@@ -134,7 +148,7 @@ export default function LoginView() {
     }
   };
 
-  const switchMode = (next: 'signin' | 'signup') => {
+  const switchMode = (next: Mode) => {
     setMode(next);
     setError(null);
     setInfo(null);
@@ -150,7 +164,7 @@ export default function LoginView() {
         <h1 className="auth-title">
           <span className="green">F</span>RAUDE
         </h1>
-        <p className="auth-tagline">{t('authTagline')}</p>
+        <p className="auth-tagline">{mode === 'forgot' ? t('authForgotSub') : t('authTagline')}</p>
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && (
             <label>
@@ -181,27 +195,36 @@ export default function LoginView() {
             </div>
             {emailInvalid && <span className="auth-field-hint">{t('authErrEmailInvalid')}</span>}
           </label>
-          <label>
-            {t('authPassword')}
-            <div className="auth-input">
-              <LockIcon size={16} />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-              />
-              <button
-                type="button"
-                className="auth-eye"
-                onClick={() => setShowPassword((visible) => !visible)}
-                aria-label={t('authPassword')}
-              >
-                {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+          {mode !== 'forgot' && (
+            <label>
+              {t('authPassword')}
+              <div className="auth-input">
+                <LockIcon size={16} />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                />
+                <button
+                  type="button"
+                  className="auth-eye"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={t('authPassword')}
+                >
+                  {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+                </button>
+              </div>
+              {mode === 'signup' && <StrengthMeter password={password} />}
+            </label>
+          )}
+          {mode === 'signin' && (
+            <p className="auth-forgot">
+              <button type="button" onClick={() => switchMode('forgot')}>
+                {t('authForgotPassword')}
               </button>
-            </div>
-            {mode === 'signup' && <StrengthMeter password={password} />}
-          </label>
+            </p>
+          )}
           {mode === 'signup' && (
             <label>
               {t('authPasswordAgain')}
@@ -220,15 +243,27 @@ export default function LoginView() {
           )}
           {info ? <p className="auth-error auth-info">{info}</p> : <p className="auth-error">{error ?? ''}</p>}
           <button className="auth-submit" type="submit" disabled={busy}>
-            <span>{busy ? t('authWorking') : mode === 'signup' ? t('authSignUp') : t('authSignIn')}</span>
+            <span>
+              {busy
+                ? t('authWorking')
+                : mode === 'signup'
+                  ? t('authSignUp')
+                  : mode === 'forgot'
+                    ? t('authResetSubmit')
+                    : t('authSignIn')}
+            </span>
             <ArrowIcon />
           </button>
         </form>
-        <div className="auth-divider"><span>{t('authOrContinue')}</span></div>
-        <button className="auth-github" type="button" disabled={busy} onClick={() => void submitGitHub()}>
-          <GitHubIcon />
-          <span>{t('authContinueGitHub')}</span>
-        </button>
+        {mode !== 'forgot' && (
+          <>
+            <div className="auth-divider"><span>{t('authOrContinue')}</span></div>
+            <button className="auth-github" type="button" disabled={busy} onClick={() => void submitGitHub()}>
+              <GitHubIcon />
+              <span>{t('authContinueGitHub')}</span>
+            </button>
+          </>
+        )}
         <p className="auth-switch">
           {mode === 'signin' ? (
             <button type="button" onClick={() => switchMode('signup')}>
@@ -236,7 +271,7 @@ export default function LoginView() {
             </button>
           ) : (
             <button type="button" onClick={() => switchMode('signin')}>
-              {t('authSwitchToSignIn')}
+              {mode === 'forgot' ? t('authBackToSignIn') : t('authSwitchToSignIn')}
             </button>
           )}
         </p>

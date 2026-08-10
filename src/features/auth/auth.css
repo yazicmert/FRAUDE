@@ -531,6 +531,25 @@
 
 .auth-github:disabled { opacity: 0.6; cursor: default; }
 
+/* Şifre alanının hemen altında, sağa yaslı ince bağlantı */
+.auth-forgot {
+  margin: -4px 0 0;
+  text-align: right;
+}
+
+.auth-forgot button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.auth-forgot button:hover {
+  color: var(--accent-secondary, #00c3ff);
+}
+
 .auth-switch {
   margin-top: 14px;
   text-align: center;
