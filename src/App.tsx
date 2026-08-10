@@ -263,7 +263,11 @@ export default function App() {
     setOpenTabs((current) => {
       const id = `index-${symbol}`;
       if (current.some((tab) => tab.id === id)) return current;
-      return [...current, { id, kind: 'index', title: symbol, data: { symbol } }];
+      // Sekme kimliği Borsa İstanbul'un resmi endeks adı (veri eşleşmesi ona
+      // bağlı), başlık ise katalogdaki Türkçe etiket: "BIST SINAI AGIRLIK
+      // SINIRLAMALI" yerine "BIST Sınai Ağırlık Sınırlamalı" görünür.
+      const preset = PRESET_SYMBOLS.find((item) => (item.indexName ?? item.label) === symbol);
+      return [...current, { id, kind: 'index', title: preset?.label ?? symbol, data: { symbol } }];
     });
     setActiveTabId(`index-${symbol}`);
   }, []);
@@ -586,7 +590,9 @@ export default function App() {
   }, [paletteOpen]);
 
   // Şerit sembolü katalogda bir endekse karşılık geliyorsa endeks sekmesi,
-  // yoksa hisse sekmesi açılır.
+  // yoksa hisse sekmesi açılır. Komut paleti de katalog kayıtlarını öneriyor
+  // ve aynı yönlendiriciyi kullanır; aksi halde "BIST Sınai" seçimi endeks
+  // değil hisse sekmesi açardı.
   const openFromMarquee = useCallback((symbol: string) => {
     const preset = PRESET_SYMBOLS.find((item) => item.symbol === symbol);
     if (preset?.indexName) {
@@ -921,7 +927,7 @@ export default function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         commands={paletteCommands}
-        onOpenTicker={upsertTickerTab}
+        onOpenTicker={openFromMarquee}
         onRunFql={(c) => void handleCommand(c)}
         recentTickers={recentTickers}
       />

@@ -395,6 +395,26 @@ export interface IndexChange {
   date: string;
 }
 
+/**
+ * Bir BIST endeksinin güncel değeri ve dönemsel getirileri (Borsa İstanbul
+ * serisinden). Genç endekslerde uzun dönemler `null` gelir — seri o kadar
+ * geriye uzanmıyorsa dönem hesaplanmaz.
+ */
+export interface IndexStats {
+  code: string;
+  value: number;
+  change_pct: number | null;
+  change_1w: number | null;
+  change_1m: number | null;
+  change_6m: number | null;
+  change_1y: number | null;
+  change_5y: number | null;
+  change_all: number | null;
+  as_of_ts: number;
+  first_ts: number;
+  bar_count: number;
+}
+
 export interface DividendRecord {
   ticker: string;
   ex_date: string;

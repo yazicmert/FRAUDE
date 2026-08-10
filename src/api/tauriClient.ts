@@ -343,6 +343,11 @@ export function updateBistIndices() {
   return invoke<void>('update_bist_indices');
 }
 
+/** Endeksin güncel değeri + G/H/A/6A/Y/5Y/TÜM getirileri (Borsa İstanbul). */
+export function getIndexStats(code: string) {
+  return invoke<import('../types').IndexStats>('get_index_stats', { code });
+}
+
 export function getDividends(ticker: string) {
   return invoke<import('../types').DividendRecord[]>('get_dividends', { ticker });
 }

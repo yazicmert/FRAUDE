@@ -503,6 +503,19 @@ pub async fn get_news_html(state: &AppState, url: String) -> Result<String, Stri
     services::get_news_html(&state.http, &url).await
 }
 
+/// Bir BIST endeksinin güncel değeri ve dönemsel getirileri (Borsa İstanbul).
+///
+/// Şerit (`MARKET_INDICES`) yalnız seçili birkaç göstergeyi taşır ve ondan
+/// beslenen endeks başlığı, listede olmayan endekslerde "—" gösteriyordu. Bu
+/// uç 86 endeksin hepsi için çalışır ve paylardaki H/A/6A/Y/5Y/TÜM dönemlerinin
+/// endeks karşılığını verir.
+pub async fn get_index_stats(
+    state: &AppState,
+    code: String,
+) -> Result<crate::bist::IndexStats, String> {
+    crate::bist::index_stats(&state.http, &code).await
+}
+
 pub async fn get_bist_indices(
     state: &AppState,
 ) -> Result<

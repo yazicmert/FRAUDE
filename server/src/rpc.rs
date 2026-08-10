@@ -48,6 +48,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_news_preview",
     "get_news_html",
     "get_bist_indices",
+    "get_index_stats",
     "get_financial_statements",
     "get_dividends",
     "get_capital_increases",
@@ -307,6 +308,7 @@ pub async fn dispatch(
             Ok(data) => ok_response(data),
             Err(error) => err_response(StatusCode::INTERNAL_SERVER_ERROR, error),
         },
+        "get_index_stats" => run!(args, CodeArgs, |p| api::get_index_stats(s, p.code)),
         "get_financial_statements" => {
             run!(args, StatementArgs, |p| api::get_financial_statements(s, p.ticker, p.currency))
         }

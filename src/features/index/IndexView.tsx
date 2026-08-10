@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getDashboardSnapshot, getPriceHistory, getBistIndices, updateBistIndices, getNewsFeed } from '../../api/tauriClient';
+import { getDashboardSnapshot, getPriceHistory, getBistIndices, updateBistIndices, getNewsFeed, getIndexStats } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import type { DashboardSnapshot, HistoricalQuote, EquityRow, IndexConstituent, IndexChange, NewsItem } from '../../types';
+import type { DashboardSnapshot, HistoricalQuote, EquityRow, IndexConstituent, IndexChange, NewsItem, IndexStats } from '../../types';
 import PriceChart from '../ticker/PriceChart';
 import IndexHeatmap from './IndexHeatmap';
 import { NewsList } from '../news/NewsFeedView';
+import { PRESET_SYMBOLS } from '../../components/symbolCatalog';
 
 const FALLBACK_INDEX_CONSTITUENTS: Record<string, string[]> = {
   'BIST 100': ["ASELS", "THYAO", "SISE", "EREGL", "GARAN", "AKBNK", "YKBNK", "KCHOL", "SAHOL", "TUPRS", "BIMAS"],
@@ -14,36 +15,50 @@ const FALLBACK_INDEX_CONSTITUENTS: Record<string, string[]> = {
   'DOW JONES': ["UNH", "GS", "MSFT", "HD", "MCD", "CAT", "CRM", "V", "BA", "TRV", "AMGN", "AAPL", "IBM", "JPM", "AXP", "CVX", "JNJ", "PG", "WMT", "MRK"]
 };
 
-const SYMBOL_MAP: Record<string, string> = {
-  'BIST 100': 'XU100.IS',
-  'BIST 30': 'XU030.IS',
-  'BIST 50': 'XU050.IS',
-  'BIST BANKA': 'XBANK.IS',
-  'BIST SINAI': 'XUSIN.IS',
-  'BIST TEKNOLOJI': 'XUTEK.IS',
-  'BIST HIZMETLER': 'XUHIZ.IS',
-  'BIST HALKA ARZ': 'XHARZ.IS',
-  'USD/TRY': 'USDTRY=X',
-  'EUR/TRY': 'EURTRY=X',
-  'GBP/TRY': 'GBPTRY=X',
-  'S&P 500': '^GSPC',
-  'NASDAQ': '^IXIC',
-  'DOW JONES': '^DJI',
-  'DAX': '^GDAXI',
-  'FTSE 100': '^FTSE',
-  'Gram Altın (TL)': 'GRAM ALTIN',
-  'Gram Gümüş (TL)': 'GRAM GÜMÜŞ',
-  'Altın Ons ($)': 'GC=F',
-  'Gümüş Ons ($)': 'SI=F',
-  'Brent Petrol ($)': 'BZ=F',
-  'WTI Petrol ($)': 'CL=F',
-  'Doğalgaz ($)': 'NG=F',
-  'Bakır ($)': 'HG=F',
-  'Bitcoin ($)': 'BTC-USD',
-  'Ethereum ($)': 'ETH-USD',
-  'Solana ($)': 'SOL-USD',
-  'Ripple ($)': 'XRP-USD'
-};
+/**
+ * Görünen ad → veri sembolü. Katalogdan türetilir: aynı eşleme elle de
+ * tutulduğunda katalogda olup burada olmayan bir endeks (BIST HİZMETLER tam
+ * bunu yaşamıştı) sessizce yarım bağlı kalıyordu. Katalogdaki `indexName`
+ * yoksa `label` anahtar olur — emtia/kripto kayıtları böyle eşleşir.
+ */
+const SYMBOL_MAP: Record<string, string> = Object.fromEntries(
+  PRESET_SYMBOLS.map(preset => [preset.indexName ?? preset.label, preset.symbol])
+);
+
+/** Veri sembolü → katalogdaki okunur etiket ("BIST SINAI" → "BIST Sınai"). */
+const LABEL_BY_SYMBOL: Record<string, string> = Object.fromEntries(
+  PRESET_SYMBOLS.map(preset => [preset.symbol, preset.label])
+);
+
+/** Dönemsel getiri şeridinde gösterilen alanlar. */
+const RETURN_PERIODS: { key: keyof IndexStats; label: string }[] = [
+  { key: 'change_pct', label: 'periodDaily' },
+  { key: 'change_1w', label: 'periodWeekly' },
+  { key: 'change_1m', label: 'periodMonthly' },
+  { key: 'change_6m', label: 'period6m' },
+  { key: 'change_1y', label: 'periodYearly' },
+  { key: 'change_5y', label: 'period5y' },
+  { key: 'change_all', label: 'periodAll' }
+];
+
+/**
+ * Yüzde biçimi. Endekslerde "tüm zamanlar" getirisi milyonlara çıkabiliyor
+ * (XU100 1986'dan başlar ve 2005 altı sıfır atması serinin içinde kalır:
+ * +137,793,800%). Dört basamaktan itibaren ondalık okunurluğa hiçbir şey
+ * katmıyor, binlik ayracı ise katıyor.
+ *
+ * Ayraç virgüldür, nokta değil: uygulamanın her yerinde yüzdenin ondalığı nokta
+ * ("+2.39%", şerit de dahil) ve küçük değerler burada da öyle kalıyor. Türkçe
+ * binlik ayracı kullanılsaydı "+3.638%" dört bin değil üç virgülü bir okunurdu.
+ */
+function formatPercent(value: number | null | undefined): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  const body =
+    Math.abs(value) >= 1000
+      ? value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+      : value.toFixed(2);
+  return `${value >= 0 ? '+' : ''}${body}%`;
+}
 
 interface IndexViewProps {
   symbol: string;
@@ -80,24 +95,23 @@ export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexVi
   const [newsLoading, setNewsLoading] = useState(true);
 
   const yahooSymbol = SYMBOL_MAP[symbol] || symbol;
-  
-  // Transform symbol to BIST code if possible.
-  // Kod eşlemesi olmayan endeks, CSV'den gelen bileşen listesine (kodla
-  // anahtarlanır) hiç ulaşamaz: ısı haritası boş kalır ve endekse giriş/çıkış
-  // rozeti (index_code karşılaştırması) hiç eşleşmez. BIST HALKA ARZ'ın liste
-  // görünümü ayrı bir özel yolla dolduğu için bu eksik uzun süre görünmedi.
-  const bistCode = symbol === 'BIST 100' ? 'XU100' :
-                   symbol === 'BIST 30' ? 'XU030' :
-                   symbol === 'BIST 50' ? 'XU050' :
-                   symbol === 'BIST BANKA' ? 'XBANK' :
-                   symbol === 'BIST SINAI' ? 'XUSIN' :
-                   symbol === 'BIST HIZMETLER' ? 'XUHIZ' :
-                   symbol === 'BIST HALKA ARZ' ? 'XHARZ' :
-                   symbol === 'BIST TEKNOLOJI' ? 'XUTEK' : symbol;
+  const title = LABEL_BY_SYMBOL[yahooSymbol] ?? symbol;
+
+  // Endeks kodu sembolden türetilir. Eskiden bu bir if-zinciriydi ve zincire
+  // eklenmeyen endeks, CSV'den gelen bileşen listesine (kodla anahtarlanır)
+  // hiç ulaşamıyordu: ısı haritası boş kalıyor, endekse giriş/çıkış rozeti
+  // (index_code karşılaştırması) hiç eşleşmiyordu. 86 endeksin tamamı
+  // katalogda olduğu için zincirin sürdürülmesi mümkün değil.
+  const bistCode = /^X[A-Z0-9]+$/.test(yahooSymbol.replace(/\.IS$/, ''))
+    ? yahooSymbol.replace(/\.IS$/, '')
+    : symbol;
 
   const isGlobalIndex = symbol === 'S&P 500' || symbol === 'NASDAQ' || symbol === 'DOW JONES';
   const isBistIndex = symbol.startsWith('BIST') || isGlobalIndex;
   const showBistButton = symbol.startsWith('BIST');
+  const isBistCode = bistCode !== symbol;
+
+  const [stats, setStats] = useState<IndexStats | null>(null);
 
   const loadData = async () => {
     try {
@@ -176,16 +190,50 @@ export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexVi
     };
   }, [yahooSymbol, range]);
 
+  // Dönemsel getiriler ve (şeritte olmayan endeksler için) güncel değer.
+  // Seri `fetch_index_history` önbelleğinde tutulduğundan grafik zaten
+  // açıkken bu çağrı ek ağ isteği doğurmaz.
+  useEffect(() => {
+    if (!isBistCode) {
+      setStats(null);
+      return;
+    }
+    let cancelled = false;
+    getIndexStats(bistCode)
+      .then(rows => {
+        if (!cancelled) setStats(rows);
+      })
+      .catch(err => {
+        console.error('Index stats error:', err);
+        if (!cancelled) setStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bistCode, isBistCode]);
+
   if (loading) return <div className="empty-state">{t('loadingIndex')}</div>;
   if (error) return <div className="empty-state error">{error}</div>;
   if (!snapshot) return <div className="empty-state">{t('noIndexData')}</div>;
 
-  const metric = snapshot.market_metrics.find(m => m.symbol === symbol) || {
-    symbol,
-    value: '—',
-    change: '—',
-    positive: true
-  };
+  // Şerit yalnız seçili göstergeleri taşır; listede olmayan endekste başlık
+  // "—" gösteriyordu. Borsa İstanbul kapanışı o boşluğu doldurur — şeritteki
+  // canlı değer varsa o tercih edilir, seans içi tazeliği korumak için.
+  const liveMetric = snapshot.market_metrics.find(m => m.symbol === symbol);
+  const closeChange = formatPercent(stats?.change_pct);
+  const metric = liveMetric || (stats
+    ? {
+        symbol,
+        value: stats.value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        change: closeChange ?? '—',
+        positive: (stats.change_pct ?? 0) >= 0
+      }
+    : {
+        symbol,
+        value: '—',
+        change: '—',
+        positive: true
+      });
 
   const currentConstituents = dynamicIndices[bistCode] || 
     (FALLBACK_INDEX_CONSTITUENTS[symbol] ? FALLBACK_INDEX_CONSTITUENTS[symbol].map(t => ({ ticker: t, name: t })) : []);
@@ -200,8 +248,8 @@ export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexVi
     <div className="view">
       <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <p className="eyebrow">{t('indexWorkspace')}</p>
-          <h1>{symbol}</h1>
+          <p className="eyebrow">{t('indexWorkspace')}{isBistCode ? ` · ${bistCode}` : ''}</p>
+          <h1>{title}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
           {showBistButton && (
@@ -233,6 +281,46 @@ export default function IndexView({ symbol: rawSymbol, onSelectTicker }: IndexVi
           </div>
         </div>
       </div>
+
+      {stats && (
+        <section className="panel" style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '16px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <h2 style={{ margin: 0 }}>{t('indexReturns')}</h2>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {t('indexSince')}: {new Date(stats.first_ts * 1000).toLocaleDateString('tr-TR')} · {stats.bar_count.toLocaleString('tr-TR')} bar
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {RETURN_PERIODS.map(period => {
+              const formatted = formatPercent(stats[period.key] as number | null);
+              return (
+                <div
+                  key={period.key}
+                  style={{
+                    flex: '1 1 110px',
+                    minWidth: '110px',
+                    padding: '10px 12px',
+                    background: 'var(--bg-default)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px'
+                  }}
+                >
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {t(period.label as Parameters<typeof t>[0])}
+                  </div>
+                  <div
+                    className={formatted ? (formatted.startsWith('+') ? 'positive' : 'negative') : undefined}
+                    style={{ fontSize: '1.05rem', fontWeight: 600, color: formatted ? undefined : 'var(--text-muted)' }}
+                  >
+                    {formatted ?? '—'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ margin: '12px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('indexReturnsHint')}</p>
+        </section>
+      )}
 
       <div className="split-grid">
         {isBistIndex && (

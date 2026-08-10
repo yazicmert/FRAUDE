@@ -224,6 +224,14 @@ pub async fn get_news_html(state: State<'_, AppState>, url: String) -> Result<St
 }
 
 #[tauri::command]
+pub async fn get_index_stats(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<fraude_core::bist::IndexStats, String> {
+    api::get_index_stats(&state, code).await
+}
+
+#[tauri::command]
 pub async fn get_bist_indices(state: State<'_, AppState>) -> Result<(std::collections::HashMap<String, Vec<crate::domain::IndexConstituent>>, Vec<crate::domain::IndexChange>), String> {
     api::get_bist_indices(&state).await
 }

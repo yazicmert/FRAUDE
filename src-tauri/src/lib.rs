@@ -200,6 +200,7 @@ pub fn run() {
             commands::get_news_preview,
             commands::get_news_html,
             commands::get_bist_indices,
+            commands::get_index_stats,
             commands::update_bist_indices,
             commands::get_financial_statements,
             commands::get_dividends,
