@@ -8,8 +8,48 @@ import type { AnalystReport } from '../../types';
 // arasında araç çubuğu, yakınlaştırma ve sabitleme davranışı ayrışmasın.
 import '../kap/KapDocumentViewerModal.css';
 
+/**
+ * Okuyucunun açabildiği belge.
+ *
+ * Kaynak-bağımsız tutulur: aracı kurum raporu da SPK haftalık bülteni de aynı
+ * kayda indirgenir, okuyucu belgenin nereden geldiğini bilmez.
+ */
+export interface ViewerDocument {
+  id: string;
+  title: string;
+  /** Yayımlayan: kurum adı, "SPK", haber kaynağı… */
+  source: string;
+  /** Ekranda gösterilecek tür etiketi — çağıran tarafından çevrilmiş gelir. */
+  kindLabel: string;
+  published: string;
+  url: string;
+  pdfUrl?: string | null;
+  tickers?: string[];
+  rating?: string | null;
+  targetPrice?: number | null;
+}
+
+/** Analiz raporunu okuyucunun anladığı kayda çevirir. */
+export function documentFromReport(
+  report: AnalystReport,
+  kindLabel: string,
+): ViewerDocument {
+  return {
+    id: report.id,
+    title: report.title,
+    source: report.broker,
+    kindLabel,
+    published: report.published,
+    url: report.url,
+    pdfUrl: report.pdf_url,
+    tickers: report.tickers,
+    rating: report.rating,
+    targetPrice: report.target_price,
+  };
+}
+
 interface ReportDocumentModalProps {
-  report: AnalystReport | null;
+  document: ViewerDocument | null;
   onClose: () => void;
   onSelectTicker?: (ticker: string) => void;
 }
@@ -19,14 +59,6 @@ type DocState =
   | { status: 'loading' }
   | { status: 'ready'; objectUrl: string; contentType: string; bytes: number }
   | { status: 'error'; message: string };
-
-const KIND_KEY: Record<AnalystReport['kind'], string> = {
-  company: 'reportKindCompany',
-  sector: 'reportKindSector',
-  strategy: 'reportKindStrategy',
-  bulletin: 'reportKindBulletin',
-  other: 'reportKindOther',
-};
 
 /** base64 gövdeyi tarayıcının doğrudan gösterebileceği bir blob'a çevirir. */
 function toObjectUrl(base64: string, contentType: string): string {
@@ -45,15 +77,15 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Analiz raporunu uygulamanın içinde açar.
+ * Belgeyi uygulamanın içinde açar (analiz raporu, SPK bülteni…).
  *
- * Aracı kurumların PDF'leri `X-Frame-Options: SAMEORIGIN` ile yayımlanıyor;
+ * Kaynakların PDF'leri `X-Frame-Options: SAMEORIGIN` ile yayımlanıyor;
  * adres doğrudan bir çerçeveye verilse ekran boş kalırdı. Belge bu yüzden
  * arka uçtan indirilip blob olarak gömülür — rapor, KAP bildirimleri gibi
  * uygulamadan çıkmadan okunur. İndirme başarısız olursa (kurum kaldırmış,
  * ağ kapalı) tarayıcıda açma yolu açık bırakılır.
  */
-export default function ReportDocumentModal({ report, onClose, onSelectTicker }: ReportDocumentModalProps) {
+export default function ReportDocumentModal({ document: target, onClose, onSelectTicker }: ReportDocumentModalProps) {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState(100);
   const [isDockedRight, setIsDockedRight] = useState(false);
@@ -65,7 +97,7 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
    */
   const [engine, setEngine] = useState<'native' | 'gview'>('native');
 
-  const sourceUrl = report?.pdf_url || report?.url || '';
+  const sourceUrl = target?.pdfUrl || target?.url || '';
 
   const handleClose = () => {
     document.body.classList.remove('kap-docked-open');
@@ -82,7 +114,7 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
   // Belge her rapor değişiminde yeniden indirilir; önceki blob serbest
   // bırakılmazsa pencere kapansa da bellek elde kalır.
   useEffect(() => {
-    if (!report || !sourceUrl) return;
+    if (!target || !sourceUrl) return;
     let cancelled = false;
     let created: string | null = null;
 
@@ -109,24 +141,24 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [report, sourceUrl]);
+  }, [target, sourceUrl]);
 
-  // Rapor açıkken yapay zekâ bağlamı rapora bakar; KAP okuyucusuyla aynı sözleşme.
+  // Belge açıkken yapay zekâ bağlamı ona bakar; KAP okuyucusuyla aynı sözleşme.
   useEffect(() => {
-    if (!report) return;
-    recordCopilotAction(`Analiz raporu incelemesi: [${report.broker}] ${report.title}`);
+    if (!target) return;
+    recordCopilotAction(`Belge incelemesi: [${target.source}] ${target.title}`);
     setCopilotActivePayload({
-      type: 'ANALIZ_RAPORU_VIEWER',
-      id: report.id,
-      broker: report.broker,
-      title: report.title,
-      published: report.published,
-      tickers: report.tickers,
-      rating: report.rating ?? null,
-      target_price: report.target_price ?? null,
+      type: 'BELGE_VIEWER',
+      id: target.id,
+      source: target.source,
+      title: target.title,
+      published: target.published,
+      tickers: target.tickers ?? [],
+      rating: target.rating ?? null,
+      target_price: target.targetPrice ?? null,
       url: sourceUrl,
     });
-  }, [report, sourceUrl]);
+  }, [target, sourceUrl]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -141,7 +173,9 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
     [doc],
   );
 
-  if (!report) return null;
+  if (!target) return null;
+
+  const tickers = target.tickers ?? [];
 
   return (
     <div
@@ -154,14 +188,14 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
       >
         <div className="kap-pdf-toolbar">
           <div className="kap-pdf-doc-info">
-            <span className="kap-pdf-ticker-badge">{report.tickers[0] ?? report.broker.slice(0, 6)}</span>
+            <span className="kap-pdf-ticker-badge">{tickers[0] ?? target.source.slice(0, 6)}</span>
             <div className="kap-pdf-doc-titles">
-              <strong className="kap-pdf-title-text">{report.title}</strong>
+              <strong className="kap-pdf-title-text">{target.title}</strong>
               <span className="kap-pdf-meta-text">
-                {report.broker} · {t(KIND_KEY[report.kind])} · {report.published}
-                {report.rating ? ` · ${report.rating}` : ''}
-                {report.target_price != null
-                  ? ` · ${t('targetPriceLabel')}: ₺${report.target_price.toLocaleString('tr-TR', {
+                {target.source} · {target.kindLabel} · {target.published}
+                {target.rating ? ` · ${target.rating}` : ''}
+                {target.targetPrice != null
+                  ? ` · ${t('targetPriceLabel')}: ₺${target.targetPrice.toLocaleString('tr-TR', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}`
@@ -219,13 +253,13 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
           </div>
         </div>
 
-        {report.tickers.length > 0 && (
+        {tickers.length > 0 && (
           <div className="kap-attachments-bar">
             <div className="attachments-label">
               <span>{t('reportsViewerRelated')}</span>
             </div>
             <div className="attachments-list">
-              {report.tickers.map((code) => (
+              {tickers.map((code) => (
                 <button
                   key={code}
                   type="button"
@@ -272,21 +306,21 @@ export default function ReportDocumentModal({ report, onClose, onSelectTicker }:
                     // Blob aynı köken sayılır; kurumun çerçeveleme kısıtı burada
                     // geçerli değildir ve yerel PDF motoru doğrudan çizer.
                     <object data={doc.objectUrl} type={doc.contentType} className="kap-pdf-iframe">
-                      <iframe src={doc.objectUrl} title={report.title} className="kap-pdf-iframe" />
+                      <iframe src={doc.objectUrl} title={target.title} className="kap-pdf-iframe" />
                     </object>
                   ) : (
                     // Yedek motor belgeyi kaynağından kendisi çeker; blob'u
                     // dışarı veremeyeceğimiz için özgün adres kullanılır.
                     <iframe
                       src={`https://docs.google.com/gview?url=${encodeURIComponent(sourceUrl)}&embedded=true`}
-                      title={report.title}
+                      title={target.title}
                       className="kap-pdf-iframe"
                     />
                   )
                 ) : (
                   <iframe
                     src={doc.objectUrl}
-                    title={report.title}
+                    title={target.title}
                     className="kap-pdf-iframe"
                     sandbox="allow-same-origin"
                   />

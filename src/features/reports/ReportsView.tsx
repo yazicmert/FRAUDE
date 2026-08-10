@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getAnalystReports } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import ReportDocumentModal from './ReportDocumentModal';
+import ReportDocumentModal, { documentFromReport } from './ReportDocumentModal';
 import type { AnalystConsensus, AnalystReport, AnalystReportPayload } from '../../types';
 
 type ActiveTab = 'reports' | 'consensus';
@@ -355,7 +355,7 @@ export default function ReportsView({ onSelectTicker }: ReportsViewProps) {
       </p>
 
       <ReportDocumentModal
-        report={openReport}
+        document={openReport ? documentFromReport(openReport, t(KIND_KEY[openReport.kind])) : null}
         onClose={() => setOpenReport(null)}
         onSelectTicker={onSelectTicker}
       />

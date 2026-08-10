@@ -16,7 +16,7 @@ import { isDesktopRuntime } from '../api/platformClient';
 
 const AiPanel = lazy(() => import('../features/ai/AiPanel'));
 const DashboardView = lazy(() => import('../features/dashboard/DashboardView'));
-const KapFeedView = lazy(() => import('../features/kap/KapFeedView'));
+const KnowledgeBaseView = lazy(() => import('../features/knowledge/KnowledgeBaseView'));
 const ScreenerView = lazy(() => import('../features/screener/ScreenerView'));
 const SettingsView = lazy(() => import('../features/settings/SettingsView'));
 const TickerView = lazy(() => import('../features/ticker/TickerView'));
@@ -163,16 +163,24 @@ export const workspaceModules: WorkspaceModule[] = [
   },
   {
     kind: 'kap',
-    titleKey: 'kapFeed',
+    titleKey: 'knowledgeBase',
     manifest: manifest(
       'fraude.kap',
-      { tr: 'KAP Akışı', en: 'KAP Feed' },
-      { tr: 'Şirket bildirimleri ve kaynak bağlantıları.', en: 'Company disclosures and source links.' },
-      ['api:kap'],
+      { tr: 'Bilgi Deposu', en: 'Knowledge Base' },
+      {
+        tr: 'KAP bildirimleri, SPK bültenleri, aracı kurum analizleri ve haberler tek akışta.',
+        en: 'KAP disclosures, SPK bulletins, broker research and news in a single stream.',
+      },
+      ['api:kap', 'api:news', 'api:market-data'],
       'kap',
-      'kapFeed',
+      'knowledgeBase',
     ),
-    render: (tab) => <KapFeedView initialRows={tab.data?.rows as KapAnnouncement[] | undefined} />,
+    render: (tab, host) => (
+      <KnowledgeBaseView
+        initialRows={tab.data?.rows as KapAnnouncement[] | undefined}
+        onSelectTicker={host.openTicker}
+      />
+    ),
   },
   {
     kind: 'news',

@@ -5,7 +5,7 @@ import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDi
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, AnalystReport, AnalystConsensus, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
 import PriceChart from './PriceChart';
-import ReportDocumentModal from '../reports/ReportDocumentModal';
+import ReportDocumentModal, { documentFromReport } from '../reports/ReportDocumentModal';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import { dispatchAiAsk, dispatchOpenAlerts, dispatchResearchTicker } from '../../lib/actions';
@@ -1259,7 +1259,10 @@ export default function TickerView({ ticker }: { ticker: string }) {
         onAskAi={(prompt) => dispatchAiAsk(prompt)}
       />
 
-      <ReportDocumentModal report={openReport} onClose={() => setOpenReport(null)} />
+      <ReportDocumentModal
+        document={openReport ? documentFromReport(openReport, t('analystReports')) : null}
+        onClose={() => setOpenReport(null)}
+      />
     </div>
   );
 }

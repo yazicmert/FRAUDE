@@ -1358,8 +1358,8 @@ const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
 
 /// Belge indirmeye izin verilen konaklar.
 ///
-/// Adres kullanıcı arayüzünden geldiği için serbest bırakılamaz: arşivdeki
-/// kayıtların konakları neyse yalnız onlar çekilir.
+/// Adres kullanıcı arayüzünden geldiği için serbest bırakılamaz: bilgi
+/// deposunun gösterdiği kayıtların konakları neyse yalnız onlar çekilir.
 fn document_host_is_allowed(url: &str) -> bool {
     const ALLOWED_SUFFIXES: &[&str] = &[
         "isyatirim.com.tr",
@@ -1370,6 +1370,8 @@ fn document_host_is_allowed(url: &str) -> bool {
         "garantibbvayatirim.com.tr",
         "ziraatyatirim.com.tr",
         "gedik.com",
+        // Bilgi deposu SPK haftalık bültenlerini de aynı okuyucuda açar.
+        "spk.gov.tr",
     ];
     let Some(rest) = url.strip_prefix("https://") else { return false };
     let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
@@ -1392,6 +1394,11 @@ pub async fn fetch_document(client: &reqwest::Client, url: &str) -> Result<Repor
     if !document_host_is_allowed(url) {
         return Err(format!("bu adres rapor kaynağı değil: {url}"));
     }
+    // Kaynaklar dosya adlarını olduğu gibi yayımlıyor: SPK bültenlerinde
+    // boşluk, aracı kurumlarda Türkçe harf geçiyor. Kodlama `%` dokunmadığı
+    // için zaten kodlanmış adresler ikinci kez kodlanmaz.
+    let url = &encode_url_path(url);
+
     // Süre gövdenin tamamını kapsar. Şirket raporu saniyeler sürer ama aynı
     // akıştaki izahnameler 50 MB'ı bulup dakikaya yaklaşıyor; sınır ona göre.
     let response = client
@@ -1775,6 +1782,24 @@ mod tests {
         }
     }
 
+    /// Bilgi deposu SPK bültenlerini de aynı okuyucuda açıyor; bültenin
+    /// gövdesi gerçekten indirilebilmeli.
+    #[tokio::test]
+    #[ignore = "requires live broker site access"]
+    async fn live_spk_bulletin_document_downloads() {
+        let client = reqwest::Client::new();
+        let bulletins = crate::spk::fetch_latest_bulletins(&client).await.unwrap_or_default();
+        let Some(bulletin) = bulletins.iter().find(|b| b.url.to_lowercase().ends_with(".pdf")) else {
+            panic!("SPK bülten listesinde PDF yok: {bulletins:?}");
+        };
+        let document = fetch_document(&client, &bulletin.url)
+            .await
+            .unwrap_or_else(|error| panic!("SPK bülteni indirilemedi ({}): {error}", bulletin.url));
+        assert!(document.content_type.contains("pdf"), "{}", document.content_type);
+        assert!(document.bytes > 1_000, "boş bülten: {}", bulletin.url);
+        println!("SPK: {} · {} bayt · {}", document.content_type, document.bytes, bulletin.title);
+    }
+
     /// Hisse bazlı etiket akışı gerçekten o hissenin raporlarını vermeli.
     #[tokio::test]
     #[ignore = "requires live broker site access"]
@@ -1803,6 +1828,7 @@ mod tests {
             "https://www.ziraatyatirim.com.tr/documents/category/TTKOM_2C26.pdf"
         ));
         assert!(document_host_is_allowed("https://cdn.gedik.com/cdn/bulletin/x.pdf"));
+        assert!(document_host_is_allowed("https://spk.gov.tr/data/61e0/abc.pdf"));
         assert!(!document_host_is_allowed("https://evil.example.com/x.pdf"));
         // Konak adının bir kaynağı *içermesi* yetmez, onunla bitmeli.
         assert!(!document_host_is_allowed("https://gedik.com.evil.example/x.pdf"));
