@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getAnalystReports } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import { openUrl } from '../../lib/openExternal';
+import ReportDocumentModal from './ReportDocumentModal';
 import type { AnalystConsensus, AnalystReport, AnalystReportPayload } from '../../types';
 
 type ActiveTab = 'reports' | 'consensus';
@@ -91,6 +91,8 @@ export default function ReportsView({ onSelectTicker }: ReportsViewProps) {
   const [broker, setBroker] = useState<string>(ALL);
   const [kind, setKind] = useState<string>(ALL);
   const [query, setQuery] = useState('');
+  /** Gömülü okuyucuda açık olan rapor. */
+  const [openReport, setOpenReport] = useState<AnalystReport | null>(null);
   /**
    * Kaç rapor çizileceği. Arşiv her tazelemede büyür ve geri budanmaz; tamamını
    * tek seferde çizmek aylar içinde binlerce kart demek olur.
@@ -268,9 +270,11 @@ export default function ReportsView({ onSelectTicker }: ReportsViewProps) {
                   )}
                 </div>
 
+                {/* Rapor tarayıcıya gönderilmez; KAP bildirimleri gibi
+                    uygulamanın içindeki okuyucuda açılır. */}
                 <button
                   type="button"
-                  onClick={() => void openUrl(report.pdf_url || report.url)}
+                  onClick={() => setOpenReport(report)}
                   style={{
                     background: 'none', border: 'none', padding: 0, textAlign: 'left',
                     color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: 600, cursor: 'pointer',
@@ -349,6 +353,12 @@ export default function ReportsView({ onSelectTicker }: ReportsViewProps) {
       <p style={{ marginTop: '14px', fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
         {tab === 'reports' ? t('reportsSourcesNote') : t('consensusSourcesNote')}
       </p>
+
+      <ReportDocumentModal
+        report={openReport}
+        onClose={() => setOpenReport(null)}
+        onSelectTicker={onSelectTicker}
+      />
     </div>
   );
 }

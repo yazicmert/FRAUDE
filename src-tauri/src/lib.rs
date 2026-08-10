@@ -205,6 +205,7 @@ pub fn run() {
             commands::get_dividends,
             commands::get_capital_increases,
             commands::get_analyst_reports,
+            commands::get_report_document,
             commands::get_ipo_calendar,
             commands::get_kap_for_ticker,
             commands::get_shareholders,

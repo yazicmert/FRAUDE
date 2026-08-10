@@ -583,9 +583,20 @@ export const translations = {
     reportsConsensusEmpty: 'Analist kapsamı olan pay bulunamadı.',
     reportsPartialSources: 'Bazı kurumlar çekilemedi',
     reportsSourcesNote:
-      'Kaynaklar: İş Yatırım · Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
-      'Raporlar kurumların kendi yayınlarıdır; tıklayınca özgün PDF açılır. ' +
+      'Kaynaklar: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
+      'Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Raporlar kurumların kendi yayınlarıdır; tıklayınca özgün PDF uygulama içinde açılır. ' +
       'Hedef fiyat ve tavsiye, rapor metninden çıkarılır ve kurumun resmi beyanı yerine geçmez.',
+    reportsViewerLoading: 'Rapor indiriliyor…',
+    reportsViewerFailed: 'Rapor uygulama içinde açılamadı.',
+    reportsViewerOpenExternal: 'Tarayıcıda Aç',
+    reportsViewerDock: 'Sağ Panele Sabitle',
+    reportsViewerUndock: 'Tam Ekran Moduna Dön',
+    reportsViewerRelated: 'İlgili paylar:',
+    reportsViewerEngineNative: 'Yerel PDF',
+    reportsViewerEngineNativeHint: 'İndirilen belgeyi uygulamanın kendi motoruyla çizer; dışarıya istek gitmez.',
+    reportsViewerEngineCloud: 'Google Viewer',
+    reportsViewerEngineCloudHint: 'Yerel motor belgeyi çizemezse: raporu Google görüntüleyicisi üzerinden açar.',
     consensusSourcesNote:
       'Konsensüs, payı izleyen yurt içi ve yurt dışı kurumların toplu tavsiyesidir. ' +
       'Yurt dışı bankaların BIST raporları aboneliğe kapalı olduğundan rapor metnine değil, ' +
@@ -1586,9 +1597,20 @@ export const translations = {
     reportsConsensusEmpty: 'No stock with analyst coverage found.',
     reportsPartialSources: 'Some brokers could not be fetched',
     reportsSourcesNote:
-      'Sources: İş Yatırım · Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
-      'Reports are the brokers’ own publications; clicking opens the original PDF. ' +
+      'Sources: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
+      'Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Reports are the brokers’ own publications; clicking opens the original PDF inside the app. ' +
       'Target price and rating are extracted from the report text and do not replace the broker’s official statement.',
+    reportsViewerLoading: 'Downloading report…',
+    reportsViewerFailed: 'The report could not be opened in the app.',
+    reportsViewerOpenExternal: 'Open in Browser',
+    reportsViewerDock: 'Dock to Right Panel',
+    reportsViewerUndock: 'Back to Full Screen',
+    reportsViewerRelated: 'Related tickers:',
+    reportsViewerEngineNative: 'Local PDF',
+    reportsViewerEngineNativeHint: 'Renders the downloaded document with the app’s own engine; nothing leaves the machine.',
+    reportsViewerEngineCloud: 'Google Viewer',
+    reportsViewerEngineCloudHint: 'If the local engine cannot render the document: opens the report through Google’s viewer.',
     consensusSourcesNote:
       'Consensus is the aggregate view of domestic and foreign institutions covering the stock. ' +
       'Foreign banks’ BIST reports are subscription-gated, so only these aggregates are ' +

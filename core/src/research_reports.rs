@@ -99,12 +99,19 @@ pub struct AnalystReport {
     pub source_id: String,
 }
 
+/// Ayrıştırıcı sürümü. Kaynak eklendiğinde ya da bir alanın çıkarımı
+/// düzeltildiğinde artırılır: diskteki arşiv eski sürümdeyse atılıp baştan
+/// kurulur, yoksa yalnız yeni gelen kayıtlar düzelir ve geçmiş bozuk kalır.
+pub const PARSER_VERSION: u32 = 2;
+
 /// Diskteki arşiv.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ReportArchive {
     pub reports: Vec<AnalystReport>,
     #[serde(default)]
     pub last_updated: Option<String>,
+    #[serde(default)]
+    pub parser_version: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +135,16 @@ pub enum Feed {
     /// Rapor gövdesini `data-baslik` / `data-detay` özniteliklerine kaçıran
     /// liste (Halk Yatırım / analizim.halkyatirim.com.tr).
     HalkListing { url: &'static str },
+    /// Garanti BBVA Yatırım'ın araştırma ucu: JSON döner, sayfa numarası
+    /// gövdede değil **`Page` başlığında** taşınır.
+    GarantiJson { url: &'static str },
+    /// Ziraat Yatırım'ın Umbraco "Clockwork" belge ucu: JSON gövdeli POST'a
+    /// karşılık HTML parçası döndürür. `category_id` şirket raporları
+    /// klasörüdür; alt kategoriler (hisse bazlı) `CheckSubCategory` ile gelir.
+    ZiraatClockwork { url: &'static str, base: &'static str, category_id: &'static str },
+    /// Gedik Yatırım: sayfa Next.js ile sunulur ve bütün rapor listesi
+    /// `__NEXT_DATA__` betiğinde gömülü gelir; ayrı bir uç çağrılmaz.
+    GedikNextData { url: &'static str },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -179,6 +196,30 @@ pub const SOURCES: &[SourceSpec] = &[
             url: "https://analizim.halkyatirim.com.tr/Analysis/AnalystRecommendations",
         },
     },
+    SourceSpec {
+        id: "garanti",
+        broker: "Garanti BBVA Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::GarantiJson { url: "https://www.garantibbvayatirim.com.tr/api/researchreports" },
+    },
+    SourceSpec {
+        id: "ziraat",
+        broker: "Ziraat Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::ZiraatClockwork {
+            url: "https://www.ziraatyatirim.com.tr/umbraco/api/ClockworkUploaderPublic/GetFilesByFilter",
+            base: "https://www.ziraatyatirim.com.tr",
+            category_id: "39326",
+        },
+    },
+    SourceSpec {
+        id: "gedik",
+        broker: "Gedik Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::GedikNextData {
+            url: "https://gedik.com/analiz/rapor-ve-analizler/yurt-ici-piyasa-rapor-ve-analizleri",
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -186,10 +227,15 @@ pub const SOURCES: &[SourceSpec] = &[
 // ---------------------------------------------------------------------------
 
 /// HTML etiketlerini ve varlıklarını atıp tek satırlık düz metin bırakır.
+///
+/// `<style>` ve `<script>` gövdeleri metin değildir: WordPress kurulumları
+/// (Marbaş, A1) yazının başına eklenti biçemlerini gömüyor ve yalnız etiket
+/// atılsa özet "/*! elementor - v3.7.4 …" diye başlıyor.
 fn strip_html(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
+    let without_code = strip_elements(input, &["style", "script"]);
+    let mut out = String::with_capacity(without_code.len());
     let mut in_tag = false;
-    for ch in input.chars() {
+    for ch in without_code.chars() {
         match ch {
             '<' => in_tag = true,
             '>' => in_tag = false,
@@ -199,6 +245,26 @@ fn strip_html(input: &str) -> String {
     }
     let out = decode_entities(&out);
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Verilen etiketleri gövdeleriyle birlikte siler.
+fn strip_elements(input: &str, names: &[&str]) -> String {
+    let mut out = input.to_string();
+    for name in names {
+        let open = format!("<{name}");
+        let close = format!("</{name}>");
+        loop {
+            let lower = out.to_lowercase();
+            let Some(start) = lower.find(&open) else { break };
+            // Kapanışı olmayan etiket bozuk gövde demektir; sonuna kadar atılır.
+            let end = match lower[start..].find(&close) {
+                Some(offset) => start + offset + close.len(),
+                None => out.len(),
+            };
+            out.replace_range(start..end, "");
+        }
+    }
+    out
 }
 
 /// Kaynaklarda geçen HTML varlıklarını çözer. Halk Yatırım gövdeyi öznitelik
@@ -626,6 +692,14 @@ fn tag_text<'a>(block: &'a str, class: &str) -> Option<String> {
     (close > open).then(|| strip_html(&rest[open..close]))
 }
 
+/// Bloktaki ilk `name="…"` özniteliğinin değerini verir.
+fn attr_value(block: &str, name: &str) -> Option<String> {
+    let needle = format!("{name}=\"");
+    let at = block.find(&needle)? + needle.len();
+    let end = block[at..].find('"')?;
+    Some(block[at..at + end].to_string())
+}
+
 /// Bloğun `marker` sınıfından sonraki ilk `attr` değerini verir.
 fn attribute_after(block: &str, marker: &str, attr: &str) -> Option<String> {
     let start = block.find(marker)?;
@@ -675,6 +749,319 @@ pub fn parse_halk_listing(
         });
     }
     reports
+}
+
+// ---------------------------------------------------------------------------
+// Garanti BBVA Yatırım
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct GarantiFeed {
+    #[serde(default)]
+    items: Vec<GarantiItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct GarantiItem {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    short_description: String,
+    #[serde(default)]
+    category_name: String,
+    /// "10.08.2026 16:23"
+    #[serde(default)]
+    publish_date: String,
+    /// Kayıt aboneye kapalıysa gelmez; o kayıt okunamayacağı için atlanır.
+    #[serde(default)]
+    pdf_url: Option<String>,
+}
+
+/// Garanti BBVA Yatırım'ın JSON araştırma ucunu ayrıştırır.
+///
+/// Kategori adı (`Şirket Raporları`, `Açıklanan Bilançolar`) etiket olarak
+/// verilir; başlıklar BIST kodunu önde taşır ("HALKB 2Ç26 Finansal Sonuçlar").
+/// PDF'i olmayan kayıt üretilmez — ekranda açılamayacak satır arşive girmez.
+pub fn parse_garanti_json(
+    json: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Result<Vec<AnalystReport>, String> {
+    let feed: GarantiFeed = serde_json::from_str(json)
+        .map_err(|error| format!("{} JSON çözümlenemedi: {error}", spec.broker))?;
+
+    let mut reports = Vec::new();
+    for item in feed.items {
+        let Some(pdf_url) = item.pdf_url.filter(|url| !url.trim().is_empty()) else { continue };
+        let title = decode_entities(item.title.trim());
+        if title.is_empty() {
+            continue;
+        }
+        // Tarihin saat kısmı atılır; gün bazında sıralanır.
+        let Some((published, published_ts)) = parse_dotted_date(&item.publish_date) else {
+            continue;
+        };
+        let tags = vec![item.category_name.clone()];
+        let summary = decode_entities(item.short_description.trim());
+        let haystack = format!("{title} {summary}");
+        let tickers = extract_tickers(&title, &tags, universe);
+
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &tags, &tickers),
+            tickers,
+            rating: extract_rating(&haystack),
+            target_price: extract_target_price(&haystack),
+            title,
+            summary: (!summary.is_empty()).then(|| truncate(&summary, 400)),
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    Ok(reports)
+}
+
+/// "10.08.2026" ya da "10.08.2026 16:23" biçimli tarihi çözer.
+fn parse_dotted_date(raw: &str) -> Option<(String, i64)> {
+    let day_part = raw.split_whitespace().next()?;
+    let parts: Vec<&str> = day_part.split(['.', '-', '/']).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let day: u32 = parts[0].parse().ok()?;
+    let month: u32 = parts[1].parse().ok()?;
+    let year: i32 = parts[2].parse().ok()?;
+    iso_from_ymd(year, month, day)
+}
+
+// ---------------------------------------------------------------------------
+// Ziraat Yatırım
+// ---------------------------------------------------------------------------
+
+/// Ziraat Yatırım'ın belge listesini ayrıştırır.
+///
+/// Satırlar `<a href="…pdf" … aria-label="KCHOL 2Ç26 10-08-2026">` biçimindedir;
+/// başlık ve tarih tek bir öznitelikte birlikte durur. Dosya adları Türkçe harf
+/// taşıdığı için adres yeniden yüzde-kodlanır, yoksa gömülü görüntüleyicide
+/// açılmaz.
+pub fn parse_ziraat_listing(
+    html: &str,
+    base: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Vec<AnalystReport> {
+    let mut reports = Vec::new();
+    for block in html.split("<a ").skip(1) {
+        let Some(href) = attr_value(block, "href") else { continue };
+        if !href.to_lowercase().contains(".pdf") {
+            continue;
+        }
+        let Some(label) = attr_value(block, "aria-label") else { continue };
+        let label = decode_entities(&label);
+        // Etiketin son parçası tarihtir: "KCHOL 2Ç26 10-08-2026".
+        let mut words: Vec<&str> = label.split_whitespace().collect();
+        let Some((published, published_ts)) = words.last().and_then(|last| parse_dotted_date(last))
+        else {
+            continue;
+        };
+        words.pop();
+        let title = words.join(" ");
+        if title.is_empty() {
+            continue;
+        }
+
+        let href = decode_entities(&href);
+        let pdf_url = if href.starts_with("http") {
+            encode_url_path(&href)
+        } else {
+            encode_url_path(&format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                href.trim_start_matches('/')
+            ))
+        };
+
+        let tickers = extract_tickers(&title, &[], universe);
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &[], &tickers),
+            tickers,
+            rating: extract_rating(&title),
+            target_price: extract_target_price(&title),
+            title,
+            summary: None,
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    reports
+}
+
+/// Adresteki ASCII olmayan baytları ve boşlukları yüzde-kodlar. Şema ve konak
+/// adı olduğu gibi bırakılır; yalnız yol kısmı güvenli hale getirilir.
+fn encode_url_path(url: &str) -> String {
+    let mut out = String::with_capacity(url.len());
+    for byte in url.bytes() {
+        match byte {
+            b' ' => out.push_str("%20"),
+            0x00..=0x1f | 0x7f..=0xff | b'"' | b'<' | b'>' | b'\\' | b'^' | b'`' | b'{' | b'|'
+            | b'}' => out.push_str(&format!("%{byte:02X}")),
+            _ => out.push(byte as char),
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Gedik Yatırım
+// ---------------------------------------------------------------------------
+
+/// Gedik Yatırım sayfasındaki `__NEXT_DATA__` gömülü verisini ayrıştırır.
+///
+/// Rapor kayıtları sayfa ağacının derinlerinde sekme/gruplar içinde durur;
+/// yol sürüm sürüm değiştiği için ağaç dolaşılır ve `pdfUrl` taşıyan her nesne
+/// rapor kabul edilir. Başlık BIST kodu taşımaz ("Çeyreklik Finansal Görünüm
+/// Değerlendirme Raporları - 10.08.2026") ama **dosya adı taşır**
+/// (`…_SASA_20260810.pdf`); kod oradan çıkarılır.
+pub fn parse_gedik_next_data(
+    html: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Result<Vec<AnalystReport>, String> {
+    let marker = "id=\"__NEXT_DATA__\"";
+    let start = html
+        .find(marker)
+        .and_then(|at| html[at..].find('>').map(|offset| at + offset + 1))
+        .ok_or_else(|| format!("{}: __NEXT_DATA__ bulunamadı", spec.broker))?;
+    let end = html[start..]
+        .find("</script>")
+        .ok_or_else(|| format!("{}: __NEXT_DATA__ kapanmıyor", spec.broker))?;
+
+    let root: serde_json::Value = serde_json::from_str(&html[start..start + end])
+        .map_err(|error| format!("{} JSON çözümlenemedi: {error}", spec.broker))?;
+
+    let mut nodes = Vec::new();
+    collect_pdf_nodes(&root, &mut nodes);
+
+    let mut reports = Vec::new();
+    for node in nodes {
+        let Some(pdf_url) = node.get("pdfUrl").and_then(|value| value.as_str()) else { continue };
+        let title = node.get("title").and_then(|value| value.as_str()).unwrap_or_default().trim();
+        if title.is_empty() {
+            continue;
+        }
+        let published = node
+            .get("summaryDate")
+            .and_then(|value| value.as_str())
+            .and_then(parse_dotted_date)
+            // Tarih alanı boşsa dosya adındaki "20260810" damgasına düşülür.
+            .or_else(|| date_from_compact_stamp(pdf_url));
+        let Some((published, published_ts)) = published else { continue };
+
+        let period = node.get("period").and_then(|value| value.as_str()).unwrap_or_default();
+        // Başlıkta kod yok; dosya adındaki büyük harfli parçalar etiket sayılır.
+        let tags: Vec<String> = uppercase_tokens(pdf_url)
+            .into_iter()
+            .chain(std::iter::once(period.to_string()))
+            .collect();
+        let tickers = extract_tickers(title, &tags, universe);
+
+        reports.push(AnalystReport {
+            id: report_id(pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(title, &[period.to_string()], &tickers),
+            tickers,
+            rating: extract_rating(title),
+            target_price: extract_target_price(title),
+            title: decode_entities(title),
+            summary: None,
+            url: pdf_url.to_string(),
+            pdf_url: Some(pdf_url.to_string()),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    Ok(reports)
+}
+
+/// `pdfUrl` alanı dolu olan bütün nesneleri ağaçtan toplar.
+fn collect_pdf_nodes<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a serde_json::Value>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.get("pdfUrl").and_then(|url| url.as_str()).is_some_and(|url| !url.is_empty()) {
+                out.push(value);
+            }
+            for child in map.values() {
+                collect_pdf_nodes(child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                collect_pdf_nodes(child, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Dosya adındaki "20260810" damgasını tarihe çevirir.
+fn date_from_compact_stamp(url: &str) -> Option<(String, i64)> {
+    let name = url.rsplit('/').next()?;
+    let digits: Vec<&str> = name
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| part.len() == 8)
+        .collect();
+    for group in digits {
+        let year: i32 = group[0..4].parse().ok()?;
+        let month: u32 = group[4..6].parse().ok()?;
+        let day: u32 = group[6..8].parse().ok()?;
+        if (2000..=2100).contains(&year) && (1..=12).contains(&month) && (1..=31).contains(&day) {
+            return iso_from_ymd(year, month, day);
+        }
+    }
+    None
+}
+
+/// Dosya adındaki **tamamı büyük harf** parçaları verir.
+///
+/// Büyütme yapılmaz bilerek: `Gedik_BIST100_…` içindeki "Gedik" büyütülseydi
+/// GEDIK payına bağlanır, kurumun her bülteni kendi hissesine etiketlenirdi.
+fn uppercase_tokens(url: &str) -> Vec<String> {
+    let name = url.rsplit('/').next().unwrap_or(url);
+    name.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| {
+            (3..=6).contains(&token.len()) && token.chars().all(|c| c.is_ascii_uppercase())
+        })
+        .map(String::from)
+        .collect()
+}
+
+/// `classify` üzerine tek kural ekler: türü belirlenemeyen ama tek bir hisseye
+/// bağlanan rapor şirket raporudur. Kod taşıyan başlıklar ("KCHOL 2Ç26")
+/// sözlükteki kalıpların hiçbirine uymuyor ama şirket raporu olduğu kesin.
+fn classify_with_tickers(title: &str, tags: &[String], tickers: &[String]) -> ReportKind {
+    let kind = classify(title, tags);
+    if kind == ReportKind::Other && tickers.len() == 1 {
+        return ReportKind::Company;
+    }
+    kind
 }
 
 /// `'…'` ya da `"…"` ile sarılı ilk değeri verir.
@@ -730,10 +1117,17 @@ fn archive_path() -> Option<std::path::PathBuf> {
 }
 
 pub fn load() -> ReportArchive {
-    archive_path()
+    let archive: ReportArchive = archive_path()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|data| serde_json::from_str(&data).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    // Eski sürümle kurulmuş arşiv atılır; boş arşiv bir sonraki turda derin
+    // taranıp yeni ayrıştırıcıyla yeniden kurulur.
+    if archive.parser_version != PARSER_VERSION {
+        return ReportArchive { parser_version: PARSER_VERSION, ..Default::default() };
+    }
+    archive
 }
 
 pub fn save(archive: &ReportArchive) {
@@ -760,6 +1154,7 @@ pub fn merge(archive: &mut ReportArchive, incoming: Vec<AnalystReport>) -> usize
     archive.reports.sort_by(|a, b| b.published_ts.cmp(&a.published_ts));
     archive.reports.truncate(MAX_REPORTS);
     archive.last_updated = Some(chrono::Utc::now().to_rfc3339());
+    archive.parser_version = PARSER_VERSION;
     added
 }
 
@@ -816,6 +1211,73 @@ pub async fn fetch_source(
             let html = get_text(client, url).await?;
             Ok(parse_halk_listing(&html, spec, universe))
         }
+        Feed::GarantiJson { url } => {
+            let mut all = Vec::new();
+            for page in 1..=pages.max(1).min(MAX_PAGES) {
+                // Sayfa numarası sorgu dizesinde değil `Page` başlığında taşınır;
+                // başlıksız çağrı hep ilk sayfayı verir.
+                let response = client
+                    .get(url)
+                    .timeout(std::time::Duration::from_secs(20))
+                    .header("User-Agent", BROWSER_UA)
+                    .header("Page", page.to_string())
+                    .header("X-Bone-Language", "TR")
+                    .send()
+                    .await
+                    .map_err(|error| format!("{url}: {error}"))?;
+                let body = crate::retry::check_status(response, url)?
+                    .text()
+                    .await
+                    .map_err(|error| format!("{url}: {error}"))?;
+                let reports = parse_garanti_json(&body, spec, universe)?;
+                if reports.is_empty() {
+                    break;
+                }
+                all.extend(reports);
+            }
+            Ok(all)
+        }
+        Feed::ZiraatClockwork { url, base, category_id } => {
+            const PAGE_SIZE: usize = 50;
+            // Uç tarih aralığı ister; arşivin tamamı istendiği için pencere
+            // sitenin en eski kaydından bugüne kadar açık tutulur.
+            let end = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let mut all = Vec::new();
+            for page in 1..=pages.max(1).min(MAX_PAGES) {
+                let body = serde_json::json!({
+                    "BeginDate": "2015-01-01",
+                    "EndDate": end,
+                    "Page": page,
+                    "PageSize": PAGE_SIZE,
+                    "SearchTerm": serde_json::Value::Null,
+                    "CategoryId": category_id,
+                    "CheckSubCategory": "True",
+                });
+                let response = client
+                    .post(url)
+                    .timeout(std::time::Duration::from_secs(20))
+                    .header("User-Agent", BROWSER_UA)
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|error| format!("{url}: {error}"))?;
+                let html = crate::retry::check_status(response, url)?
+                    .text()
+                    .await
+                    .map_err(|error| format!("{url}: {error}"))?;
+                let reports = parse_ziraat_listing(&html, base, spec, universe);
+                if reports.is_empty() {
+                    break;
+                }
+                all.extend(reports);
+            }
+            Ok(all)
+        }
+        Feed::GedikNextData { url } => {
+            // Sayfalama yok: bütün liste ilk yanıtın gömülü verisinde gelir.
+            let html = get_text(client, url).await?;
+            parse_gedik_next_data(&html, spec, universe)
+        }
     }
 }
 
@@ -871,6 +1333,123 @@ pub async fn refresh(client: &reqwest::Client, deep: bool) -> (usize, Vec<String
 
     save(&archive);
     (added, errors)
+}
+
+// ---------------------------------------------------------------------------
+// Belge indirme
+// ---------------------------------------------------------------------------
+
+/// İndirilmiş bir rapor belgesi; gömülü görüntüleyiciye veri-URL olarak verilir.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReportDocument {
+    pub content_type: String,
+    /// Belge gövdesinin base64'ü.
+    pub base64: String,
+    pub bytes: usize,
+}
+
+/// İndirilen belgenin üst sınırı.
+///
+/// Şirket raporları birkaç yüz KB'dır ama kurumlar aynı akışta halka arz
+/// izahnamesi de yayımlıyor ve onlar 50 MB'ı bulabiliyor. Sınır bunları da
+/// alacak kadar geniş tutulur; aşan belge okuyucuda hata verip tarayıcıya
+/// yönlendirilir, sessizce boş ekran gösterilmez.
+const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Belge indirmeye izin verilen konaklar.
+///
+/// Adres kullanıcı arayüzünden geldiği için serbest bırakılamaz: arşivdeki
+/// kayıtların konakları neyse yalnız onlar çekilir.
+fn document_host_is_allowed(url: &str) -> bool {
+    const ALLOWED_SUFFIXES: &[&str] = &[
+        "isyatirim.com.tr",
+        "marbas.com.tr",
+        "a1capital.com.tr",
+        "vkyanaliz.com",
+        "halkyatirim.com.tr",
+        "garantibbvayatirim.com.tr",
+        "ziraatyatirim.com.tr",
+        "gedik.com",
+    ];
+    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.split('@').next_back().unwrap_or_default();
+    let host = host.split(':').next().unwrap_or_default().to_ascii_lowercase();
+    ALLOWED_SUFFIXES
+        .iter()
+        .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
+}
+
+/// Rapor belgesini indirir ve base64 olarak döndürür.
+///
+/// Kurumların çoğu PDF'lerini `X-Frame-Options: SAMEORIGIN` ile yayımlıyor;
+/// adres doğrudan bir çerçeveye verilirse görüntüleyici boş kalır. Belge
+/// uygulama tarafından indirilip veri-URL'i olarak gömülünce bu kısıt
+/// devreden çıkar ve rapor uygulamanın içinde okunur.
+pub async fn fetch_document(client: &reqwest::Client, url: &str) -> Result<ReportDocument, String> {
+    use base64::Engine as _;
+
+    if !document_host_is_allowed(url) {
+        return Err(format!("bu adres rapor kaynağı değil: {url}"));
+    }
+    // Süre gövdenin tamamını kapsar. Şirket raporu saniyeler sürer ama aynı
+    // akıştaki izahnameler 50 MB'ı bulup dakikaya yaklaşıyor; sınır ona göre.
+    let response = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(180))
+        .header("User-Agent", BROWSER_UA)
+        .header("Accept", "application/pdf,*/*")
+        .send()
+        .await
+        .map_err(|error| format!("{url}: {error}"))?;
+    let response = crate::retry::check_status(response, url)?;
+
+    // Kurum belgeyi eklenti adı olmadan da sunabiliyor (Garanti `.vsf` verir);
+    // tür başlıktan okunur, adresin uzantısından değil.
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(';').next().unwrap_or(value).trim().to_string())
+        .unwrap_or_else(|| "application/pdf".to_string());
+
+    let body = response.bytes().await.map_err(|error| format!("{url}: {error}"))?;
+    if body.len() > MAX_DOCUMENT_BYTES {
+        return Err(format!("belge çok büyük ({} bayt): {url}", body.len()));
+    }
+
+    // PDF'i olmayan kaynaklarda (A1 Capital gibi) rapor bir web yazısıdır.
+    // Gövde blob olarak gömüldüğünde sayfanın kökü kaybolur ve göreli duran
+    // biçem/görsel adresleri çözülemez; `<base>` bunu kaynağa geri bağlar.
+    if content_type.contains("html") {
+        let html = String::from_utf8_lossy(&body);
+        let patched = inject_base_href(&html, url);
+        return Ok(ReportDocument {
+            content_type,
+            base64: base64::engine::general_purpose::STANDARD.encode(patched.as_bytes()),
+            bytes: patched.len(),
+        });
+    }
+
+    Ok(ReportDocument {
+        content_type,
+        base64: base64::engine::general_purpose::STANDARD.encode(&body),
+        bytes: body.len(),
+    })
+}
+
+/// Belgeye `<base href>` ekler; zaten varsa dokunmaz.
+fn inject_base_href(html: &str, url: &str) -> String {
+    let lower = html.to_lowercase();
+    if lower.contains("<base ") {
+        return html.to_string();
+    }
+    let tag = format!("<base href=\"{}\">", url.replace('"', "%22"));
+    match lower.find("<head").and_then(|at| html[at..].find('>').map(|off| at + off + 1)) {
+        Some(at) => format!("{}{tag}{}", &html[..at], &html[at..]),
+        // `<head>` yoksa belge parçası demektir; etiket başa konur.
+        None => format!("{tag}{html}"),
+    }
 }
 
 /// Arşivden bir hissenin raporlarını süzer.
@@ -1040,6 +1619,70 @@ mod tests {
         assert!(reports[0].pdf_url.as_deref().unwrap().ends_with(".pdf"));
     }
 
+    /// Garanti BBVA: kod başlıkta önde, kategori etikette; abone kaydı atlanır.
+    #[test]
+    fn garanti_json_maps_to_reports() {
+        let json = r#"{"Items":[
+            {"Title":"HALKB 2Ç26 Finansal Sonuçlar","ShortDescription":"Halkbank 2Ç26'da 8.2mlr TL net kar açıkladı","CategoryName":"Şirket Raporları","PublishDate":"10.08.2026 08:03","PdfUrl":"https://www.garantibbvayatirim.com.tr/medium/ResearchReports-Constant-83920.vsf","FileType":"pdf","Tags":[]},
+            {"Title":"Bir Bakışta Yurt Dışı","ShortDescription":"","CategoryName":"Bir Bakışta Yurt Dışı","PublishDate":"10.08.2026 16:01","PdfUrl":null,"FileType":"","Tags":[]}
+        ],"TotalItems":6880}"#;
+        let spec = source("garanti");
+        let universe: HashSet<String> = ["HALKB"].into_iter().map(String::from).collect();
+        let reports = parse_garanti_json(json, &spec, &universe).unwrap();
+        // PDF'i olmayan kayıt arşive girmez: ekranda açılamaz.
+        assert_eq!(reports.len(), 1, "yalnız PDF'li kayıt beklenir: {reports:?}");
+        let report = &reports[0];
+        assert_eq!(report.broker, "Garanti BBVA Yatırım");
+        assert_eq!(report.published, "2026-08-10");
+        assert_eq!(report.tickers, vec!["HALKB".to_string()]);
+        // "Finansal Sonuçlar" sözlükteki kalıplara uymaz; tek hisseye bağlı
+        // olduğu için yine de şirket raporu sayılır.
+        assert_eq!(report.kind, ReportKind::Company);
+        assert!(report.summary.is_some());
+    }
+
+    /// Ziraat: başlık ve tarih tek `aria-label` içinde; Türkçe dosya adı
+    /// yüzde-kodlanmalı, yoksa gömülü görüntüleyici açamaz.
+    #[test]
+    fn ziraat_listing_maps_to_reports() {
+        let html = r#"<ul class="list-document popup" id="pdfView">
+            <li><a href="/documents/category/Ko&#xE7;Holding-2&#xC7;26-20260810.pdf" target="_blank" class="lnk-download" aria-label="KCHOL 2&#xC7;26 10-08-2026"><span class="file-title">KCHOL 2&#xC7;26 10-08-2026</span></a></li>
+            <li><a href="/documents/category/rehber.html" class="lnk-download" aria-label="Rehber 01-01-2026"></a></li>
+        </ul>"#;
+        let spec = source("ziraat");
+        let universe: HashSet<String> = ["KCHOL"].into_iter().map(String::from).collect();
+        let reports = parse_ziraat_listing(html, "https://www.ziraatyatirim.com.tr", &spec, &universe);
+        assert_eq!(reports.len(), 1, "PDF olmayan satır atlanmalı: {reports:?}");
+        let report = &reports[0];
+        assert_eq!(report.title, "KCHOL 2Ç26");
+        assert_eq!(report.published, "2026-08-10");
+        assert_eq!(report.tickers, vec!["KCHOL".to_string()]);
+        let pdf = report.pdf_url.as_deref().unwrap();
+        assert!(pdf.starts_with("https://www.ziraatyatirim.com.tr/documents/"), "{pdf}");
+        assert!(pdf.is_ascii(), "Türkçe harf yüzde-kodlanmalı: {pdf}");
+    }
+
+    /// Gedik: liste `__NEXT_DATA__` içinde; kod başlıkta değil dosya adındadır.
+    #[test]
+    fn gedik_next_data_maps_to_reports() {
+        let html = r#"<html><body><script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"data":{"fields":{"components":[{"fields":[{"tabs":[{"tabsInfo":[
+            {"title":"Çeyreklik Finansal Görünüm Değerlendirme Raporları - 10.08.2026","summaryDate":"10/08/2026","period":"Çeyreklik","pdfUrl":"https://cdn.gedik.com/cdn/bulletin/2026/08/10/2C26_Finansal_Degerlendirme_SASA_20260810_a8d4d240.pdf"},
+            {"title":"Günlük Bülten - 10.08.2026","summaryDate":"10/08/2026","period":"Günlük","pdfUrl":"https://cdn.gedik.com/cdn/bulletin/2026/08/10/Gedik_Gunluk_Bulten_10082026.pdf"}
+        ]}]}]}]}}}}}</script></body></html>"#;
+        let spec = source("gedik");
+        let universe: HashSet<String> = ["SASA", "GEDIK"].into_iter().map(String::from).collect();
+        let reports = parse_gedik_next_data(html, &spec, &universe).unwrap();
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].tickers, vec!["SASA".to_string()]);
+        assert_eq!(reports[0].published, "2026-08-10");
+        assert_eq!(reports[0].kind, ReportKind::Company);
+        // Kurumun kendi adı hisse koduyla çakışır; "Gedik_" büyütülüp GEDIK'e
+        // bağlanırsa her bülten kurumun kendi payına etiketlenirdi.
+        assert!(reports[1].tickers.is_empty(), "{:?}", reports[1].tickers);
+        assert_eq!(reports[1].kind, ReportKind::Bulletin);
+    }
+
     /// Aynı rapor ikinci turda çoğalmaz, güncellenir.
     #[test]
     fn merge_is_idempotent_and_sorts_newest_first() {
@@ -1063,7 +1706,7 @@ mod tests {
                 AnalystReport { id: "1".into(), tickers: vec!["THYAO".into()], ..Default::default() },
                 AnalystReport { id: "2".into(), tickers: vec!["EREGL".into()], ..Default::default() },
             ],
-            last_updated: None,
+            ..Default::default()
         };
         assert_eq!(for_ticker(&archive, "THYAO").len(), 1);
         assert_eq!(for_ticker(&archive, "thyao.is").len(), 1);
@@ -1100,6 +1743,38 @@ mod tests {
         }
     }
 
+    /// Her kaynağın belgesi gerçekten indirilebilmeli. Ekranda okunabilmesi
+    /// listede görünmesine değil, gövdenin çekilebilmesine bağlı.
+    #[tokio::test]
+    #[ignore = "requires live broker site access"]
+    async fn live_documents_can_be_downloaded() {
+        let client = reqwest::Client::new();
+        let universe: HashSet<String> = crate::bist_universe::load(&client)
+            .await
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect();
+
+        for spec in SOURCES {
+            let reports = fetch_source(&client, spec, &universe, 1).await.unwrap_or_default();
+            let Some(report) = reports.iter().find(|r| r.pdf_url.is_some()) else {
+                println!("{}: PDF taşıyan rapor yok, atlandı", spec.broker);
+                continue;
+            };
+            let url = report.pdf_url.as_deref().unwrap();
+            match fetch_document(&client, url).await {
+                Ok(document) => {
+                    assert!(document.bytes > 1_000, "{}: belge boş ({url})", spec.broker);
+                    println!(
+                        "{}: {} · {} bayt · {}",
+                        spec.broker, document.content_type, document.bytes, report.title
+                    );
+                }
+                Err(error) => panic!("{} belgesi indirilemedi ({url}): {error}", spec.broker),
+            }
+        }
+    }
+
     /// Hisse bazlı etiket akışı gerçekten o hissenin raporlarını vermeli.
     #[tokio::test]
     #[ignore = "requires live broker site access"]
@@ -1119,6 +1794,49 @@ mod tests {
         for report in reports.iter().take(5) {
             println!("{} | {} | {}", report.published, report.broker, report.title);
         }
+    }
+
+    /// Belge indirme yalnız rapor kaynaklarına açılır; keyfi adres çekilmez.
+    #[test]
+    fn document_host_allowlist_rejects_foreign_urls() {
+        assert!(document_host_is_allowed(
+            "https://www.ziraatyatirim.com.tr/documents/category/TTKOM_2C26.pdf"
+        ));
+        assert!(document_host_is_allowed("https://cdn.gedik.com/cdn/bulletin/x.pdf"));
+        assert!(!document_host_is_allowed("https://evil.example.com/x.pdf"));
+        // Konak adının bir kaynağı *içermesi* yetmez, onunla bitmeli.
+        assert!(!document_host_is_allowed("https://gedik.com.evil.example/x.pdf"));
+        // Kullanıcı-bilgisi hilesi konak yerine geçmemeli.
+        assert!(!document_host_is_allowed("https://cdn.gedik.com@evil.example/x.pdf"));
+        // Şifresiz taşımaya izin yok.
+        assert!(!document_host_is_allowed("http://cdn.gedik.com/x.pdf"));
+        assert!(!document_host_is_allowed("file:///etc/passwd"));
+    }
+
+    /// Özet, eklenti biçemleriyle başlamamalı. WordPress kurulumları yazının
+    /// başına `<style>` gömüyor; etiket atılıp gövde bırakılırsa ekranda
+    /// raporun metni yerine CSS görünüyordu.
+    #[test]
+    fn summary_drops_style_and_script_bodies() {
+        let body = r#"<style>/*! elementor - v3.7.4 */ .elementor-drop-cap{color:#818a91}</style>
+            <p>Kapeks Kimya Sanayi A.Ş. Halka Arz Detayları: Talep Toplama 12 – 13 Ağustos.</p>
+            <script>var x = 1;</script>"#;
+        let text = strip_html(body);
+        assert!(text.starts_with("Kapeks Kimya"), "{text}");
+        assert!(!text.contains("elementor"), "{text}");
+        assert!(!text.contains("var x"), "{text}");
+    }
+
+    /// HTML rapor blob olarak gömülünce göreli adresler kaynağa bağlanmalı.
+    #[test]
+    fn base_href_is_injected_once() {
+        let html = "<html><head><meta charset=\"utf-8\"></head><body>x</body></html>";
+        let patched = inject_base_href(html, "https://a1capital.com.tr/petkm-analiz/");
+        assert!(patched.contains("<head><base href=\"https://a1capital.com.tr/petkm-analiz/\">"));
+        // İkinci geçiş yeni etiket eklemez.
+        assert_eq!(inject_base_href(&patched, "https://example.com/"), patched);
+        // `<head>` yoksa parça başına konur.
+        assert!(inject_base_href("<p>x</p>", "https://a1capital.com.tr/").starts_with("<base href="));
     }
 
     /// Kaynak kimlikleri benzersiz olmalı; arşiv kaydı `source_id` ile eşlenir.
