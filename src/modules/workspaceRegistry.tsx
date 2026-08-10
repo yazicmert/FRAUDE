@@ -32,6 +32,7 @@ const ResearchView = lazy(() => import('../features/research/ResearchView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
 const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
+const ReportsView = lazy(() => import('../features/reports/ReportsView'));
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 
 export const CORE_VERSION = '0.1.17';
@@ -345,6 +346,22 @@ export const workspaceModules: WorkspaceModule[] = [
     render: (_tab, host) => <CorporateActionsView initialTab="ipo" onSelectTicker={host.openTicker} />,
   },
   {
+    kind: 'reports',
+    titleKey: 'reportsTitle',
+    manifest: manifest(
+      'fraude.research-reports',
+      { tr: 'Analiz Raporları', en: 'Research Reports' },
+      {
+        tr: 'Aracı kurum ve banka raporları ile analist konsensüsü.',
+        en: 'Brokerage and bank reports with analyst consensus.',
+      },
+      ['network:yahoo'],
+      'reports',
+      'reportsTitle',
+    ),
+    render: (_tab, host) => <ReportsView onSelectTicker={host.openTicker} />,
+  },
+  {
     kind: 'guide',
     titleKey: 'guide',
     // Kenar çubuğunda değil, üst çubuktaki kitap ikonunda yaşar (App.tsx);
@@ -518,6 +535,7 @@ export const NAV_TREE: NavSection[] = [
               { type: 'module', kind: 'kap' },
               { type: 'module', kind: 'corporate' },
               { type: 'module', kind: 'ipo' },
+              { type: 'module', kind: 'reports' },
               { type: 'module', kind: 'monitor' },
             ],
           },

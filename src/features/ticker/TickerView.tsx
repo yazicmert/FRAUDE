@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer } fro
 import { openUrl } from '../../lib/openExternal';
 import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDividends, getCapitalIncreases, getAnalystReports, getShareholders, getSubsidiaries, researchEntityNews, getTickerFunds, getFunds, getFinancialStatements, type PriceSource, type TickerFundsPayload, type FundRow } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
-import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, AnalystReport, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
+import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, AnalystReport, AnalystConsensus, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
 import PriceChart from './PriceChart';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
@@ -18,6 +18,21 @@ import FundDetail from '../funds/FundDetail';
 import KapDocumentViewerModal from '../kap/KapDocumentViewerModal';
 
 const OWNER_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00ced1', '#f0883e', '#7ee787'];
+
+/**
+ * Analist konsensüs etiketinin rengi.
+ *
+ * Eşikler `analyst_consensus::rating_label` ile aynı ölçekten okunur
+ * (1 = hepsi AL … 3 = hepsi SAT); etiket metnine göre renk seçmek diller
+ * arasında kırılırdı.
+ */
+function consensusColor(mark: number | null | undefined): string {
+  if (mark == null) return 'var(--text-muted)';
+  if (mark < 1.5) return '#3fb950';
+  if (mark < 1.85) return '#56d364';
+  if (mark <= 2.15) return '#d29922';
+  return '#f85149';
+}
 
 // Ortaklık yapısını etkileyebilecek KAP bildirimi başlık kalıpları
 const OWNERSHIP_KAP_KEYWORDS = ['pay alım', 'pay satış', 'payların', 'pay devri', 'hisse devri', 'ortaklık yapısı', 'geri alım', 'çağrı', 'blok satış'];
@@ -93,6 +108,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [dividends, setDividends] = useState<DividendRecord[]>([]);
   const [capitalIncreases, setCapitalIncreases] = useState<CapitalIncrease[]>([]);
   const [analystReports, setAnalystReports] = useState<AnalystReport[]>([]);
+  const [analystConsensus, setAnalystConsensus] = useState<AnalystConsensus | null>(null);
   const [analystLoading, setAnalystLoading] = useState(true);
   const [shareholders, setShareholders] = useState<ShareholderSnapshot | null>(null);
   const [shareholdersLoading, setShareholdersLoading] = useState(true);
@@ -199,13 +215,18 @@ export default function TickerView({ ticker }: { ticker: string }) {
   // ya da emtia için kurum raporu yayımlanmaz.
   useEffect(() => {
     setAnalystReports([]);
+    setAnalystConsensus(null);
     if (!corporate) {
       setAnalystLoading(false);
       return;
     }
     setAnalystLoading(true);
     getAnalystReports(ticker)
-      .then((payload) => setAnalystReports(payload.reports))
+      .then((payload) => {
+        setAnalystReports(payload.reports);
+        // Hisse istendiğinde konsensüs tek kayıt döner; kapsamı yoksa boş.
+        setAnalystConsensus(payload.consensus[0] ?? null);
+      })
       .catch((err: unknown) => console.error('Failed to load analyst reports:', err))
       .finally(() => setAnalystLoading(false));
   }, [ticker, corporate]);
@@ -1019,6 +1040,70 @@ export default function TickerView({ ticker }: { ticker: string }) {
           )}
         </section>
       </div>
+      )}
+
+      {/* Analist konsensüsü: payı izleyen yurt içi + yurt dışı kurumların
+          toplu görüşü. Rapor arşivinden ayrı kaynaktır; yurt dışı bankaların
+          BIST raporları kamuya kapalı olduğu için kapsamlarına yalnız buradan
+          ulaşılır. Kapsam yoksa panel hiç çizilmez. */}
+      {corporate && analystConsensus && (
+      <section className="panel" style={{ marginTop: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+          <h2 style={{ marginBottom: '4px' }}>{t('consensusTitle')}</h2>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('consensusHint')}</span>
+        </div>
+        <div style={{ display: 'flex', gap: '22px', flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '12px' }}>
+          <div>
+            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusRating')}</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 700, color: consensusColor(analystConsensus.mark) }}>
+              {analystConsensus.rating ?? '—'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusAnalysts')}</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+              {analystConsensus.total || '—'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusSpread')}</div>
+            <div style={{ fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ color: '#3fb950' }}>{analystConsensus.buy}</span>
+              <span style={{ color: 'var(--text-muted)' }}> · </span>
+              <span style={{ color: '#d29922' }}>{analystConsensus.hold}</span>
+              <span style={{ color: 'var(--text-muted)' }}> · </span>
+              <span style={{ color: '#f85149' }}>{analystConsensus.sell}</span>
+            </div>
+          </div>
+          {analystConsensus.target_average != null && (
+            <div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusTargetAvg')}</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#d29922' }}>
+                ₺{analystConsensus.target_average.toFixed(2)}
+              </div>
+            </div>
+          )}
+          {analystConsensus.upside != null && (
+            <div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusUpside')}</div>
+              <div style={{
+                fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
+                color: analystConsensus.upside >= 0 ? '#3fb950' : '#f85149',
+              }}>
+                {analystConsensus.upside > 0 ? '+' : ''}{analystConsensus.upside.toFixed(1)}%
+              </div>
+            </div>
+          )}
+          {analystConsensus.target_low != null && analystConsensus.target_high != null && (
+            <div>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: '2px' }}>{t('consensusRange')}</div>
+              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                ₺{analystConsensus.target_low.toFixed(2)} – ₺{analystConsensus.target_high.toFixed(2)}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
       )}
 
       {corporate && (

@@ -692,6 +692,11 @@ pub async fn get_analyst_reports(
         .map_or(true, |stamp| !stamp.starts_with(&today));
 
     let mut errors = Vec::new();
+    if force_refresh.unwrap_or(false) {
+        // Elle tazelemede konsensüs de yenilensin; iki kaynağın farklı
+        // tazelikte kalması ekranda tutarsız görünür.
+        crate::analyst_consensus::invalidate();
+    }
     if force_refresh.unwrap_or(false) || stale {
         // İlk kurulumda arşiv boş olur; o turda geriye doğru derin taranır.
         let deep = archive.reports.is_empty();
@@ -700,7 +705,27 @@ pub async fn get_analyst_reports(
         archive = reports::load();
     }
 
-    let records = match ticker.as_deref().filter(|code| !code.trim().is_empty()) {
+    let requested = ticker.as_deref().filter(|code| !code.trim().is_empty());
+
+    // Konsensüs ayrı kaynaktan gelir ve kendi önbelleği vardır; rapor
+    // arşivinin tazelenmesine bağlı değildir.
+    let consensus = match requested {
+        Some(code) => crate::analyst_consensus::for_ticker(&state.http, code)
+            .await
+            .into_iter()
+            .collect(),
+        None => {
+            let mut rows: Vec<_> =
+                crate::analyst_consensus::load(&state.http).await.into_values().collect();
+            // İzleyen kurum sayısı çok olan pay üstte; ekran onu öne alır.
+            rows.sort_by(|a, b| {
+                b.total.cmp(&a.total).then_with(|| a.ticker.cmp(&b.ticker))
+            });
+            rows
+        }
+    };
+
+    let records = match requested {
         Some(code) => {
             // Arşiv derinliği sınırlı; hisse açıldığında kurumun etiket akışı
             // o hissenin tam geçmişini tek istekte verir.
@@ -724,6 +749,7 @@ pub async fn get_analyst_reports(
         reports: records,
         last_updated: archive.last_updated,
         errors,
+        consensus,
     })
 }
 

@@ -114,10 +114,15 @@ pub struct ReportArchive {
 /// Bir kaynağın hangi biçimde yayımladığı.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Feed {
-    /// WordPress araştırma blogu: `/feed/` RSS, `?paged=N` sayfalama ve
-    /// `/tag/{kod}/feed/` ile hisse bazlı akış. Kod, hisse etiketini RSS
-    /// `category` alanlarından okur — başlıktan çıkarmaya göre çok daha sağlam.
-    WordPress { base: &'static str },
+    /// WordPress araştırma blogu: `/feed/` RSS ve `?paged=N` sayfalama.
+    /// Kod, hisse etiketini RSS `category` alanlarından okur — başlıktan
+    /// çıkarmaya göre çok daha sağlam; kategori kod taşımayan sitelerde
+    /// (Marbaş, A1) başlıktan çıkarıma düşer.
+    ///
+    /// `tag_feeds`: site `/tag/{kod}/feed/` ile hisse bazlı akış veriyor mu.
+    /// Yalnız İş Yatırım veriyor; diğerlerinde bu yol 404 döndüğü için
+    /// hisse açılışında boşuna istek atılmaz.
+    WordPress { base: &'static str, tag_feeds: bool },
     /// `listeici` bloklu PDF listesi (Vakıf Yatırım / vkyanaliz.com).
     VakifListing { url: &'static str, base: &'static str },
     /// Rapor gövdesini `data-baslik` / `data-detay` özniteliklerine kaçıran
@@ -140,7 +145,22 @@ pub const SOURCES: &[SourceSpec] = &[
         id: "isyatirim",
         broker: "İş Yatırım",
         scope: BrokerScope::Domestic,
-        feed: Feed::WordPress { base: "https://arastirma.isyatirim.com.tr" },
+        feed: Feed::WordPress {
+            base: "https://arastirma.isyatirim.com.tr",
+            tag_feeds: true,
+        },
+    },
+    SourceSpec {
+        id: "marbas",
+        broker: "Marbaş Menkul",
+        scope: BrokerScope::Domestic,
+        feed: Feed::WordPress { base: "https://marbas.com.tr", tag_feeds: false },
+    },
+    SourceSpec {
+        id: "a1capital",
+        broker: "A1 Capital",
+        scope: BrokerScope::Domestic,
+        feed: Feed::WordPress { base: "https://a1capital.com.tr", tag_feeds: false },
     },
     SourceSpec {
         id: "vakif",
@@ -770,7 +790,7 @@ pub async fn fetch_source(
     pages: usize,
 ) -> Result<Vec<AnalystReport>, String> {
     match spec.feed {
-        Feed::WordPress { base } => {
+        Feed::WordPress { base, .. } => {
             let mut all = Vec::new();
             for page in 1..=pages.max(1).min(MAX_PAGES) {
                 let url = if page == 1 {
@@ -815,7 +835,7 @@ pub async fn fetch_ticker_feed(
     }
     let mut out = Vec::new();
     for spec in SOURCES {
-        let Feed::WordPress { base } = spec.feed else { continue };
+        let Feed::WordPress { base, tag_feeds: true } = spec.feed else { continue };
         let url = format!("{base}/tag/{code}/feed/");
         let Ok(body) = get_text(client, &url).await else { continue };
         if let Ok(reports) = parse_wordpress_feed(body.as_bytes(), spec, universe) {
@@ -877,8 +897,17 @@ mod tests {
             .collect()
     }
 
+    /// Kaynağı kimliğinden bulur. Konumla erişmek, listeye araya yeni kurum
+    /// eklendiğinde testleri sessizce başka kaynağa bağlıyordu.
+    fn source(id: &str) -> SourceSpec {
+        *SOURCES
+            .iter()
+            .find(|spec| spec.id == id)
+            .unwrap_or_else(|| panic!("{id} kaynağı SOURCES içinde yok"))
+    }
+
     fn spec() -> SourceSpec {
-        SOURCES[0]
+        source("isyatirim")
     }
 
     #[test]
@@ -984,7 +1013,7 @@ mod tests {
 <span class="yayintarih"><a href="arastirma-raporu/x">04 Kasım 2025</a></span>
 <span class="indirikonu"><a target="_blank" href="/Files/docs/sirket-bilgi-notu-akfen-yenilenebilir-enerji-1762262479.pdf" class="btn"><i class="fa"></i></a></span>
 </div></div>"#;
-        let spec = SOURCES[1];
+        let spec = source("vakif");
         let Feed::VakifListing { base, .. } = spec.feed else { panic!("beklenen kaynak biçimi") };
         let reports = parse_vakif_listing(html, base, &spec, &universe());
         assert_eq!(reports.len(), 1);
@@ -1002,7 +1031,7 @@ mod tests {
     #[test]
     fn halk_listing_maps_to_reports() {
         let html = r##"<a data-toggle="modal" data-baslik='Finansal Radar' data-detay='&lt;a href=&#x27;https://www.halkyatirim.com.tr//pdf/2026/8/4503_Finansal%20Radar%2007.08.2026.pdf&#x27; class=&#x27;mylink&#x27;&gt;Linke T&#x131;klay&#x131;n&#x131;z&lt;/a&gt;' href="#modal-one">Finansal Radar</a>"##;
-        let spec = SOURCES[2];
+        let spec = source("halk");
         let reports = parse_halk_listing(html, &spec, &universe());
         assert_eq!(reports.len(), 1, "tek rapor beklenir: {reports:?}");
         assert_eq!(reports[0].broker, "Halk Yatırım");

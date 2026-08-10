@@ -507,6 +507,13 @@ pub struct AnalystReportPayload {
     pub last_updated: Option<String>,
     #[serde(default)]
     pub errors: Vec<String>,
+    /// Payları izleyen kurumların toplu tavsiyesi ve hedef fiyatları.
+    ///
+    /// Rapor arşivinden ayrı bir kaynaktır: yurt dışı kurumların BIST
+    /// raporları kamuya kapalı olduğu için kapsamlarına yalnız buradan
+    /// ulaşılır. Hisse istendiyse tek kayıt, liste modunda evrenin tamamı.
+    #[serde(default)]
+    pub consensus: Vec<crate::analyst_consensus::AnalystConsensus>,
 }
 
 /// Açıklanmış gelecek temettü (Yahoo calendarEvents.exDividendDate).

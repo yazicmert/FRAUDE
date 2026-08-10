@@ -500,11 +500,36 @@ export interface AnalystReport {
   source_id: string;
 }
 
+/**
+ * Bir payı izleyen kurumların toplu görüşü (core/src/analyst_consensus.rs).
+ *
+ * Rapor arşivinden ayrı bir kaynaktır: yurt dışı kurumların BIST raporları
+ * kamuya kapalı olduğu için kapsamlarına yalnız bu toplamlardan ulaşılır.
+ */
+export interface AnalystConsensus {
+  ticker: string;
+  /** 1 = hepsi AL, 2 = hepsi TUT, 3 = hepsi SAT. */
+  mark?: number | null;
+  rating?: string | null;
+  target_average?: number | null;
+  target_high?: number | null;
+  target_low?: number | null;
+  /** Ortalama hedefin son fiyata göre yüzde getiri potansiyeli. */
+  upside?: number | null;
+  last_close?: number | null;
+  total: number;
+  buy: number;
+  hold: number;
+  sell: number;
+}
+
 export interface AnalystReportPayload {
   reports: AnalystReport[];
   last_updated: string | null;
   /** Dolu ise bazı kurumlar çekilemedi; liste yine de gösterilir. */
   errors: string[];
+  /** Hisse istendiyse tek kayıt, liste modunda kapsamı olan tüm paylar. */
+  consensus: AnalystConsensus[];
 }
 
 export interface IpoCalendarPayload {

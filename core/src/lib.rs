@@ -7,6 +7,7 @@
 //! (`run_monitor_and_notify`) yaşar.
 
 pub mod ai_tagger;
+pub mod analyst_consensus;
 pub mod api;
 pub mod bist;
 pub mod bist_indices;
