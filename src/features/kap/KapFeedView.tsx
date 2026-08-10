@@ -32,10 +32,16 @@ export default function KapFeedView({ initialRows }: { initialRows?: KapAnnounce
     }
   }, []);
 
+  // Sekme zaten açıkken yeni satırlarla gelinebilir (terminalden `kap`
+  // komutu, bültendeki "bekleyen KAP bildirimi" satırı). `useState` yalnız ilk
+  // kurulumda okunduğundan sekme öne gelir ama tablo eski kalırdı.
   useEffect(() => {
     if (!initialRows) {
       void loadData();
+      return;
     }
+    setRows(initialRows);
+    setLoading(false);
   }, [initialRows, loadData]);
 
   // Listen for sync events to refresh data

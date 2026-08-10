@@ -12,10 +12,26 @@ import { notify } from '../lib/notify';
 const BRIEF_DATE_KEY = 'fraude-brief-date';
 const BRIEF_DISMISS_KEY = 'fraude-brief-dismissed';
 
+/**
+ * Bülten satırının götürdüğü yer. Satır metni zaten bir yeri işaret ediyor
+ * ("Günün lideri: EMPAE"), tıklanabilir olmaması tek başına bir eksiklikti:
+ * banner'ın tek eylemi "Panele git"ti ve bülten açılışta göründüğü için aktif
+ * sekme zaten panoydu — düğme hiçbir şey yapmıyordu.
+ */
+export type BriefTarget =
+  | { kind: 'index'; name: string }
+  | { kind: 'ticker'; ticker: string }
+  | { kind: 'module'; module: string; data?: Record<string, unknown> };
+
+export interface MorningBriefLine {
+  text: string;
+  target?: BriefTarget;
+}
+
 export interface MorningBrief {
   date: string;
   headline: string;
-  lines: string[];
+  lines: MorningBriefLine[];
 }
 
 function todayKey(): string {
@@ -94,7 +110,7 @@ function composeBrief(snapshot: DashboardSnapshot): MorningBrief {
     return {
       date: todayKey(),
       headline: i18n.t('briefMarketClosedReason', { reason }),
-      lines: [i18n.t('briefClosedLine')]
+      lines: [{ text: i18n.t('briefClosedLine') }]
     };
   }
 
@@ -108,22 +124,50 @@ function composeBrief(snapshot: DashboardSnapshot): MorningBrief {
     if (e.change_pct > 0) up += 1;
     else if (e.change_pct < 0) down += 1;
   }
-  const oversold = equities.filter((e) => Number.isFinite(e.rsi) && e.rsi > 0 && e.rsi < 30).length;
+  // Aşırı satım satırı tarayıcıya kendi satırlarını taşır: sayıyı okuyup
+  // "hangi 59 hisse?" diye yeniden taramak zorunda kalmazsın.
+  const oversoldRows = equities
+    .filter((e) => Number.isFinite(e.rsi) && e.rsi > 0 && e.rsi < 30)
+    .sort((a, b) => a.rsi - b.rsi);
+  const oversold = oversoldRows.length;
 
-  const lines: string[] = [];
+  const lines: MorningBriefLine[] = [];
   const bist = snapshot.market_metrics.find((m) => /100|xu100|bist/i.test(m.symbol));
-  if (bist) lines.push(`${bist.symbol}: ${bist.value} (${bist.change})`);
-  if (up + down > 0) lines.push(i18n.t('briefBreadthLine', { up, down }));
+  if (bist) {
+    lines.push({
+      text: `${bist.symbol}: ${bist.value} (${bist.change})`,
+      target: { kind: 'index', name: bist.symbol },
+    });
+  }
+  if (up + down > 0) {
+    lines.push({ text: i18n.t('briefBreadthLine', { up, down }), target: { kind: 'module', module: 'dashboard' } });
+  }
 
   const topGainer = snapshot.top_gainers?.[0];
-  if (topGainer) lines.push(i18n.t('briefLeaderLine', { ticker: topGainer.ticker, change: `${topGainer.change_pct >= 0 ? '+' : ''}${topGainer.change_pct.toFixed(2)}%` }));
-  if (oversold > 0) lines.push(i18n.t('briefOversoldLine', { n: oversold }));
+  if (topGainer) {
+    lines.push({
+      text: i18n.t('briefLeaderLine', { ticker: topGainer.ticker, change: `${topGainer.change_pct >= 0 ? '+' : ''}${topGainer.change_pct.toFixed(2)}%` }),
+      target: { kind: 'ticker', ticker: topGainer.ticker },
+    });
+  }
+  if (oversold > 0) {
+    lines.push({
+      text: i18n.t('briefOversoldLine', { n: oversold }),
+      target: { kind: 'module', module: 'screener', data: { rows: oversoldRows } },
+    });
+  }
 
   const wl = watchlistSummary(snapshot);
-  if (wl) lines.push(wl);
+  if (wl) lines.push({ text: wl, target: { kind: 'module', module: 'dashboard' } });
 
-  const kapCount = snapshot.kap_announcements?.length ?? 0;
-  if (kapCount > 0) lines.push(i18n.t('briefKapLine', { n: kapCount }));
+  const kapAnnouncements = snapshot.kap_announcements ?? [];
+  const kapCount = kapAnnouncements.length;
+  if (kapCount > 0) {
+    lines.push({
+      text: i18n.t('briefKapLine', { n: kapCount }),
+      target: { kind: 'module', module: 'kap', data: { rows: kapAnnouncements } },
+    });
+  }
 
   const headline = up + down > 0
     ? (up >= down ? i18n.t('briefReadyPositive', { up, down }) : i18n.t('briefUnderPressure', { up, down }))
@@ -174,7 +218,7 @@ export function useMorningBrief() {
           try { localStorage.setItem(BRIEF_DATE_KEY, key); } catch { /* yok say */ }
           void notify({
             title: i18n.t('briefGoodMorning'),
-            body: [composed.headline, ...composed.lines.slice(0, 3)].join('\n'),
+            body: [composed.headline, ...composed.lines.slice(0, 3).map((line) => line.text)].join('\n'),
             kind: 'info',
           });
         }

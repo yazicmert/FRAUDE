@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { runScreener } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { EquityRow } from '../../types';
@@ -27,6 +27,19 @@ export default function ScreenerView({ initialRows, initialCategory = 'ALL', onS
   const [presets, setPresets] = useState<ScreenerPreset[]>(() => loadScreenerPresets());
   const [presetName, setPresetName] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'BIST' | 'GLOBAL' | 'EMTIA' | 'KRIPTO'>(initialCategory);
+
+  // Sekme zaten açıkken yeni satırlarla gelinebilir (terminalden bir tarama,
+  // bültendeki "aşırı satım" satırı). `useState` yalnız ilk kurulumda okunduğu
+  // için sekme öne gelir ama tablo eski sonucu göstermeye devam ediyordu.
+  // Kimlik karşılaştırması dil değişiminde tabloyu sıfırlamayı önler.
+  const appliedRows = useRef(initialRows);
+  useEffect(() => {
+    if (!initialRows || initialRows === appliedRows.current) return;
+    appliedRows.current = initialRows;
+    setRows(initialRows);
+    setMessage(t('screenerResultStatus').replace('{{count}}', initialRows.length.toString()));
+    setHasSearched(true);
+  }, [initialRows, t]);
 
   useEffect(() => {
     const onUpdate = (e: Event) => setPresets((e as CustomEvent<ScreenerPreset[]>).detail);

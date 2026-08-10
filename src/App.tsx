@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { executeFql, syncData, getMarketHolidays, submitResearchJob } from './api/tauriClient';
 import { isDataRuntimeConfigured } from './api/platformClient';
 import TabBar from './features/tabs/TabBar';
@@ -35,7 +35,7 @@ import { matchesShortcut, shortcutKeys } from './lib/shortcuts';
 import { getMarketStatus, type MarketStatus } from './lib/marketHours';
 import { setFetchedHolidays } from './lib/marketHolidays';
 import { ensureNotificationPermission } from './lib/notify';
-import { useMorningBrief } from './hooks/useMorningBrief';
+import { useMorningBrief, type BriefTarget } from './hooks/useMorningBrief';
 import type { FqlResponse } from './types';
 import type { InstalledModule, ModuleManifest } from './modules/types';
 import './App.css';
@@ -284,6 +284,18 @@ export default function App() {
     });
     setActiveTabId(kind);
   }, []);
+
+  /**
+   * Günlük bülten satırını hedefine götürür. Satır ne söylüyorsa oraya:
+   * "BIST 100: …" endeks sekmesine, "Günün lideri: EMPAE" hisse sekmesine,
+   * "Aşırı satım: 59 hisse" tarayıcıya (satırlarıyla birlikte), "Bekleyen KAP
+   * bildirimi: 10" KAP akışına.
+   */
+  const openBriefTarget = useCallback((target: BriefTarget) => {
+    if (target.kind === 'index') upsertIndexTab(target.name);
+    else if (target.kind === 'ticker') upsertTickerTab(target.ticker);
+    else openModuleTab(target.module, target.data);
+  }, [upsertIndexTab, upsertTickerTab, openModuleTab]);
 
   const closeTab = useCallback((id: string) => {
     setOpenTabs((current) => {
@@ -839,26 +851,50 @@ export default function App() {
             border: '1px solid var(--border-color)', borderRadius: '8px',
           }}>
             <span style={{ fontSize: '1.2rem' }}>☀️</span>
-            {/* Gövdeye tıklamak taze verili özet popup'ını açar */}
-            <div
-              role="button"
-              tabIndex={0}
-              title={t('paletteOpenBrief')}
-              onClick={() => setBriefOpen(true)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setBriefOpen(true); }}
-              style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-            >
-              <strong style={{ fontSize: '0.85rem' }}>{morningBrief.headline}</strong>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {morningBrief.lines.join('  ·  ')}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Başlığa tıklamak taze verili özet popup'ını açar */}
+              <strong
+                role="button"
+                tabIndex={0}
+                title={t('paletteOpenBrief')}
+                onClick={() => setBriefOpen(true)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setBriefOpen(true); }}
+                style={{ fontSize: '0.85rem', cursor: 'pointer' }}
+              >
+                {morningBrief.headline}
+              </strong>
+              {/* Her satır işaret ettiği yere götürür: endeks, hisse, tarayıcı
+                  (aşırı satım satırlarıyla birlikte), KAP akışı. Hedefi olmayan
+                  satır düz metin kalır. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 4px', marginTop: '2px' }}>
+                {morningBrief.lines.map((line, idx) => (
+                  <Fragment key={line.text}>
+                    {idx > 0 && <span style={{ fontSize: '0.72rem', color: 'var(--border-color)' }}>·</span>}
+                    {line.target ? (
+                      <button
+                        type="button"
+                        className="brief-line-link"
+                        onClick={() => openBriefTarget(line.target!)}
+                        title={t('briefLineOpenHint')}
+                      >
+                        {line.text}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{line.text}</span>
+                    )}
+                  </Fragment>
+                ))}
               </div>
             </div>
+            {/* Bülten açılışta belirir ve açılışta aktif sekme zaten panodur;
+                "Panele git" o durumda hiçbir şey yapmıyordu. Düğme artık
+                bulunduğun yere göre değişir, ölü bir kontrol kalmaz. */}
             <button
               type="button"
-              onClick={() => openModuleTab('dashboard')}
+              onClick={() => (activeTabId === 'dashboard' ? setBriefOpen(true) : openModuleTab('dashboard'))}
               style={{ padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', background: 'var(--bg-panel)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
-              {t('goToDashboard')}
+              {activeTabId === 'dashboard' ? t('briefOpenSummary') : t('goToDashboard')}
             </button>
             <button
               type="button"

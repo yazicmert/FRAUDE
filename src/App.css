@@ -3154,6 +3154,27 @@ tr.clickable-row:hover {
   min-width: 0;
 }
 
+/* Bülten satırı: düz metin gibi durur, üzerine gelince bağlantı olduğunu
+   gösterir. Satırlar sarmalandığı için düğme kendi satır yüksekliğinde kalmalı
+   (padding yok, aksi halde şerit iki katına çıkar). */
+.brief-line-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px dotted transparent;
+}
+
+.brief-line-link:hover,
+.brief-line-link:focus-visible {
+  color: var(--text-main);
+  border-bottom-color: currentColor;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     --ai-width: min(270px, 28vw);

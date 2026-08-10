@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-10-bulten-seridi-tiklanabilir",
+      "date": "2026-08-10",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Günlük bülten şeridindeki \"Panele git\" çalışmıyordu; satırlar artık gideceği yeri açıyor",
+        "en": "\"Go to dashboard\" in the daily bulletin strip did nothing; its lines now open where they point"
+      },
+      "summary": {
+        "tr": "Günlük piyasa bülteni şeridindeki \"Panele git\" düğmesi hiçbir şey yapmıyordu. Sebep basit ama görünmezdi: bülten uygulama açılışında beliriyor, açılışta aktif sekme ise zaten panodur; düğme `setActiveTabId('dashboard')` çağırıyor, değer değişmediği için React hiçbir şey yapmıyordu. Yani düğme en sık karşılaşılan durumda tanım gereği ölüydü — bozulmuş değil, baştan işlevsizdi. Düğme artık bulunduğun yere göre değişiyor: panoda değilsen \"Panele git\", panodaysan \"Özeti aç\" olup taze verili günlük özet popup'ını açıyor. Ölü kontrol kalmıyor. Asıl kazanım ise şeridin kendisinde: bülten satırları düz metindi ve zaten bir yeri işaret ediyorlardı — \"BIST 100: 13.811,60\", \"Günün lideri: EMPAE +%10,00\", \"Aşırı satım (RSI<30): 59 hisse\", \"Bekleyen KAP bildirimi: 10\". Şimdi her biri tıklanabilir ve işaret ettiği yeri açıyor: BIST 100 endeks sekmesini, günün lideri o hissenin sayfasını, aşırı satım satırı teknik tarayıcıyı (üstelik o 59 hisseyi RSI'ya göre sıralı olarak yanında taşıyarak — sayıyı okuyup \"hangileri?\" diye yeniden taramak gerekmiyor), bekleyen bildirim satırı KAP akışını (bildirimlerle birlikte). Piyasa genişliği ve takip listesi satırları panoya götürür. Bu iş sırasında ilgili bir kusur daha çıktı ve düzeltildi: tarayıcı ve KAP görünümleri kendilerine verilen satırları yalnızca ilk kurulumda okuyordu. Sekme zaten açıkken yeni satırlarla gelindiğinde — terminalden bir tarama çalıştırmak da buna dahil — sekme öne geliyor ama tablo eski sonucu göstermeye devam ediyordu. Artık gelen satırlar ekrana yansıyor; tarayıcıda kimlik karşılaştırmasıyla, böylece dil değiştirmek mevcut sonucu sıfırlamıyor.",
+        "en": "The \"Go to dashboard\" button in the daily market bulletin strip did nothing. The cause was simple but invisible: the bulletin appears at app startup, and at startup the active tab is already the dashboard; the button called `setActiveTabId('dashboard')`, the value did not change, so React did nothing. The button was dead by construction in the most common case — not broken, never functional. It is now context-aware: off the dashboard it reads \"Go to dashboard\", on the dashboard it becomes \"Open summary\" and opens the freshly-computed daily brief popup. No dead control remains. The real gain is in the strip itself: the bulletin lines were plain text yet each already pointed somewhere — \"BIST 100: 13,811.60\", \"Day's leader: EMPAE +10.00%\", \"Oversold (RSI<30): 59 stocks\", \"Pending KAP disclosures: 10\". Each is now clickable and opens what it names: BIST 100 the index tab, the day's leader that stock's page, the oversold line the technical screener — carrying those 59 stocks with it, sorted by RSI, so you don't read a count and then re-run the scan to find out which — and the pending-disclosure line the KAP feed with the disclosures. Breadth and watchlist lines lead to the dashboard. A related defect surfaced and was fixed along the way: the screener and KAP views read the rows handed to them only on first mount. When the tab was already open and you arrived with new rows — which includes running a scan from the terminal — the tab came to the front but the table kept showing the previous result. Incoming rows now reach the screen; in the screener via an identity check, so switching language does not reset the current result."
+      }
+    },
+    {
       "id": "2026-08-10-86-endeks-ve-donemsel-getiriler",
       "date": "2026-08-10",
       "author": "yazicmert",
