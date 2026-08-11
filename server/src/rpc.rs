@@ -52,6 +52,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_dividends",
     "get_capital_increases",
     "get_analyst_reports",
+    "get_spk_bulletins",
     "get_ipo_calendar",
     "get_kap_for_ticker",
     "get_shareholders",
@@ -321,6 +322,10 @@ pub async fn dispatch(
                 p.force_refresh
             ))
         }
+        "get_spk_bulletins" => match api::get_spk_bulletins(s).await {
+            Ok(data) => ok_response(data),
+            Err(error) => err_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+        },
         "get_ipo_calendar" => {
             run!(args, IpoCalendarArgs, |p| api::get_ipo_calendar(s, p.force_refresh))
         }

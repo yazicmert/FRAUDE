@@ -221,6 +221,15 @@ pub async fn run_screener(state: &AppState, request: ScreenerRequest) -> Result<
     Ok(services::run_screener_query(&store, &query))
 }
 
+/// SPK haftalık bültenlerinin dizini.
+///
+/// Pano anlık görüntüsü yalnız son 10 bülteni taşıyor; Bilgi Deposu bir zaman
+/// çizgisi olduğu için o kadarı düzenleyici tarafını akışta görünmez kılıyordu.
+/// Bu uç üç yıllık dizini verir ve gün içinde diskten okur.
+pub async fn get_spk_bulletins(state: &AppState) -> Result<Vec<crate::spk::SpkBulletin>, String> {
+    Ok(crate::spk::bulletin_index(&state.http).await)
+}
+
 pub async fn list_kap_announcements(
     state: &AppState,
     filter: KapFilter,
@@ -698,8 +707,15 @@ pub async fn get_analyst_reports(
         crate::analyst_consensus::invalidate();
     }
     if force_refresh.unwrap_or(false) || stale {
-        // İlk kurulumda arşiv boş olur; o turda geriye doğru derin taranır.
-        let deep = archive.reports.is_empty();
+        // Derin tarama YALNIZ kullanıcı elle istediğinde yapılır.
+        //
+        // Eskiden arşiv boşsa örtük olarak derin taranıyordu; 12 kaynağı
+        // sonuna kadar taramak ölçümde 154 sn sürüyor ve Bilgi Deposu o süre
+        // boyunca boş ekran gösteriyordu — kullanıcı için "uygulama açılmıyor"
+        // demek. Örtük tazeleme (günün ilk açılışı ya da boş arşiv) artık sığ:
+        // kaynak başına birkaç sayfa son raporları getirmeye yeter, geçmişi
+        // "Yenile" dolduruyor.
+        let deep = force_refresh.unwrap_or(false);
         let (_, source_errors) = reports::refresh(&state.http, deep).await;
         errors = source_errors;
         archive = reports::load();

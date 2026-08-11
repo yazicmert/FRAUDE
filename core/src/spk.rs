@@ -162,6 +162,78 @@ fn archived_year_url(year: i32) -> String {
 /// ~70 bülten yayımlanır; üst sınır sonsuz döngüye karşı korumadır.
 const MAX_YEAR_PAGES: u32 = 12;
 
+/// Bülten dizininin kapsadığı yıl sayısı (içinde bulunulan yıl dahil).
+///
+/// `fetch_latest_bulletins` yalnız 10 kayıt veriyor; Bilgi Deposu bir zaman
+/// çizgisi olduğu için o kadarı birkaç haftalık pencereye denk düşüyor ve
+/// düzenleyici tarafı akışta neredeyse görünmüyordu. Üç yıl ~200 bülten eder.
+const BULLETIN_INDEX_YEARS: i32 = 3;
+
+fn bulletin_index_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".fraude_spk_bulletin_index.json"))
+}
+
+/// Diskteki bülten dizini. Gün içinde bir kez kurulur.
+#[derive(Clone, Debug, Default, Serialize, serde::Deserialize)]
+struct BulletinIndex {
+    /// Dizinin kurulduğu gün (ISO). Aynı gün ikinci kez ağa çıkılmaz.
+    #[serde(default)]
+    fetched_on: Option<String>,
+    #[serde(default)]
+    bulletins: Vec<SpkBulletin>,
+}
+
+fn load_bulletin_index() -> BulletinIndex {
+    bulletin_index_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default()
+}
+
+/// SPK haftalık bültenlerinin dizini — Bilgi Deposu'nun SPK sekmesi bunu okur.
+///
+/// Diskte günlük önbelleklenir: aynı gün içindeki ikinci çağrı ağa hiç
+/// çıkmaz, ekran anında dolar. Bir yılın düşmesi diğerlerini düşürmez ve
+/// hepsi düşerse eldeki dizin döner — sekme tek bir isteğin başarısına bağlı
+/// kalmaz.
+///
+/// Sıralama burada yapılmaz: bültenin tarihi iki ayrı biçimde geliyor (blok
+/// düzeni "08 Temmuz 2026 Çarşamba", eski tablo düzeni "2026-07-08") ve metin
+/// sırası kronolojik değil. Sıralamayı tek ölçeğe indiren yer ön yüz.
+pub async fn bulletin_index(client: &Client) -> Vec<SpkBulletin> {
+    let cached = load_bulletin_index();
+    let today = crate::kap::istanbul_today().format("%Y-%m-%d").to_string();
+    if cached.fetched_on.as_deref() == Some(today.as_str()) && !cached.bulletins.is_empty() {
+        return cached.bulletins;
+    }
+
+    let current_year = chrono::Datelike::year(&crate::kap::istanbul_today());
+    let mut fetched: Vec<SpkBulletin> = Vec::new();
+    // Yeni yıldan geriye: liste kabaca yeniden eskiye dizilir.
+    for year in ((current_year - BULLETIN_INDEX_YEARS + 1)..=current_year).rev() {
+        match fetch_year_bulletins(client, year).await {
+            Ok(rows) => fetched.extend(rows),
+            Err(error) => eprintln!("[spk] {year} bülten dizini alınamadı: {error}"),
+        }
+    }
+
+    if fetched.is_empty() {
+        return cached.bulletins;
+    }
+
+    // Aynı bülten hem güncel hem arşiv yolunda görünebiliyor; adres tekildir.
+    let mut seen = std::collections::HashSet::new();
+    fetched.retain(|bulletin| seen.insert(bulletin.url.clone()));
+
+    let index = BulletinIndex { fetched_on: Some(today), bulletins: fetched };
+    if let Some(path) = bulletin_index_path() {
+        if let Err(error) = crate::persist::write_json_atomic(&path, &index) {
+            eprintln!("[spk] bülten dizini yazılamadı: {error}");
+        }
+    }
+    index.bulletins
+}
+
 /// Bir yılın **tüm** bültenleri; geçmişe dönük tarama buradan geçer.
 ///
 /// Sayfalama gezilir ve yıl güncel dizinde boş dönerse arşiv dizinine düşülür.
@@ -1556,6 +1628,37 @@ pub async fn fetch_and_parse_latest_approvals(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bülten dizini gerçekten derin olmalı. `fetch_latest_bulletins` 10 kayıt
+    /// veriyor ve Bilgi Deposu'nun zaman çizgisinde o kadarı birkaç haftalık
+    /// pencereye denk düşüyor: düzenleyici tarafı akışta görünmez kalıyordu.
+    #[tokio::test]
+    #[ignore = "requires live SPK access"]
+    async fn live_bulletin_index_is_deeper_than_the_latest_list() {
+        let client = Client::new();
+        let latest = fetch_latest_bulletins(&client).await.unwrap_or_default();
+        let index = bulletin_index(&client).await;
+
+        let years: std::collections::BTreeSet<&str> = index
+            .iter()
+            .filter_map(|bulletin| bulletin.title.split('/').next())
+            .filter_map(|head| head.rsplit(':').next())
+            .map(str::trim)
+            .collect();
+        println!(
+            "son liste {} bülten · dizin {} bülten · yıllar {:?}",
+            latest.len(),
+            index.len(),
+            years
+        );
+
+        assert!(index.len() > latest.len(), "dizin son listeden derin değil: {}", index.len());
+        assert!(index.len() > 100, "dizin sığ kaldı: {}", index.len());
+        // Adres tekil olmalı; aynı bülten hem güncel hem arşiv yolunda geçiyor.
+        let unique: std::collections::HashSet<&str> =
+            index.iter().map(|bulletin| bulletin.url.as_str()).collect();
+        assert_eq!(unique.len(), index.len(), "dizinde yinelenen bülten var");
+    }
 
     /// 2026/49 ve 2026/48 bültenlerinin "Halka Açık Ortaklıkların Pay
     /// İhraçları" bölümleri, `pdf_extract` çıktısından birebir alındı.

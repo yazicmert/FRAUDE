@@ -262,6 +262,14 @@ pub async fn get_capital_increases(
     api::get_capital_increases(&state, ticker).await
 }
 
+/// SPK haftalık bültenlerinin dizini (Bilgi Deposu'nun SPK sekmesi).
+#[tauri::command]
+pub async fn get_spk_bulletins(
+    state: State<'_, AppState>,
+) -> Result<Vec<fraude_core::spk::SpkBulletin>, String> {
+    api::get_spk_bulletins(&state).await
+}
+
 #[tauri::command]
 pub async fn get_analyst_reports(
     state: State<'_, AppState>,

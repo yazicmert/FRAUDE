@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getAnalystReports,
-  getDashboardSnapshot,
   getNewsFeed,
+  getSpkBulletins,
   listKapAnnouncements,
 } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
@@ -96,6 +96,12 @@ interface FeedEntry {
     | { kind: 'news'; item: NewsItem };
 }
 
+/** Türkçe ay adları — SPK bülten tarihleri "08 Temmuz 2026 Çarşamba" gelir. */
+const TR_MONTHS = [
+  'ocak', 'şubat', 'mart', 'nisan', 'mayıs', 'haziran',
+  'temmuz', 'ağustos', 'eylül', 'ekim', 'kasım', 'aralık',
+];
+
 /**
  * Dört kaynağın tarih biçimi birbirini tutmuyor; hepsini tek ölçeğe indirir.
  *
@@ -126,6 +132,20 @@ export function parseFeedTimestamp(value: string): number {
   if (iso) {
     const parsed = Date.parse(`${iso[1]}T${iso[2] ?? '00:00'}${iso[2] ? '' : ':00'}Z`);
     if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  // "08 Temmuz 2026 Çarşamba" — SPK bültenlerinin güncel blok düzeni tarihi
+  // Türkçe uzun biçimde veriyor. `Date.parse` bunu NaN okuyordu: bütün SPK
+  // kayıtları ts=0 ile akışın en dibine düşüyor, zaman çizgisine hiç
+  // karışmıyordu. (Eski tablo düzeni ISO verir, o yukarıda çözülür.)
+  const turkish = raw.match(/^(\d{1,2})\s+(\p{L}+)\s+(\d{4})/u);
+  if (turkish) {
+    const month = TR_MONTHS.indexOf(turkish[2].toLocaleLowerCase('tr'));
+    if (month >= 0) {
+      const day = turkish[1].padStart(2, '0');
+      const parsed = Date.parse(`${turkish[3]}-${String(month + 1).padStart(2, '0')}-${day}T00:00:00Z`);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
   }
 
   const fallback = Date.parse(raw);
@@ -204,7 +224,15 @@ export default function KnowledgeBaseView({
   const [consensus, setConsensus] = useState<AnalystConsensus[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  /**
+   * Hangi kaynaklar hâlâ yolda. Dört kaynak tek `await`te toplanırken en yavaş
+   * olan (analiz raporları — kaynakların tazelenmesi saniyeler sürüyor) diğer
+   * üçünü de bekletiyor, ekran o süre boyunca bomboş kalıyordu. Artık her
+   * kaynak geldiği anda çiziliyor ve eksik olanlar burada işaretli duruyor.
+   */
+  const [pending, setPending] = useState<Set<EntryKind>>(new Set());
+  /** Elle tazeleme sürüyor mu — derin tarama uzun sürer, düğme bunu söyler. */
+  const [refreshing, setRefreshing] = useState(false);
 
   /** Şirket odağında kurumların hisse bazlı uçlarından gelen ek raporlar. */
   const [companyReports, setCompanyReports] = useState<AnalystReport[]>([]);
@@ -215,35 +243,61 @@ export default function KnowledgeBaseView({
 
   /**
    * Dört kaynak paralel çekilir ve **her biri kendi başına** değerlendirilir:
-   * birinin düşmesi depoyu boşaltmaz, yalnız o bölüm eksik kalır.
+   * birinin düşmesi depoyu boşaltmaz, yalnız o bölüm eksik kalır. Sonuçlar
+   * beklenmez de: her kaynak kendi `then`inde ekrana düşer, böylece hızlı
+   * gelenler (KAP yerel depodan) yavaş olanı (analiz raporları ağdan) beklemez.
    */
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [kapResult, snapshotResult, reportResult, newsResult] = await Promise.allSettled([
-      listKapAnnouncements(),
-      getDashboardSnapshot(),
-      getAnalystReports(undefined, false),
-      getNewsFeed(),
-    ]);
-    if (kapResult.status === 'fulfilled') setKap(kapResult.value);
-    if (snapshotResult.status === 'fulfilled') setSpk(snapshotResult.value.spk_bulletins ?? []);
-    if (reportResult.status === 'fulfilled') {
-      setReports(reportResult.value.reports);
-      setConsensus(reportResult.value.consensus);
-      setLastUpdated(reportResult.value.last_updated);
-      setSourceErrors(reportResult.value.errors);
-    }
-    if (newsResult.status === 'fulfilled') setNews(newsResult.value);
-    setLoading(false);
+  const load = useCallback((forceRefresh = false) => {
+    const sources: EntryKind[] = ['kap', 'spk', 'report', 'news'];
+    setPending(new Set(sources));
+    if (forceRefresh) setRefreshing(true);
+
+    const settle = (kind: EntryKind) =>
+      setPending((current) => {
+        const next = new Set(current);
+        next.delete(kind);
+        return next;
+      });
+
+    void listKapAnnouncements()
+      .then(setKap)
+      .catch(() => {})
+      .finally(() => settle('kap'));
+
+    // Pano anlık görüntüsü yerine bülten dizini: panoda yalnız son 10 bülten
+    // var ve o çağrı ayrıca deponun hiç kullanmadığı piyasa göstergelerini de
+    // ağdan topluyordu — ilk boyamayı boşuna bekletiyordu.
+    void getSpkBulletins()
+      .then(setSpk)
+      .catch(() => {})
+      .finally(() => settle('spk'));
+
+    void getNewsFeed()
+      .then(setNews)
+      .catch(() => {})
+      .finally(() => settle('news'));
+
+    void getAnalystReports(undefined, forceRefresh)
+      .then((payload) => {
+        setReports(payload.reports);
+        setConsensus(payload.consensus);
+        setLastUpdated(payload.last_updated);
+        setSourceErrors(payload.errors);
+      })
+      .catch(() => {})
+      .finally(() => {
+        settle('report');
+        setRefreshing(false);
+      });
   }, []);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
 
   // Senkron bittiğinde depo da tazelensin; KAP akışıyla aynı sözleşme.
   useEffect(() => {
-    const handler = () => void load();
+    const handler = () => load();
     window.addEventListener('fraude-sync-completed', handler);
     return () => window.removeEventListener('fraude-sync-completed', handler);
   }, [load]);
@@ -503,8 +557,15 @@ export default function KnowledgeBaseView({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <button type="button" className="small-button" onClick={() => void load()}>
-            {t('kapRefresh')}
+          {/* Elle yenileme derin tarama demektir: kaynakların arşivi sonuna
+              kadar taranır ve dakikalar sürebilir. Örtük tazeleme sığdır. */}
+          <button
+            type="button"
+            className="small-button"
+            onClick={() => load(true)}
+            disabled={refreshing}
+          >
+            {refreshing ? t('refreshing') : t('kapRefresh')}
           </button>
         </div>
       </div>
@@ -596,7 +657,13 @@ export default function KnowledgeBaseView({
         </div>
       )}
 
-      {loading && entries.length === 0 && <div className="empty-state">{t('loadingData')}</div>}
+      {/* Hangi kaynakların beklendiği tek tek söylenir: liste dolmaya
+          başlamışken "yükleniyor" demek, eksik kaynağı gizlemek olur. */}
+      {pending.size > 0 && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+          {t('loadingData')} — {[...pending].map((kind) => t(TAB_KEY[kind])).join(' · ')}
+        </div>
+      )}
 
       {tab === 'consensus' ? (
         consensusRows.length === 0 ? (
@@ -606,7 +673,9 @@ export default function KnowledgeBaseView({
         )
       ) : (
         <>
-          {!loading && filtered.length === 0 && <div className="empty-state">{t('knowledgeEmpty')}</div>}
+          {pending.size === 0 && filtered.length === 0 && (
+            <div className="empty-state">{t('knowledgeEmpty')}</div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filtered.slice(0, visible).map((entry) =>

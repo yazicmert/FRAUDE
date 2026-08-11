@@ -26,7 +26,20 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      //
+      // Derleme çıktıları da yok sayılmalı. İzleyici proje kökünün tamamını
+      // kapsıyor ve kökte 1,8 GB'lık bir `target/` var: her cargo derlemesi
+      // yüzlerce dosya olayı üretiyor, vite bunu kaynak değişikliği sanıp
+      // **sayfayı tam yeniden yüklüyordu** — çalışan uygulama kendiliğinden
+      // refresh atıyor görünüyor. `.claude/worktrees` ise kökün içinde duran
+      // ayrı bir çalışma kopyası (kendi `target/`'ıyla); orada yapılan bir
+      // derleme de aynı yeniden yüklemeyi tetikliyordu.
+      ignored: [
+        "**/src-tauri/**",
+        "**/target/**",
+        "**/dist/**",
+        "**/.claude/**",
+      ],
     },
   },
 }));

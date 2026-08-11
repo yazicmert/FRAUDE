@@ -359,6 +359,17 @@ export function getAnalystReports(ticker?: string, forceRefresh?: boolean) {
   return invoke<import('../types').AnalystReportPayload>('get_analyst_reports', { ticker, forceRefresh });
 }
 
+/**
+ * SPK haftalık bültenlerinin dizini (üç yıl).
+ *
+ * Pano anlık görüntüsü yalnız son 10 bülteni taşıyor; Bilgi Deposu'nun zaman
+ * çizgisi için o kadarı düzenleyici tarafını görünmez kılıyordu. Bu uç diziyi
+ * gün içinde diskten okur, ağa günde bir kez çıkar.
+ */
+export function getSpkBulletins() {
+  return invoke<import('../types').SpkBulletin[]>('get_spk_bulletins', {});
+}
+
 /** Uygulama içinde açılan bir analiz raporunun indirilmiş gövdesi. */
 export interface ReportDocument {
   content_type: string;
