@@ -1,7 +1,8 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { EyeIcon, EyeOffIcon, LockIcon, MailIcon, UserIcon } from '../../components/icons';
 import { signIn, signInWithGitHub, signUp, type AuthError } from './session';
+import { AUTH_CALLBACK_EVENT, type AuthCallbackDetail } from './deepLink';
 import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import './auth.css';
 
@@ -97,6 +98,22 @@ export default function LoginView() {
   const emailInvalid = emailTouched && email.trim() !== '' && !EMAIL_RE.test(email.trim());
   const mismatch = matchTouched && passwordAgain !== '' && password !== passwordAgain;
 
+  // fraude:// dönüşü başarısızsa kullanıcı bunu görmeli; eskiden uygulama
+  // öne geliyor ama ekranda hiçbir şey değişmiyordu. Başarıda AuthGate zaten
+  // devralır, burada yalnız bekleme durumu kapatılır.
+  useEffect(() => {
+    const onCallback = (event: Event) => {
+      const detail = (event as CustomEvent<AuthCallbackDetail>).detail;
+      setBusy(false);
+      if (detail?.status !== 'error') return;
+      setInfo(null);
+      if (detail.reason === 'no-callback') return setError(t('authErrOAuthNoReturn'));
+      setError(detail.message ? `${t('authErrOAuthCallback')} ${detail.message}` : t('authErrOAuthCallback'));
+    };
+    window.addEventListener(AUTH_CALLBACK_EVENT, onCallback);
+    return () => window.removeEventListener(AUTH_CALLBACK_EVENT, onCallback);
+  }, [t]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -128,7 +145,9 @@ export default function LoginView() {
     try {
       const result = await signInWithGitHub();
       if (result) setError(t(ERROR_KEYS[result]));
-      else setInfo(t('authGitHubBrowserOpened'));
+      // Geliştirme sürümünde fraude:// şemasını kurulu paket sahiplenir;
+      // dönüş bu pencereye değil /Applications'taki uygulamaya gider.
+      else setInfo(`${t('authGitHubBrowserOpened')}${import.meta.env.DEV ? ` ${t('authGitHubDevNote')}` : ''}`);
     } finally {
       setBusy(false);
     }
