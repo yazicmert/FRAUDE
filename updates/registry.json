@@ -2,6 +2,38 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-11-haber-ortak-okuyucuya-tasindi",
+      "date": "2026-08-11",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "ui",
+      "title": {
+        "tr": "Haberler de belge okuyucusunda açılıyor: sade metin ya da kaynak sayfa",
+        "en": "News now opens in the document reader: clean text or the source page"
+      },
+      "summary": {
+        "tr": "\"Fraude'da Oku\" artık haberi kendi küçük penceresinde değil, analiz raporu ve SPK bülteniyle aynı belge okuyucusunda açıyor. Böylece haber de araç çubuğu, yakınlaştırma, sağ panele sabitleme, kaynağa gitme ve ilgili pay rozetlerini kazandı; okuyucu açıkken yapay zekâ bağlamı da o habere bakıyor — daha önce yalnız KAP bildirimleri ve raporlar için çalışıyordu.\n\nOkuyucuda iki mod var. Sade metin (varsayılan): menü, reklam ve yorum bölümleri atılmış, uygulamanın kendi tipografisiyle çizilen haber gövdesi; yakınlaştırma burada punto büyütür, satır genişliğini bozmaz. Sayfa: kaynak sayfanın kendi düzeni, betikleri ve gömülü çerçeveleri sökülmüş hâlde. Sayfa modu betiksiz ve kökensiz bir kutuda açılır — reklam ve izleyici çalışmaz, sayfa uygulamanın verisine uzanamaz — ve bağlantıların adresi düşürülür, çünkü tıklanan bağlantı kaynağın çerçevelemeyi reddettiği boş bir ekrana götürürdü.\n\nSayfa modunun sınırı açık: siteler stil dosyalarını yabancı isteklere çoğu zaman vermediğinden sayfa sade görünür — metin ve görseller gelir, kaynağın düzeni gelmeyebilir. Bu yüzden sade metin çıkarılabildiğinde okuyucu onunla açılır, sayfa modu yalnız bir tık uzakta durur. Türkçe karakter bozulmasına karşı sayfanın kendi charset bildirimi atılıp UTF-8 sabitlenir; betikler çalışmadığı için tembel yüklenen görsellerin gerçek adresleri geri yazılır.",
+        "en": "\"Read in Fraude\" no longer opens a small window of its own: articles now open in the same document reader as research reports and SPK bulletins. News therefore gained the toolbar, zoom, docking to the right panel, open-at-source and related-ticker chips; while the reader is open the AI context looks at that article too — previously that only worked for KAP disclosures and reports.\n\nThe reader has two modes. Clean text (default): the article body with menus, ads and comment sections dropped, rendered in the app's own typography; zoom here grows the type instead of scaling the column. Page: the source page's own layout with scripts and embedded frames stripped. Page mode opens in a script-less, origin-less box — ads and trackers never run and the page cannot reach the app's data — and link addresses are dropped, because a clicked link would lead to a blank screen the source refuses to frame.\n\nThe limit of page mode is stated plainly: sites often refuse to serve their stylesheets to foreign requests, so the page looks plain — text and images arrive, the source layout may not. That is why the reader opens with clean text whenever it can be extracted, keeping page mode one click away. To avoid mangled Turkish characters the page's own charset declaration is dropped and UTF-8 is pinned; since scripts do not run, the real addresses of lazy-loaded images are written back."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/api/i18n.ts",
+        "src/features/guide/GuideView.tsx",
+        "src/features/kap/KapDocumentViewerModal.css",
+        "src/features/knowledge/KnowledgeBaseView.tsx",
+        "src/features/news/NewsFeedView.tsx",
+        "src/features/reports/ReportDocumentModal.tsx",
+        "src/lib/articleReader.ts"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda haberleri, analiz raporlarıyla aynı belge okuyucusunda aç.\n\n1. `src/lib/articleReader.ts` ekle: `prepareArticle(html, fallbackUrl)` indirilen haber sayfasından iki hâl üretsin — `page` (çerçeveye gömülecek tam sayfa) ve `reader` (Readability + DOMPurify ile sade metin). Sayfa hâlinde `script/iframe/object/embed` sökülmeli, `on*` öznitelikleri silinmeli, `a[href]` adresleri düşürülmeli (tıklanan bağlantı kaynağın çerçevelemeyi reddettiği boş ekrana götürür), sayfanın kendi charset bildirimi atılıp `<meta charset=\"utf-8\">` sabitlenmeli (Türkçe siteler windows-1254 bildiriyor, arka uç ise UTF-8 veriyor), tembel görsellerin `data-src`/`data-srcset` adresleri `src`/`srcset`'e yazılmalı ve `html{background:#fff;color:#111}` enjekte edilmeli — çerçeve saydam olduğu için stilini alamayan sayfa koyu zeminde görünmez olur. Readability belgeyi tükettiğinden HTML iki kez ayrıştırılmalı.\n\n2. `src/features/reports/ReportDocumentModal.tsx` içindeki `ViewerDocument`'e `sourceKind?: 'file' | 'article'` ekle ve `documentFromNews(item, kindLabel, published)` dönüştürücüsünü yaz. Belge `article` ise `getReportDocument` yerine `getNewsHtml` çağrılsın, `prepareArticle`'dan geçsin, sayfa blob olarak `sandbox=\"\"` bir çerçevede gösterilsin; sade metin çıkarılabildiyse okuyucu onunla açılsın. Araç çubuğuna Okuyucu/Sayfa geçişi ekle (PDF'lerdeki Yerel/Google Viewer geçişiyle aynı desen). Sade metin modunda yakınlaştırma `transform: scale` değil `fontSize` olmalı.\n\n3. `src/features/news/NewsFeedView.tsx` içindeki kendi okuyucu penceresini kaldır; \"Fraude'da Oku\" düğmesi yalnız `documentFromNews(...)` kaydını kursun, sayfayı okuyucu çeksin. `NewsList`'e isteğe bağlı `onSelectTicker` ekle ve Bilgi Deposu'ndan geçir.\n\n4. Artıksız kalan i18n anahtarlarını (readerUnreadable*, readerFailed*, openOriginal) sil, mod etiketlerini TR+EN ekle. Rehber'in NW ve KB girdilerini güncelle.\n\nSonunda `npx tsc --noEmit` ve `npm run build` çalıştır.",
+      "notes": "Ölçüm 2026-08-11 (bloomberght haber sayfası, 82 KB): hazırlama 0-9 ms, sade metin 1.435 bayt, kalan betik/çerçeve 0. Sayfa modunda sitenin dış stil dosyası çerçeveye yüklenmiyor — adres doğru çözülüyor (`<base>` çalışıyor, baseURI ve link adresi doğru; sunucu curl'e text/css 200 dönüyor) ama sayfa `document.styleSheets`'te yalnız satır içi stilleri görüyor; görseller (mutlak adres) sorunsuz geliyor. Bu yüzden sayfa modu sade görünür ve varsayılan sade metindir."
+    },
+    {
       "id": "2026-08-11-bilgi-deposu-analiz-raporlari-birlesti",
       "date": "2026-08-11",
       "author": "yazicmert",

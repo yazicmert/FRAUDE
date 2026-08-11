@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getReportDocument } from '../../api/tauriClient';
+import { getNewsHtml, getReportDocument } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import { openUrl } from '../../lib/openExternal';
+import { prepareArticle } from '../../lib/articleReader';
 import { recordCopilotAction, setCopilotActivePayload } from '../ai/userContext';
-import type { AnalystReport } from '../../types';
+import type { AnalystReport, NewsItem } from '../../types';
 // Görüntüleyici KAP bildirim okuyucusuyla aynı kabuğu kullanır: iki ekran
 // arasında araç çubuğu, yakınlaştırma ve sabitleme davranışı ayrışmasın.
 import '../kap/KapDocumentViewerModal.css';
@@ -27,6 +28,12 @@ export interface ViewerDocument {
   tickers?: string[];
   rating?: string | null;
   targetPrice?: number | null;
+  /**
+   * Belgenin nasıl getirileceği. Varsayılan `file`: adres bir dosyaya işaret
+   * eder, indirilip gömülür. `article` ise canlı bir haber sayfasıdır; sayfa
+   * çekilip hem kaynak düzeniyle hem sade metin olarak gösterilir.
+   */
+  sourceKind?: 'file' | 'article';
 }
 
 /** Analiz raporunu okuyucunun anladığı kayda çevirir. */
@@ -48,6 +55,26 @@ export function documentFromReport(
   };
 }
 
+/**
+ * Haberi okuyucunun anladığı kayda çevirir.
+ *
+ * Tarih çağıranda biçimlenir: haber akışı ile bilgi deposu aynı listeyi
+ * farklı yerelle basıyor, okuyucu ikinci bir biçimleme kuralı taşımasın.
+ */
+export function documentFromNews(item: NewsItem, kindLabel: string, published: string): ViewerDocument {
+  const tickers = Array.from(new Set((item.tags ?? []).map((tag) => tag.ticker).filter(Boolean)));
+  return {
+    id: item.link,
+    title: item.title,
+    source: item.source,
+    kindLabel,
+    published,
+    url: item.link,
+    tickers,
+    sourceKind: 'article',
+  };
+}
+
 interface ReportDocumentModalProps {
   document: ViewerDocument | null;
   onClose: () => void;
@@ -58,7 +85,18 @@ interface ReportDocumentModalProps {
 type DocState =
   | { status: 'loading' }
   | { status: 'ready'; objectUrl: string; contentType: string; bytes: number }
+  /** Haber sayfası: kaynak düzeni çerçevede, sade metin yanında hazır durur. */
+  | { status: 'article'; objectUrl: string; readerHtml: string | null; bytes: number }
   | { status: 'error'; message: string };
+
+/**
+ * Çizim motoru.
+ *
+ * Dosyalarda: `native` indirilen belgeyi yerel motorla çizer, `gview` bulut
+ * yedeğidir. Haberlerde: `page` kaynak sayfanın kendi düzeni, `reader` sade
+ * metin.
+ */
+type Engine = 'native' | 'gview' | 'page' | 'reader';
 
 /** base64 gövdeyi tarayıcının doğrudan gösterebileceği bir blob'a çevirir. */
 function toObjectUrl(base64: string, contentType: string): string {
@@ -91,12 +129,14 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
   const [isDockedRight, setIsDockedRight] = useState(false);
   const [doc, setDoc] = useState<DocState>({ status: 'loading' });
   /**
-   * Çizim motoru. Varsayılan yerel: belge zaten indirildiği için dışarıya
-   * istek gitmez. Gömülü motorun PDF çizmediği durumlar için KAP okuyucusundaki
-   * Google Viewer yedeği aynen burada da var.
+   * Varsayılan yerel: belge zaten indirildiği için dışarıya istek gitmez.
+   * Gömülü motorun PDF çizmediği durumlar için KAP okuyucusundaki Google
+   * Viewer yedeği aynen burada da var. Haber gelince mod, sayfadan metin
+   * çıkarılabildiyse `reader`'a çevrilir.
    */
-  const [engine, setEngine] = useState<'native' | 'gview'>('native');
+  const [engine, setEngine] = useState<Engine>('native');
 
+  const isArticle = target?.sourceKind === 'article';
   const sourceUrl = target?.pdfUrl || target?.url || '';
 
   const handleClose = () => {
@@ -120,9 +160,28 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
 
     setDoc({ status: 'loading' });
     setZoom(100);
-    setEngine('native');
+    setEngine(isArticle ? 'page' : 'native');
     void (async () => {
       try {
+        if (isArticle) {
+          // Haber sayfası arka uçtan çekilir: kaynaklar çerçevelenmeyi
+          // reddediyor, üstelik Google News bağlantıları önce çözülmeli.
+          const html = await getNewsHtml(sourceUrl);
+          if (cancelled) return;
+          const prepared = prepareArticle(html, sourceUrl);
+          const blob = new Blob([prepared.page], { type: 'text/html;charset=utf-8' });
+          created = URL.createObjectURL(blob);
+          setDoc({
+            status: 'article',
+            objectUrl: created,
+            readerHtml: prepared.reader,
+            bytes: blob.size,
+          });
+          // Sade metin çıkarılabildiyse okuma onunla başlar; sayfa düzeni
+          // menüsü, reklamı ve yorum bölümüyle bir tık uzakta durur.
+          setEngine(prepared.reader ? 'reader' : 'page');
+          return;
+        }
         const payload = await getReportDocument(sourceUrl);
         if (cancelled) return;
         created = toObjectUrl(payload.base64, payload.content_type);
@@ -141,7 +200,7 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [target, sourceUrl]);
+  }, [target, sourceUrl, isArticle]);
 
   // Belge açıkken yapay zekâ bağlamı ona bakar; KAP okuyucusuyla aynı sözleşme.
   useEffect(() => {
@@ -200,13 +259,35 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
                       maximumFractionDigits: 2,
                     })}`
                   : ''}
-                {doc.status === 'ready' ? ` · ${formatSize(doc.bytes)}` : ''}
+                {doc.status === 'ready' || doc.status === 'article' ? ` · ${formatSize(doc.bytes)}` : ''}
                 {doc.status === 'loading' ? ' · ⏳' : ''}
               </span>
             </div>
           </div>
 
           <div className="kap-pdf-actions">
+            {doc.status === 'article' && (
+              <div className="kap-pdf-mode-toggle">
+                <button
+                  type="button"
+                  className={`mode-btn ${engine === 'reader' ? 'active' : ''}`}
+                  onClick={() => setEngine('reader')}
+                  disabled={!doc.readerHtml}
+                  title={doc.readerHtml ? t('readerModeReaderHint') : t('readerModeReaderUnavailable')}
+                >
+                  📖 {t('readerModeReader')}
+                </button>
+                <button
+                  type="button"
+                  className={`mode-btn ${engine === 'page' ? 'active' : ''}`}
+                  onClick={() => setEngine('page')}
+                  title={t('readerModePageHint')}
+                >
+                  🌐 {t('readerModePage')}
+                </button>
+              </div>
+            )}
+
             {isPdf && (
               <div className="kap-pdf-mode-toggle">
                 <button
@@ -280,13 +361,15 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
           <div className="kap-pdf-iframe-container">
             {doc.status === 'loading' && (
               <div className="empty-state" style={{ padding: '40px', textAlign: 'center' }}>
-                {t('reportsViewerLoading')}
+                {isArticle ? t('readerFetchingArticle') : t('reportsViewerLoading')}
               </div>
             )}
 
             {doc.status === 'error' && (
               <div className="empty-state" style={{ padding: '40px', textAlign: 'center' }}>
-                <p style={{ color: '#f85149', marginBottom: '12px' }}>{t('reportsViewerFailed')}</p>
+                <p style={{ color: '#f85149', marginBottom: '12px' }}>
+                  {isArticle ? t('readerArticleFailed') : t('reportsViewerFailed')}
+                </p>
                 <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
                   {doc.message}
                 </p>
@@ -327,6 +410,28 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
                 )}
               </div>
             )}
+
+            {doc.status === 'article' &&
+              (engine === 'reader' && doc.readerHtml ? (
+                // Sade metin uygulamanın kendi tipografisiyle çizilir. Burada
+                // yakınlaştırma ölçek değil punto demektir; ölçeklenen bir metin
+                // sütunu satır genişliğini bozar, büyüyen punto bozmaz.
+                <article
+                  className="reader-content kap-article-reader"
+                  style={{ fontSize: `${zoom}%` }}
+                  dangerouslySetInnerHTML={{ __html: doc.readerHtml }}
+                />
+              ) : (
+                <div
+                  className="kap-pdf-iframe-wrapper"
+                  style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
+                >
+                  {/* Sayfa betiksiz ve kökensiz bir kutuda açılır: kaynağın kendi
+                      düzeni görünür, ama sayfa ne betik çalıştırabilir ne de
+                      uygulamanın verisine uzanabilir. */}
+                  <iframe src={doc.objectUrl} title={target.title} className="kap-pdf-iframe" sandbox="" />
+                </div>
+              ))}
           </div>
         </div>
       </div>

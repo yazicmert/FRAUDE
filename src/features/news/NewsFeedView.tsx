@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { openUrl } from '../../lib/openExternal';
-import { Readability } from '@mozilla/readability';
-import DOMPurify from 'dompurify';
-import { getNewsFeed, getNewsPreview, getNewsHtml } from '../../api/tauriClient';
+import { getNewsFeed, getNewsPreview } from '../../api/tauriClient';
 import type { NewsItem } from '../../types';
 import { useTranslation } from '../../api/i18n';
+// Haber, analiz raporu ve SPK bülteni aynı okuyucuda açılır: araç çubuğu,
+// yakınlaştırma, sağa sabitleme ve yapay zekâ bağlamı tek yerde yaşar.
+import ReportDocumentModal, {
+  documentFromNews,
+  type ViewerDocument,
+} from '../reports/ReportDocumentModal';
 // Modül düzeyi yardımcılar bileşen dışı çalıştığından hook yerine i18next
 // örneği kullanılır.
 import i18n from '../../i18n';
@@ -32,13 +36,19 @@ function fallbackSummary(item: NewsItem) {
   return i18n.t('newsFallbackSummary', { publisher, headline: `${headline}${/[.!?]$/.test(headline) ? '' : '.'}` });
 }
 
-export function NewsList({ news }: { news: NewsItem[] }) {
+export function NewsList({
+  news,
+  onSelectTicker,
+}: {
+  news: NewsItem[];
+  /** Okuyucudaki ilgili pay rozetine basılınca çağrılır. */
+  onSelectTicker?: (ticker: string) => void;
+}) {
   const { t } = useTranslation();
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
-  const [readerLoading, setReaderLoading] = useState<string | null>(null);
-  const [activeArticle, setActiveArticle] = useState<{ title: string; html: string; link: string } | null>(null);
+  const [openArticle, setOpenArticle] = useState<ViewerDocument | null>(null);
 
   const toggleArticle = async (item: NewsItem) => {
     if (expandedLink === item.link) {
@@ -164,38 +174,14 @@ export function NewsList({ news }: { news: NewsItem[] }) {
                     type="button"
                     className="secondary-button"
                     style={{ padding: '6px 12px', background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
-                    disabled={readerLoading === item.link}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setReaderLoading(item.link);
-                      try {
-                        const html = await getNewsHtml(item.link);
-                        const doc = new DOMParser().parseFromString(html, 'text/html');
-                        const reader = new Readability(doc).parse();
-                        if (reader && reader.content) {
-                          const cleanHtml = DOMPurify.sanitize(reader.content, { USE_PROFILES: { html: true } });
-                          setActiveArticle({ title: reader.title || item.title, html: cleanHtml, link: item.link });
-                        } else {
-                          // Tauri'nin macOS WebView'ü alert() desteklemez; hata okuyucuda gösterilir.
-                          setActiveArticle({
-                            title: t('readerUnreadableTitle'),
-                            html: t('readerUnreadableBody'),
-                            link: item.link,
-                          });
-                        }
-                      } catch (err) {
-                        const detail = err instanceof Error ? err.message : String(err);
-                        setActiveArticle({
-                          title: t('readerFailedTitle'),
-                          html: DOMPurify.sanitize(`<p>${detail || t('readerFailedFallback')}</p>`, { USE_PROFILES: { html: true } }),
-                          link: item.link,
-                        });
-                      } finally {
-                        setReaderLoading(null);
-                      }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      // Sayfayı okuyucu kendisi çeker; buton yalnızca hangi
+                      // haberin açılacağını söyler.
+                      setOpenArticle(documentFromNews(item, t('knowledgeTabNews'), formatDate(item.pub_date)));
                     }}
                   >
-                    {readerLoading === item.link ? t('loadingData') : t('readInFraude')}
+                    {t('readInFraude')}
                   </button>
                 )}
               </div>
@@ -204,45 +190,11 @@ export function NewsList({ news }: { news: NewsItem[] }) {
         </article>
       ))}
 
-      {/* Reader Modal */}
-      {activeArticle && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex',
-          justifyContent: 'center', padding: '40px 20px'
-        }} onClick={() => setActiveArticle(null)}>
-          <div style={{
-            background: '#0d1117', border: '1px solid #30363d', borderRadius: '12px',
-            width: '100%', maxWidth: '800px', maxHeight: '100%', overflow: 'auto',
-            position: 'relative', display: 'flex', flexDirection: 'column'
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{
-              padding: '16px 24px', borderBottom: '1px solid #30363d',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              position: 'sticky', top: 0, background: '#0d1117', zIndex: 10
-            }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', paddingRight: '20px' }}>{activeArticle.title}</h2>
-              <button
-                type="button"
-                onClick={() => setActiveArticle(null)}
-                style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '1.5rem', cursor: 'pointer' }}
-              >
-                &times;
-              </button>
-            </div>
-            <div
-              style={{ padding: '30px 24px', color: '#c9d1d9', fontSize: '1.05rem', lineHeight: 1.6, fontFamily: 'Georgia, serif' }}
-              className="reader-content"
-              dangerouslySetInnerHTML={{ __html: activeArticle.html }}
-            />
-            <div style={{ padding: '20px 24px', borderTop: '1px solid #30363d', textAlign: 'center' }}>
-              <button type="button" className="primary-button" onClick={() => void openUrl(activeArticle.link)}>
-                {t('openOriginal')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ReportDocumentModal
+        document={openArticle}
+        onClose={() => setOpenArticle(null)}
+        onSelectTicker={onSelectTicker}
+      />
     </div>
   );
 }
@@ -341,7 +293,14 @@ export default function NewsFeedView() {
             <span>·</span>
             <SourceBreakdown news={news} />
           </div>
-          <NewsList news={news} />
+          <NewsList
+            news={news}
+            onSelectTicker={(ticker) => {
+              setTickerInput(ticker);
+              setActiveTicker(ticker);
+              void loadNews(ticker);
+            }}
+          />
         </>
       )}
     </div>
