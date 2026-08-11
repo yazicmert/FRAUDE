@@ -229,6 +229,20 @@ const STRINGS = {
     abuseError: 'İşlem tamamlanamadı; lütfen tekrar dene ya da lisans e-postasını yanıtlayarak bize ulaş.',
     accessDenied: 'Bu sayfaya erişim yetkiniz yok.',
 
+    // Bildirim aboneliğinden çıkma (dijest mailindeki bağlantı)
+    unsubTitle: 'Bildirim e-postalarını durdur',
+    unsubSub: 'Bu adrese giden FRAUDE piyasa bildirimlerini kapatmak üzeresin:',
+    unsubConfirm: 'Bildirimleri durdur',
+    unsubDoneTitle: 'Bildirimler durduruldu',
+    unsubDone: 'Bu adrese artık piyasa bildirimi e-postası göndermeyeceğiz. Uygulama içi ve Chrome eklentisi bildirimlerin etkilenmez; istediğin zaman hesabından yeniden açabilirsin.',
+    unsubAlreadyTitle: 'Bildirimler zaten kapalı',
+    unsubAlready: 'Bu adrese piyasa bildirimi e-postası gitmiyor. Yeniden açmak istersen hesabındaki bildirim ayarlarını kullanabilirsin.',
+    unsubInvalidTitle: 'Bağlantı geçersiz',
+    unsubInvalid: 'Bu bağlantı hatalı ya da artık geçerli değil. Bildirimleri hesabındaki bildirim ayarlarından da kapatabilirsin.',
+    unsubErrorTitle: 'Bir sorun oluştu',
+    unsubError: 'İşlem tamamlanamadı; lütfen tekrar dene ya da hesabındaki bildirim ayarlarından kapat.',
+    unsubToAccount: 'Bildirim ayarlarına git',
+
     // Güncellemeler
     updTitle: 'Güncellemeler',
     updSub:
@@ -475,6 +489,19 @@ const STRINGS = {
     abuseErrorTitle: 'Something went wrong',
     abuseError: 'The operation could not be completed; please try again or reply to the license email to reach us.',
     accessDenied: 'You are not authorized to view this page.',
+
+    unsubTitle: 'Stop notification emails',
+    unsubSub: 'You are about to turn off FRAUDE market notifications sent to this address:',
+    unsubConfirm: 'Stop notifications',
+    unsubDoneTitle: 'Notifications stopped',
+    unsubDone: 'We will no longer send market notification emails to this address. Your in-app and Chrome extension notifications are unaffected; you can turn emails back on from your account at any time.',
+    unsubAlreadyTitle: 'Notifications already off',
+    unsubAlready: 'No market notification emails are being sent to this address. You can turn them back on from the notification settings in your account.',
+    unsubInvalidTitle: 'Invalid link',
+    unsubInvalid: 'This link is invalid or no longer valid. You can also turn notifications off from the notification settings in your account.',
+    unsubErrorTitle: 'Something went wrong',
+    unsubError: 'The operation could not be completed; please try again or turn them off from your account notification settings.',
+    unsubToAccount: 'Go to notification settings',
 
     updTitle: 'Updates',
     updSub:

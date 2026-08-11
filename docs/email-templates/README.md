@@ -1,5 +1,11 @@
 # FRAUDE e-posta şablonları
 
+> Mailler spam'e düşüyorsa şablon değil **teslim edilebilirlik** sorunudur:
+> DNS (SPF/DKIM/DMARC), alan adı itibarı ve gönderim akışı için
+> [`docs/email-deliverability.md`](../email-deliverability.md).
+> Şablon değiştirirken HTML'in yanında **düz metin eşini** de güncelle —
+> yalnız-HTML gövde spam puanını yükseltir.
+
 Uygulama/site marka diliyle (koyu zemin, yeşil vurgu, mono wordmark) hazırlanmış,
 e-posta istemcilerine dayanıklı (tablo düzeni + inline stil) üç şablon. Tarayıcıda
 açıp önizleyebilirsin.

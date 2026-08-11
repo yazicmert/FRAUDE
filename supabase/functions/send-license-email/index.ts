@@ -149,6 +149,30 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
 </html>`;
 }
 
+/**
+ * HTML'in düz metin eşi — yalnız-HTML gövde istenmeyen posta puanını yükseltir,
+ * metin bölümü olan mail her istemcide okunur.
+ */
+function renderEmailText(licenseKey: string, name: string | null, revokeUrl: string | null, siteUrl: string): string {
+  const greeting = name ? `Merhaba ${name},` : 'Merhaba,';
+  const lines = [
+    'FRAUDE Terminal — lisans anahtarın hazır',
+    '',
+    greeting,
+    'Lisans talebin onaylandı. Anahtarın:',
+    '',
+    licenseKey,
+    '',
+    `Uygulamayı indir: ${siteUrl}/#indir`,
+    'Kurulumdan sonra uygulamayı aç, giriş ekranında anahtarı yapıştır.',
+  ];
+  if (revokeUrl) {
+    lines.push('', `Bu talebi sen yapmadıysan anahtarı buradan iptal et: ${revokeUrl}`);
+  }
+  lines.push('', 'FRAUDE Terminal — finansal dostunuz');
+  return lines.join('\n');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'method-not-allowed' }, 405);
@@ -162,6 +186,8 @@ Deno.serve(async (req) => {
   const sender = fromMatch
     ? { name: fromMatch[1].trim() || 'FRAUDE', email: fromMatch[2].trim() }
     : { name: 'FRAUDE', email: fromRaw.trim() };
+  // İzlenen yanıt adresi: yanıtlanabilir gönderici itibar puanını yükseltir.
+  const replyTo = Deno.env.get('REPLY_TO_EMAIL');
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -216,6 +242,8 @@ Deno.serve(async (req) => {
       to: [request.name ? { email: request.email, name: request.name } : { email: request.email }],
       subject: 'FRAUDE Terminal — lisans anahtarın hazır',
       htmlContent: renderEmail(request.delivered_key, request.name, revokeUrl),
+      textContent: renderEmailText(request.delivered_key, request.name, revokeUrl, siteUrl),
+      ...(replyTo ? { replyTo: { email: replyTo, name: 'FRAUDE' } } : {}),
     }),
   });
   if (!brevoResponse.ok) {

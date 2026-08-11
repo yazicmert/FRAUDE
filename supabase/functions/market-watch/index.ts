@@ -18,7 +18,11 @@
 //            LLM_BASE_URL (ops., varsayılan DashScope compatible-mode),
 //            LLM_MODEL (ops., varsayılan qwen-plus),
 //            CRON_SECRET (pg_cron ile paylaşılan gizli; header ile doğrulanır),
-//            BREVO_API_KEY + MAIL_FROM (lisans maili ile ortak).
+//            BREVO_API_KEY + MAIL_FROM (lisans maili ile ortak),
+//            REPLY_TO_EMAIL (ops., izlenen yanıt adresi — teslim edilebilirlik),
+//            SITE_URL (ops., abonelikten çıkma bağlantısının kökü).
+// Her dijest düz metin eşiyle ve RFC 8058 tek-tık abonelikten çıkma başlığıyla
+// gider; başlığın işaret ettiği uç notify-unsubscribe fonksiyonudur.
 // Zamanlama pg_cron + pg_net ile kurulur (docs/supabase-site.sql sonundaki blok).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -31,6 +35,7 @@ const KAP_FEED = 'https://www.kap.org.tr/tr/api/disclosure/list/light';
 const NEWS_RSS = 'https://www.ntv.com.tr/ekonomi.rss';
 const SPK_PAGE = 'https://spk.gov.tr/spk-bultenleri/2026-yili-spk-bultenleri';
 const UA = 'Mozilla/5.0 (FRAUDE market-watch)';
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://fraude.intelligentverseconnection.com';
 
 interface FeedItem {
   source: 'kap' | 'news';
@@ -192,6 +197,7 @@ async function enrich(items: FeedItem[]): Promise<FeedItem[]> {
 interface Pref {
   user_id: string;
   email: string;
+  feed_token: string | null;
   kap_enabled: boolean;
   news_enabled: boolean;
   spk_enabled: boolean;
@@ -212,7 +218,32 @@ function matches(pref: Pref, item: FeedItem): boolean {
   return false;
 }
 
-function renderDigest(items: FeedItem[], spk: { no: string; url: string } | null): string {
+/**
+ * HTML'in düz metin eşi. Yalnız-HTML mail klasik bir istenmeyen posta sinyali;
+ * her gönderimde metin bölümü de gider (multipart/alternative).
+ */
+function renderDigestText(
+  items: FeedItem[],
+  spk: { no: string; url: string } | null,
+  unsubUrl: string | null,
+): string {
+  const lines = ['FRAUDE — takip bildirimlerin', 'AI önem sırasına göre dizildi.', ''];
+  if (spk) lines.push(`* Yeni SPK bülteni yayımlandı (${spk.no}) — ${spk.url}`);
+  for (const it of [...items].sort((a, b) => b.priority - a.priority)) {
+    const tk = it.tickers.length ? `${it.tickers.join(', ')} · ` : '';
+    lines.push(`* ${tk}${it.summary || it.title}${it.url ? ` — ${it.url}` : ''}`);
+  }
+  lines.push('', 'FRAUDE Terminal — finansal dostunuz');
+  lines.push('Bildirim tercihlerini hesabından değiştirebilirsin.');
+  if (unsubUrl) lines.push(`Bildirimleri durdur: ${unsubUrl}`);
+  return lines.join('\n');
+}
+
+function renderDigest(
+  items: FeedItem[],
+  spk: { no: string; url: string } | null,
+  unsubUrl: string | null,
+): string {
   const sorted = [...items].sort((a, b) => b.priority - a.priority);
   const rows = sorted
     .map((it) => {
@@ -242,20 +273,50 @@ function renderDigest(items: FeedItem[], spk: { no: string; url: string } | null
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${spkRow}${rows}</table>
       </td></tr>
       <tr><td align="center" style="padding-top:22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-        FRAUDE Terminal — finansal dostunuz<br>Bildirim tercihlerini hesabından değiştirebilirsin.</td></tr>
+        FRAUDE Terminal — finansal dostunuz<br>Bildirim tercihlerini hesabından değiştirebilirsin.${
+          unsubUrl
+            ? `<br><a href="${unsubUrl}" style="color:#8b949e;text-decoration:underline;">Bu bildirimleri durdur</a>`
+            : ''
+        }</td></tr>
     </table></td></tr></table></body></html>`;
 }
 
-async function sendMail(to: string, subject: string, html: string): Promise<void> {
+async function sendMail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+  unsubOneClick: string | null,
+): Promise<void> {
   const brevoKey = Deno.env.get('BREVO_API_KEY');
   const fromRaw = Deno.env.get('MAIL_FROM') ?? '';
   if (!brevoKey || !fromRaw) return;
   const m = fromRaw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
   const sender = m ? { name: m[1].trim() || 'FRAUDE', email: m[2].trim() } : { name: 'FRAUDE', email: fromRaw.trim() };
+  const replyTo = Deno.env.get('REPLY_TO_EMAIL');
+
+  // Tekrarlayan gönderim → Gmail/Yahoo toplu gönderici kuralları tek tıkla
+  // abonelikten çıkmayı şart koşuyor (RFC 8058). Başlık yoksa şikâyet düğmesi
+  // tek çıkış yolu kalıyor ve şikâyet oranı doğrudan itibarı düşürüyor.
+  const headers: Record<string, string> = unsubOneClick
+    ? {
+        'List-Unsubscribe': `<${unsubOneClick}>, <mailto:${sender.email}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      }
+    : {};
+
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: { 'api-key': brevoKey, 'Content-Type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ sender, to: [{ email: to }], subject, htmlContent: html }),
+    body: JSON.stringify({
+      sender,
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+      ...(replyTo ? { replyTo: { email: replyTo, name: 'FRAUDE' } } : {}),
+      ...(Object.keys(headers).length ? { headers } : {}),
+    }),
   });
   if (!res.ok) console.error('brevo-failed', res.status, await res.text().catch(() => ''));
 }
@@ -286,7 +347,7 @@ Deno.serve(async (req) => {
 
   const { data: prefs } = await supabase
     .from('notify_prefs')
-    .select('user_id, email, kap_enabled, news_enabled, spk_enabled, tickers, keywords, min_priority')
+    .select('user_id, email, feed_token, kap_enabled, news_enabled, spk_enabled, tickers, keywords, min_priority')
     .eq('enabled', true);
 
   // Chrome eklentisi (notify-feed) için kullanıcı başına teslim kayıtları.
@@ -300,7 +361,23 @@ Deno.serve(async (req) => {
       mine.length > 0
         ? `FRAUDE — ${mine.length} yeni bildirim`
         : 'FRAUDE — yeni SPK bülteni';
-    await sendMail(pref.email, subject, renderDigest(mine, spkForUser));
+    // Abonelikten çıkma: kimlik = feed_token (notify-feed ile aynı jeton).
+    // Tek tık ucu fonksiyona, insan bağlantısı sitedeki onay sayfasına gider.
+    const token = pref.feed_token;
+    const unsubOneClick = token
+      ? `${Deno.env.get('SUPABASE_URL')}/functions/v1/notify-unsubscribe?token=${encodeURIComponent(token)}`
+      : null;
+    const unsubUrl = token
+      ? `${SITE_URL}/bildirim-iptal?token=${encodeURIComponent(token)}`
+      : null;
+
+    await sendMail(
+      pref.email,
+      subject,
+      renderDigest(mine, spkForUser, unsubUrl),
+      renderDigestText(mine, spkForUser, unsubUrl),
+      unsubOneClick,
+    );
     sent++;
 
     for (const it of mine) {

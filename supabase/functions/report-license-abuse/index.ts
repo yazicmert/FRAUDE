@@ -155,6 +155,7 @@ Bildirim: ${new Date().toISOString()}`;
         subject: 'FRAUDE — lisans iptal bildirimi (talebi ben yapmadım)',
         htmlContent: `<pre style="font-family:monospace;font-size:14px;">${escapeHtml(info)}</pre>
 <p>Anahtar otomatik iptal edildi; talep admin panelde "İptal bildirimi" rozetiyle görünür.</p>`,
+        textContent: `${info}\n\nAnahtar otomatik iptal edildi; talep admin panelde "İptal bildirimi" rozetiyle görünür.`,
       }),
     });
     if (!notify.ok) console.error('admin-notify-failed', notify.status, await notify.text().catch(() => ''));
