@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getAnalystReports,
+  getKapForTicker,
   getNewsFeed,
   getSpkBulletins,
   listKapAnnouncements,
@@ -71,6 +72,14 @@ const ALL = '__all__';
 
 /** Bir seferde çizilen kayıt sayısı. */
 const PAGE_SIZE = 80;
+
+/**
+ * Depodan istenen KAP bildirim sayısı.
+ *
+ * Depo canlı akışın son kayıtlarını tutuyor (şu an 40); sınır onun üstünde
+ * tutulur ki uç derinleştiğinde burayı değiştirmek gerekmesin.
+ */
+const KAP_WINDOW = 500;
 
 /**
  * Deponun tek satırı. Dört kaynak da buna indirgenir; liste kaydın nereden
@@ -236,6 +245,8 @@ export default function KnowledgeBaseView({
 
   /** Şirket odağında kurumların hisse bazlı uçlarından gelen ek raporlar. */
   const [companyReports, setCompanyReports] = useState<AnalystReport[]>([]);
+  /** Şirket odağında o payın KAP geçmişi (depo yalnız son bildirimleri tutar). */
+  const [companyKap, setCompanyKap] = useState<KapAnnouncement[]>([]);
   const [companyLoading, setCompanyLoading] = useState(false);
 
   const [openKap, setOpenKap] = useState<KapAnnouncement | null>(null);
@@ -259,7 +270,9 @@ export default function KnowledgeBaseView({
         return next;
       });
 
-    void listKapAnnouncements()
+    // Deponun tamamı istenir: istemcinin varsayılan 25'lik penceresi akışı
+    // birkaç güne indiriyordu.
+    void listKapAnnouncements(undefined, KAP_WINDOW)
       .then(setKap)
       .catch(() => {})
       .finally(() => settle('kap'));
@@ -303,18 +316,32 @@ export default function KnowledgeBaseView({
   }, [load]);
 
   /**
-   * Şirket odaklanınca o payın rapor geçmişi kurumların hisse bazlı uçlarından
-   * istenir (İş Yatırım etiket akışı, Garanti arama, Ziraat hisse kategorisi).
-   * Arşiv sınırlı derinlikte tarandığı için depodaki kayıtlar bir şirketin tam
-   * geçmişini vermez.
+   * Şirket odaklanınca o şirketin geçmişi **kendi uçlarından** istenir; depo
+   * yalnız son kayıtları tuttuğu için süzmek yetmez.
+   *
+   * - Raporlar: kurumların hisse bazlı uçları (İş Yatırım etiket akışı,
+   *   Garanti arama, Ziraat hisse kategorisi) — arşiv sınırlı derinlikte
+   *   tarandığı için depodaki kayıtlar bir şirketin tam geçmişini vermez.
+   * - KAP: depo canlı akışın yalnız son ~40 bildirimini tutuyor, yani odakta
+   *   o şirkete ait bildirim çoğu zaman hiç bulunmuyordu. `getKapForTicker`
+   *   şirketin kendi bildirim geçmişini çekiyor.
+   *
+   * İkisi bağımsız çekilir: biri düşerse diğeri yine gelir.
    */
   useEffect(() => {
     if (!company) {
       setCompanyReports([]);
+      setCompanyKap([]);
       return;
     }
     let cancelled = false;
+    let outstanding = 2;
     setCompanyLoading(true);
+    const settle = () => {
+      outstanding -= 1;
+      if (!cancelled && outstanding === 0) setCompanyLoading(false);
+    };
+
     getAnalystReports(company, false)
       .then((payload) => {
         if (cancelled) return;
@@ -332,9 +359,17 @@ export default function KnowledgeBaseView({
         // Uç düşerse depodaki kayıtlarla devam edilir; ekran boşalmaz.
         if (!cancelled) setCompanyReports([]);
       })
-      .finally(() => {
-        if (!cancelled) setCompanyLoading(false);
-      });
+      .finally(settle);
+
+    getKapForTicker(company)
+      .then((items) => {
+        if (!cancelled) setCompanyKap(items);
+      })
+      .catch(() => {
+        if (!cancelled) setCompanyKap([]);
+      })
+      .finally(settle);
+
     return () => {
       cancelled = true;
     };
@@ -350,10 +385,17 @@ export default function KnowledgeBaseView({
     return [...reports, ...companyReports.filter((report) => !seen.has(report.id))];
   }, [reports, companyReports]);
 
+  /** Depodaki KAP bildirimleri ile odaktaki şirketin geçmişi birleşir. */
+  const allKap = useMemo(() => {
+    if (companyKap.length === 0) return kap;
+    const seen = new Set(kap.map((item) => item.id));
+    return [...kap, ...companyKap.filter((item) => !seen.has(item.id))];
+  }, [kap, companyKap]);
+
   const entries = useMemo<FeedEntry[]>(() => {
     const all: FeedEntry[] = [];
 
-    for (const item of kap) {
+    for (const item of allKap) {
       all.push({
         key: `kap-${item.id}`,
         kind: 'kap',
@@ -409,7 +451,7 @@ export default function KnowledgeBaseView({
     }
 
     return all.sort((a, b) => b.ts - a.ts);
-  }, [kap, spk, allReports, news]);
+  }, [allKap, spk, allReports, news]);
 
   /** Şirket odağı uygulanmış akış; sekme ve arama bunun üzerine biner. */
   const scoped = useMemo(() => {

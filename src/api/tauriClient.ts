@@ -247,9 +247,17 @@ export function runScreener(query: string, market = 'BIST100') {
   });
 }
 
-export function listKapAnnouncements(ticker?: string) {
+/**
+ * Depodaki KAP bildirimleri.
+ *
+ * `limit` verilmezse 25 kayıt döner — akış şeritleri için yeterli. Bilgi
+ * Deposu bir zaman çizgisi olduğu için deponun tamamını ister: sabit 25'lik
+ * pencere hem akışı birkaç güne indiriyor hem de şirket odağında o şirkete ait
+ * bildirimin listede hiç bulunmamasına yol açıyordu.
+ */
+export function listKapAnnouncements(ticker?: string, limit = 25) {
   return invoke<KapAnnouncement[]>('list_kap_announcements', {
-    filter: { ticker, limit: 25 },
+    filter: { ticker, limit },
   });
 }
 
