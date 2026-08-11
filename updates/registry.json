@@ -2,6 +2,36 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-11-analiz-raporlari-derin-tarama-kilitlenmesi",
+      "date": "2026-08-11",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Analiz raporları: derin taramayı kilitleyen hata giderildi, 3 kurum eklendi",
+        "en": "Research reports: deep-scan deadlock fixed, 3 brokers added"
+      },
+      "summary": {
+        "tr": "Analiz raporları arşivinin derin taraması hiç bitmiyordu. Ölçümde tarama tek bir kaynakta 20 saat boyunca %100 CPU'da asılı kaldı: arşiv sığ kalıyor, hata listesi boş görünüyor, ekranda dönen çark hiç durmuyordu.\n\nSebep HTML temizleyicisindeydi. `<style>` ve `<script>` gövdelerini silen işlev, metnin küçük harfli bir KOPYASINDA arama yapıp bulduğu konumu ÖZGÜN metne uyguluyordu. Türkçe 'İ' harfi küçültülünce iki kod noktasına açılıyor ve kopyanın bayt uzunluğu değişiyor; konum kayınca yanlış yer siliniyor, etiket yerinde kalıyor ve döngü aynı etiketi sonsuza dek yeniden buluyordu. Ahlatcı sayfalarının CSS'i `.ar-entry` kuralı taşıdığı için bloklara `<style>` parçaları düşüyor ve tuzak tam orada patlıyordu. Arama artık kopya çıkarmadan, yerinde ASCII karşılaştırmasıyla yapılıyor — aynı tarama 155 saniyede bitiyor.\n\nİkinci sessiz kusur: sayfalamada geçici bir hata (zaman aşımı, 5xx) 'arşivin sonu' sayılıyor ve kalan sayfalar sessizce atılıyordu; Integral'in 60 sayfalık arşivi bu yüzden 40. sayfada kesiliyordu. Artık yalnız 404 son sayılıyor, geçici hata yeniden deneniyor. Ayrıca hiçbir kaynak turu sonsuza kadar tutamasın diye kaynak başına 240 saniyelik ölüm süresi kondu.\n\nKaynaklara Ahlatcı Yatırım, PhillipCapital ve Integral Yatırım eklendi (toplam 11 kurum); sayfa bütçeleri her kurumun ölçülen gerçek arşiv derinliğine göre yeniden ayarlandı. Sonuç: 9.508 rapor, 2.771'i bir hisseye bağlı.",
+        "en": "Deep scanning of the research-report archive never finished: in measurement it hung at 100% CPU on a single source for 20 hours, leaving a shallow archive, an empty error list and a spinner that never stopped.\n\nThe cause was in the HTML cleaner. The function that strips `<style>` and `<script>` bodies searched a LOWERCASED COPY of the text and applied the offsets it found to the ORIGINAL. Turkish 'İ' expands to two code points when lowercased, so the copy has a different byte length; the shifted offset deleted the wrong region, the tag survived, and the loop found it again forever. Ahlatcı's page CSS contains an `.ar-entry` rule, so `<style>` fragments land inside report blocks and the trap fired there. The search is now done in place with ASCII-insensitive comparison — the same scan finishes in 155 seconds.\n\nA second silent defect: a transient paging failure (timeout, 5xx) was treated as 'end of archive' and the remaining pages were dropped without a word, cutting Integral's 60-page archive at page 40. Only 404 now means the end; transient errors are retried. A 240-second per-source deadline was added so no source can hold the whole round hostage.\n\nAhlatcı Yatırım, PhillipCapital and Integral Yatırım were added (11 brokers total) and every page budget was re-tuned to each broker's measured archive depth. Result: 9,508 reports, 2,771 linked to a ticker."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/research_reports.rs",
+        "src/api/i18n.ts",
+        "src/components/NavMenu.tsx",
+        "src/components/icons.tsx",
+        "src/features/guide/GuideView.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda analiz raporları taramasını onar ve genişlet.\n\n1. `core/src/research_reports.rs` içindeki `strip_elements` işlevini düzelt. İşlev `out.to_lowercase()` ile kopya çıkarıp konumu kopyadan alıyor ama silmeyi özgün metinde yapıyor. Türkçe 'İ' küçültülünce iki kod noktasına açıldığı için kopyanın bayt uzunluğu farklı oluyor; etiket silinmiyor ve döngü kilitleniyor. Kopya çıkarmayı bırak, etiket adları ASCII olduğu için `eq_ignore_ascii_case` ile yerinde ara ve metni tek geçişte kopyala. Gerileme testi yaz: 'İ' içeren metinde `<style>`/`<SCRIPT>` gövdesi silinmeli ve kapanışı olmayan etiket döngüyü kilitlememeli.\n\n2. Sayfalamada geçici hatayı arşiv sonundan ayır. `fetch_pages` her hatayı 'son' sayıyor; yalnız 404 (ve hız sınırı) son sayılmalı, kalanı `crate::retry::with_retry` ile bir kez yeniden denenmeli. Ayrıca `fetch_source`'u `tokio::time::timeout` ile saran bir `fetch_source_bounded` ekle (240 sn) ve `refresh` onu kullansın.\n\n3. `refresh` içinde kaynakları `futures::stream::iter(SOURCES.iter().map(|spec| async move { … }))` biçiminde kurma: derleyici kapanışın bağımsız değişkenini yüksek dereceli ömür sanıyor ve hata yalnız Tauri komut sınırında 'implementation of FnOnce is not general enough' diye patlıyor. Görevleri düz bir `for` döngüsünde Vec'e topla.\n\n4. Üç kaynak ekle: Ahlatcı Yatırım (`/arastirma/sirket-raporlari`, `ar-entry` blokları, `?sayfa=N`, 33 sayfa, 34'te 404), PhillipCapital (`/arastirma`, `product-item` kartları, `?page=N`) ve Integral Yatırım (`/sirket-sektor-raporlari`, `card-title` blokları, sayfa yolun sonunda `/p2`, 60 sayfa — 61 son sayfayı TEKRAR verir, 404 vermez). Integral'de tarih görünen metinde değil `<small title=\"07.08.2026\">` özniteliğindedir. Her kaynağın konağını `document_host_is_allowed` beyaz listesine ekle, yoksa rapor listede görünür ama açılmaz.\n\n5. Sayfa bütçelerini kurum başına ölç ve `SourceSpec.deep_pages` alanına yaz; tek bir sınır büyük arşivi kırpıyor, küçüğüne boşuna istek attırıyor. Sonunda canlı derin tarama testini çalıştır ve kurum başına rapor sayısı, hisseye bağlı kayıt sayısı ve süreyi raporla.",
+      "notes": "Ölçüm 2026-08-11: 11 kurum, 9.508 rapor, 2.771'i hisseye bağlı, tam tarama 155 sn. Kilitlenmenin kanıtı, önceki turdan kalan ve 20 saattir %100 CPU'da dönen dört test süreciydi; yığın örneklemesi (`sample`) suçluyu strip_elements'te gösterdi."
+    },
+    {
       "id": "2026-08-10-bilgi-deposu-kap-spk-analiz-haber-tek-akis",
       "date": "2026-08-10",
       "author": "yazicmert",

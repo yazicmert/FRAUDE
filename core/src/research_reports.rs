@@ -23,11 +23,22 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 /// Arşivde tutulan en fazla rapor (en yeni önde). Eski kayıtlar kırpılır.
-const MAX_REPORTS: usize = 4_000;
+///
+/// Sınır kaynakların gerçek derinliğine göre konur: yalnız Garanti'nin arşivi
+/// 6.880 kayıt, Ziraat'inki 892. Eski 4.000'lik sınır tek bir kaynağı bile
+/// almaya yetmiyordu.
+const MAX_REPORTS: usize = 12_000;
 
-/// Bir kaynaktan tek turda taranacak en fazla sayfa. WordPress akışları
-/// `?paged=N` ile geriye gider; ilk kurulumda arşiv derinliği buradan gelir.
-const MAX_PAGES: usize = 12;
+/// Günlük tazelemede taranan sayfa sayısı. Yeni raporlar akışın başına
+/// eklendiği için birkaç sayfa yeter; derinlik `deep_pages` ile ayrı gelir.
+const INCREMENTAL_PAGES: usize = 3;
+
+/// Derin taramada aynı anda kaç sayfa çekileceği.
+///
+/// Garanti'nin arşivi 380 sayfa; teker teker çekmek ilk kurulumu dakikalara
+/// yayıyor. Sayfalar birbirinden bağımsız olduğu için bir arada istenir —
+/// eşzamanlılık kaynağı yormayacak kadar düşük tutulur.
+const PAGE_CONCURRENCY: usize = 4;
 
 const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
@@ -145,6 +156,33 @@ pub enum Feed {
     /// Gedik Yatırım: sayfa Next.js ile sunulur ve bütün rapor listesi
     /// `__NEXT_DATA__` betiğinde gömülü gelir; ayrı bir uç çağrılmaz.
     GedikNextData { url: &'static str },
+    /// Ahlatcı Yatırım: `ar-entry` bloklu zaman çizelgesi, `?sayfa=N` ile
+    /// geriye gider. Dosya adı BIST kodunu taşır.
+    AhlatciTimeline { url: &'static str, base: &'static str },
+    /// PhillipCapital: `product-item` kartları; başlık, tarih ve kategori ayrı
+    /// alanlarda durur, `?page=N` ile geriye gider. Dosya adı GUID olduğu için
+    /// kod yalnız başlıktan çıkar.
+    PhillipCards { url: &'static str, base: &'static str },
+    /// Integral Yatırım: `card-title` blokları; sayfa numarası sorgu dizesinde
+    /// değil **yolun sonunda** durur (`…/sirket-sektor-raporlari/p2`).
+    IntegralCards { url: &'static str, base: &'static str },
+}
+
+impl Feed {
+    /// Kaynağın ana adresi — beyaz liste denetiminde kullanılır.
+    pub fn primary_url(&self) -> &'static str {
+        match *self {
+            Feed::WordPress { base, .. } => base,
+            Feed::VakifListing { url, .. }
+            | Feed::HalkListing { url }
+            | Feed::GarantiJson { url }
+            | Feed::ZiraatClockwork { url, .. }
+            | Feed::GedikNextData { url }
+            | Feed::AhlatciTimeline { url, .. }
+            | Feed::PhillipCards { url, .. }
+            | Feed::IntegralCards { url, .. } => url,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -153,6 +191,13 @@ pub struct SourceSpec {
     pub broker: &'static str,
     pub scope: BrokerScope,
     pub feed: Feed,
+    /// Derin taramada bu kaynaktan kaç sayfa istenecek.
+    ///
+    /// Kaynakların sayfa boyu ve arşiv derinliği çok farklı: Garanti sayfada
+    /// 18 kayıt verip 380 sayfa geriye gidiyor, Ziraat sayfada 50 kayıtla 18
+    /// sayfada bitiyor, Gedik'te sayfalama hiç yok. Tek bir sınır ya büyük
+    /// arşivi kırpar ya küçük kaynağa boşuna istek attırır.
+    pub deep_pages: usize,
 }
 
 /// Taranan kaynaklar. Yeni kurum eklemek buraya bir satır eklemektir; biçimi
@@ -166,18 +211,27 @@ pub const SOURCES: &[SourceSpec] = &[
             base: "https://arastirma.isyatirim.com.tr",
             tag_feeds: true,
         },
+        // Akış günde birkaç bülten yayımlıyor: 40 sayfa yalnız beş haftalık
+        // geçmiş veriyordu. Ölçümde 600. sayfa hâlâ dolu (2024'e iniyor) ama
+        // kayıtların yalnız dörtte biri bir hisseye bağlanıyor; arşiv payını
+        // tek kaynak yutmasın diye üç aya denk gelen sınırda durulur.
+        deep_pages: 120,
     },
     SourceSpec {
         id: "marbas",
         broker: "Marbaş Menkul",
         scope: BrokerScope::Domestic,
         feed: Feed::WordPress { base: "https://marbas.com.tr", tag_feeds: false },
+        // Sayfa başına 5 kayıt (diğer WordPress akışlarında 10); aynı geçmişe
+        // ulaşmak iki katı sayfa ister.
+        deep_pages: 60,
     },
     SourceSpec {
         id: "a1capital",
         broker: "A1 Capital",
         scope: BrokerScope::Domestic,
         feed: Feed::WordPress { base: "https://a1capital.com.tr", tag_feeds: false },
+        deep_pages: 60,
     },
     SourceSpec {
         id: "vakif",
@@ -187,6 +241,7 @@ pub const SOURCES: &[SourceSpec] = &[
             url: "https://www.vkyanaliz.com/arastirma-raporlari/sirket-raporlari",
             base: "https://www.vkyanaliz.com",
         },
+        deep_pages: 1,
     },
     SourceSpec {
         id: "halk",
@@ -195,12 +250,14 @@ pub const SOURCES: &[SourceSpec] = &[
         feed: Feed::HalkListing {
             url: "https://analizim.halkyatirim.com.tr/Analysis/AnalystRecommendations",
         },
+        deep_pages: 1,
     },
     SourceSpec {
         id: "garanti",
         broker: "Garanti BBVA Yatırım",
         scope: BrokerScope::Domestic,
         feed: Feed::GarantiJson { url: "https://www.garantibbvayatirim.com.tr/api/researchreports" },
+        deep_pages: 260,
     },
     SourceSpec {
         id: "ziraat",
@@ -211,6 +268,9 @@ pub const SOURCES: &[SourceSpec] = &[
             base: "https://www.ziraatyatirim.com.tr",
             category_id: "39326",
         },
+        // Arşiv 21. sayfada bitiyor (2019 başı); 20'de durmak son kayıtları
+        // dışarıda bırakıyordu.
+        deep_pages: 22,
     },
     SourceSpec {
         id: "gedik",
@@ -219,6 +279,44 @@ pub const SOURCES: &[SourceSpec] = &[
         feed: Feed::GedikNextData {
             url: "https://gedik.com/analiz/rapor-ve-analizler/yurt-ici-piyasa-rapor-ve-analizleri",
         },
+        deep_pages: 1,
+    },
+    SourceSpec {
+        id: "ahlatci",
+        broker: "Ahlatcı Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::AhlatciTimeline {
+            url: "https://www.ahlatciyatirim.com.tr/arastirma/sirket-raporlari",
+            base: "https://www.ahlatciyatirim.com.tr",
+        },
+        // Arşiv 33 sayfa, 34 temiz 404 veriyor; sınır sonu geçecek kadar açık
+        // tutulur, tarama 404'te kendiliğinden durur.
+        deep_pages: 34,
+    },
+    SourceSpec {
+        id: "phillip",
+        broker: "PhillipCapital",
+        scope: BrokerScope::Domestic,
+        feed: Feed::PhillipCards {
+            url: "https://www.phillipcapital.com.tr/arastirma",
+            base: "https://www.phillipcapital.com.tr",
+        },
+        // Arşiv 412 sayfa ama büyük kısmı günlük bülten; şirket ve sektör
+        // raporlarını yakalayacak kadar geriye gidilir.
+        deep_pages: 60,
+    },
+    SourceSpec {
+        id: "integral",
+        broker: "Integral Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::IntegralCards {
+            url: "https://integralyatirim.com.tr/sirket-sektor-raporlari",
+            base: "https://integralyatirim.com.tr",
+        },
+        // Arşiv tam 60 sayfa (2023'e kadar) ve sonrası **404 vermiyor**: p61
+        // son sayfayı yeniden döndürüyor. Bütçe fazla tutulursa boş sayfa
+        // beklentisiyle biten tarama aynı kayıtları tekrar tekrar çeker.
+        deep_pages: 60,
     },
 ];
 
@@ -248,23 +346,56 @@ fn strip_html(input: &str) -> String {
 }
 
 /// Verilen etiketleri gövdeleriyle birlikte siler.
+///
+/// Arama büyük/küçük harfe duyarsızdır ama **küçültülmüş bir kopya üzerinden
+/// değil**: `to_lowercase()` Türkçe 'İ' harfini iki kod noktasına açıyor ve
+/// kopyanın bayt uzunluğu özgün metinden farklı oluyor. Kopyada bulunan konum
+/// özgün metne uygulanınca yanlış yer siliniyor, etiket yerinde kalıyor ve
+/// döngü aynı etiketi yeniden buluyordu — her turda bütün metnin yeni bir
+/// küçük harfli kopyası çıkarıldığı için maliyet ikinci dereceye çıkıyor.
+/// Ahlatcı sayfalarında derin tarama tam bu yüzden saatlerce %100 CPU'da
+/// asılı kaldı: sayfanın CSS'i `.ar-entry` kuralı taşıdığı için bloklara
+/// `<style>` parçaları düşüyor, Türkçe başlıklar da 'İ' ile dolu.
+///
+/// Etiket adları ASCII olduğundan yerinde ASCII karşılaştırması hem doğru hem
+/// uzunluk korur; metin tek geçişte kopyalanır.
 fn strip_elements(input: &str, names: &[&str]) -> String {
-    let mut out = input.to_string();
-    for name in names {
-        let open = format!("<{name}");
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    loop {
+        // Hangi etiket önce geliyorsa o silinir; adlar tek tek taranırsa
+        // iç içe geçmiş `<script>` / `<style>` sırası bozulur.
+        let Some((at, name)) = names
+            .iter()
+            .filter_map(|name| find_ascii_ci(rest, &format!("<{name}")).map(|at| (at, *name)))
+            .min_by_key(|(at, _)| *at)
+        else {
+            break;
+        };
+        out.push_str(&rest[..at]);
+        let after = &rest[at..];
         let close = format!("</{name}>");
-        loop {
-            let lower = out.to_lowercase();
-            let Some(start) = lower.find(&open) else { break };
+        rest = match find_ascii_ci(after, &close) {
+            Some(offset) => &after[offset + close.len()..],
             // Kapanışı olmayan etiket bozuk gövde demektir; sonuna kadar atılır.
-            let end = match lower[start..].find(&close) {
-                Some(offset) => start + offset + close.len(),
-                None => out.len(),
-            };
-            out.replace_range(start..end, "");
-        }
+            None => "",
+        };
     }
+    out.push_str(rest);
     out
+}
+
+/// `needle`'ın ilk konumu; karşılaştırma ASCII büyük/küçük harfe duyarsızdır.
+///
+/// Küçük harfli kopya çıkarmak yerine yerinde karşılaştırılır — kopya Türkçe
+/// harflerde bayt uzunluğunu değiştirir ve dönen konum özgün metinde başka
+/// bir yeri gösterir.
+fn find_ascii_ci(haystack: &str, needle: &str) -> Option<usize> {
+    let (hay, ned) = (haystack.as_bytes(), needle.as_bytes());
+    if ned.is_empty() || hay.len() < ned.len() {
+        return None;
+    }
+    (0..=hay.len() - ned.len()).find(|&at| hay[at..at + ned.len()].eq_ignore_ascii_case(ned))
 }
 
 /// Kaynaklarda geçen HTML varlıklarını çözer. Halk Yatırım gövdeyi öznitelik
@@ -493,21 +624,46 @@ pub fn extract_tickers(title: &str, tags: &[String], universe: &HashSet<String>)
     }
 
     if found.is_empty() {
-        // Kod yoksa unvandan eşle: "Şirket Bilgi Notu | Akfen Yenilenebilir Enerji"
-        let name = title
-            .rsplit(['|', ':'])
-            .next()
-            .unwrap_or(title)
-            .split('-')
-            .next()
-            .unwrap_or(title)
-            .trim();
-        if let Some(code) = crate::company_match::bist_ticker_for(name) {
+        if let Some(code) = ticker_from_company_name(title) {
             push(code.to_string(), &mut found);
         }
     }
 
     found
+}
+
+/// Başlıkta geçen şirket unvanından BIST kodunu bulur.
+///
+/// Kurumlar unvanı başlığın herhangi bir yerine, arkasına da rapor türünü
+/// ekleyerek yazıyor: "Şirket Bilgi Notu | Akfen Yenilenebilir Enerji",
+/// "Ereğli Demir Çelik 2Ç26 Bilanço Analizi". Unvanın tamamını tek parça
+/// sanmak bu yüzden çoğu kaydı kaçırıyordu; başlık bölümlere ayrılıp her
+/// bölümün **giderek kısalan** kelime dizileri deneniyor.
+///
+/// Uzun dizi önce denenir: "Türk Hava Yolları" ile "Türk Traktör" ilk
+/// kelimeyi paylaşır, kısa eşleşme kazansaydı yanlış şirkete bağlanırdı.
+fn ticker_from_company_name(title: &str) -> Option<&'static str> {
+    for segment in title.split(['|', ':', '–', '—', '(', ')', '/']) {
+        let words: Vec<&str> = segment.split_whitespace().collect();
+        if words.is_empty() {
+            continue;
+        }
+        for start in 0..words.len() {
+            // Unvan en çok altı kelimedir; daha uzun dizi denemek hem boşuna
+            // hem de rapor türünü unvana katma riski taşır.
+            let longest = words.len().min(start + 6);
+            for end in (start + 1..=longest).rev() {
+                let candidate = words[start..end].join(" ");
+                if candidate.chars().filter(|c| c.is_alphabetic()).count() < 5 {
+                    continue;
+                }
+                if let Some(code) = crate::company_match::bist_ticker_for(&candidate) {
+                    return Some(code);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Başlık ve etiketlerden rapor türünü belirler.
@@ -554,7 +710,8 @@ fn parse_turkish_date(raw: &str) -> Option<(String, i64)> {
     }
     let day: u32 = parts[0].parse().ok()?;
     let month = MONTHS.iter().position(|name| parts[1].starts_with(name))? as u32 + 1;
-    let year: i32 = parts[2].parse().ok()?;
+    // Yıl noktalama ile bitişik gelebiliyor ("… 2026, Pazartesi").
+    let year: i32 = parts[2].trim_matches(|c: char| !c.is_ascii_digit()).parse().ok()?;
     iso_from_ymd(year, month, day)
 }
 
@@ -1053,6 +1210,276 @@ fn uppercase_tokens(url: &str) -> Vec<String> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Ahlatcı Yatırım
+// ---------------------------------------------------------------------------
+
+/// Ahlatcı Yatırım'ın zaman çizelgesini ayrıştırır.
+///
+/// Her kayıt `class="ar-entry"` bağlantısıdır: adres doğrudan PDF'e gider,
+/// başlık `ar-etitle`, tarih ise "10 Ağustos 2026, Pazartesi" biçiminde bir
+/// alt satırda durur. Başlıktaki "Yeni" rozeti ayrı bir `span` olduğu için
+/// metne karışmadan atılır.
+pub fn parse_ahlatci_timeline(
+    html: &str,
+    base: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Vec<AnalystReport> {
+    let mut reports = Vec::new();
+    for block in html.split("ar-entry").skip(1) {
+        let Some(href) = attr_value(block, "href") else { continue };
+        if !href.to_lowercase().contains(".pdf") {
+            continue;
+        }
+        // Başlık rozetten önce biter; `<span class="ar-badge">Yeni</span>`
+        // metne karışırsa her yeni rapor "… Yeni" diye görünür.
+        let title = tag_text_until_child(block, "ar-etitle").unwrap_or_default();
+        let title = decode_entities(title.trim());
+        if title.is_empty() {
+            continue;
+        }
+        let Some((published, published_ts)) = ahlatci_date(block) else { continue };
+
+        let pdf_url = if href.starts_with("http") {
+            encode_url_path(&decode_entities(&href))
+        } else {
+            encode_url_path(&format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                decode_entities(&href).trim_start_matches('/')
+            ))
+        };
+
+        // Eski kayıtlarda kod dosya adında küçük harfle geçiyor
+        // ("asels-20192-ceyrek-bilanco-analizi"); başlık yetmezse oradan alınır.
+        let mut tickers = extract_tickers(&title, &[], universe);
+        if tickers.is_empty() {
+            tickers = tickers_from_slug(&pdf_url, universe);
+        }
+
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &[], &tickers),
+            tickers,
+            rating: extract_rating(&title),
+            target_price: extract_target_price(&title),
+            title,
+            summary: None,
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    reports
+}
+
+/// Bloktaki ilk "GG Ay YYYY" tarihini çözer.
+fn ahlatci_date(block: &str) -> Option<(String, i64)> {
+    let text = strip_html(block);
+    let mut words = text.split_whitespace();
+    // Metin gün/ay/yıl üçlüsünü içerir; ilk çözülebilen üçlü alınır.
+    let mut window: Vec<&str> = Vec::new();
+    for word in words.by_ref() {
+        window.push(word);
+        if window.len() > 3 {
+            window.remove(0);
+        }
+        if window.len() == 3 {
+            if let Some(parsed) = parse_turkish_date(&window.join(" ")) {
+                return Some(parsed);
+            }
+        }
+    }
+    None
+}
+
+/// Dosya adının başındaki küçük harfli kodu ("asels-2019…") çıkarır.
+fn tickers_from_slug(url: &str, universe: &HashSet<String>) -> Vec<String> {
+    let name = url.rsplit('/').next().unwrap_or(url);
+    let first = name.split(|c: char| !c.is_ascii_alphanumeric()).next().unwrap_or_default();
+    let candidate = first.to_uppercase();
+    if (3..=6).contains(&candidate.len())
+        && candidate.chars().all(|c| c.is_ascii_uppercase())
+        && universe.contains(&candidate)
+    {
+        return vec![candidate];
+    }
+    Vec::new()
+}
+
+/// `class="X"` taşıyan etiketin metnini **ilk iç etikete kadar** verir.
+fn tag_text_until_child<'a>(block: &'a str, class: &str) -> Option<&'a str> {
+    let start = block.find(class)?;
+    let rest = &block[start..];
+    let open = rest.find('>')? + 1;
+    let end = rest[open..].find('<')?;
+    Some(&rest[open..open + end])
+}
+
+// ---------------------------------------------------------------------------
+// PhillipCapital
+// ---------------------------------------------------------------------------
+
+/// PhillipCapital'in rapor kartlarını ayrıştırır.
+///
+/// Her kart `class="product-item"` bloğudur; tarih, kategori ve başlık ayrı
+/// alanlarda temiz durur. Dosya adı GUID olduğu için hisse kodu yalnız
+/// başlıktan çıkar ("EREGL Company Update Report").
+pub fn parse_phillip_cards(
+    html: &str,
+    base: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Vec<AnalystReport> {
+    let mut reports = Vec::new();
+    for block in html.split("class=\"product-item\"").skip(1) {
+        let Some(href) = attr_value(block, "href") else { continue };
+        if !href.to_lowercase().contains(".pdf") {
+            continue;
+        }
+        let title = decode_entities(&tag_text_until_child(block, "product-title").unwrap_or_default());
+        let title = title.trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+        let date_raw = decode_entities(&tag_text_until_child(block, "product-date").unwrap_or_default());
+        let Some((published, published_ts)) = parse_turkish_date(date_raw.trim()) else { continue };
+        let category = decode_entities(&tag_text_until_child(block, "product-category").unwrap_or_default());
+
+        let pdf_url = if href.starts_with("http") {
+            encode_url_path(&decode_entities(&href))
+        } else {
+            encode_url_path(&format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                decode_entities(&href).trim_start_matches('/')
+            ))
+        };
+
+        let tags = vec![category.trim().to_string()];
+        let tickers = extract_tickers(&title, &tags, universe);
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &tags, &tickers),
+            tickers,
+            rating: extract_rating(&title),
+            target_price: extract_target_price(&title),
+            title,
+            summary: None,
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    reports
+}
+
+// ---------------------------------------------------------------------------
+// Integral Yatırım
+// ---------------------------------------------------------------------------
+
+/// Integral Yatırım'ın şirket/sektör rapor kartlarını ayrıştırır.
+///
+/// Kart `class="card-title"` ile başlar; başlık `<h3>`, tarih `<small>`
+/// etiketinin **`title` özniteliğinde** ("07.08.2026") — görünen metin
+/// "4 Gün Önce" gibi göreli olduğu için işe yaramaz. Özet `card-text`
+/// paragrafındadır, PDF ise kartın altındaki ilk `.pdf` bağlantısıdır.
+///
+/// Kurum başlık biçimini yıllar içinde değiştirmiş: yeni kayıtlar kodu önde
+/// taşıyor ("EKDMR 2Ç26 Bilanço Analizi"), 2023 kayıtları yalnız unvan
+/// yazıyor ("Ford Otosan 2Ç23 Bilanço Analizi"). İkincisi unvan eşleşmesiyle,
+/// o da tutmazsa dosya adındaki kodla ("ŞirketAnalizi_FROTO.pdf") bağlanır.
+pub fn parse_integral_cards(
+    html: &str,
+    base: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Vec<AnalystReport> {
+    let mut reports = Vec::new();
+    for block in html.split("class=\"card-title").skip(1) {
+        // Kartın başlık bağlantısı belgeye değil ayrıntı sayfasına gider;
+        // aranan, bloktaki ilk PDF bağlantısıdır. Sayfada rapor kartına
+        // benzeyen ama belgesi olmayan bloklar da var, onlar listeye girmez.
+        let Some(pdf_href) = block
+            .match_indices("href=\"")
+            .filter_map(|(at, needle)| {
+                let rest = &block[at + needle.len()..];
+                rest.find('"').map(|end| &rest[..end])
+            })
+            .find(|href| href.to_lowercase().contains(".pdf"))
+            .map(decode_entities)
+        else {
+            continue;
+        };
+        let Some(title) = text_between(block, "<h3", "</h3>") else { continue };
+        let title = decode_entities(&title).split_whitespace().collect::<Vec<_>>().join(" ");
+        if title.is_empty() {
+            continue;
+        }
+        // Görünen metin göreli ("4 Gün Önce"); gerçek tarih öznitelikte.
+        let Some(date_raw) = attribute_after(block, "<small", "title=\"") else { continue };
+        let Some((published, published_ts)) = parse_dotted_date(date_raw.trim()) else { continue };
+
+        let pdf_url = if pdf_href.starts_with("http") {
+            encode_url_path(&pdf_href)
+        } else {
+            encode_url_path(&format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                pdf_href.trim_start_matches('/')
+            ))
+        };
+
+        let summary = tag_text_until_child(block, "card-text")
+            .map(|text| decode_entities(text).split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|text| !text.is_empty());
+
+        let mut tickers = extract_tickers(&title, &[], universe);
+        if tickers.is_empty() {
+            tickers = extract_tickers("", &uppercase_tokens(&pdf_url), universe);
+        }
+
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &[], &tickers),
+            tickers,
+            rating: extract_rating(&title),
+            target_price: extract_target_price(&title),
+            title,
+            summary,
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    reports
+}
+
+/// `open` etiketinin açılışından `close` etiketine kadarki ham metin.
+fn text_between<'a>(block: &'a str, open: &str, close: &str) -> Option<&'a str> {
+    let start = block.find(open)?;
+    let rest = &block[start..];
+    let from = rest.find('>')? + 1;
+    let end = rest.find(close)?;
+    (end > from).then(|| &rest[from..end])
+}
+
 /// `classify` üzerine tek kural ekler: türü belirlenemeyen ama tek bir hisseye
 /// bağlanan rapor şirket raporudur. Kod taşıyan başlıklar ("KCHOL 2Ç26")
 /// sözlükteki kalıpların hiçbirine uymuyor ama şirket raporu olduğu kesin.
@@ -1177,6 +1604,125 @@ async fn get_text(client: &reqwest::Client, url: &str) -> Result<String, String>
         .map_err(|error| format!("{url}: {error}"))
 }
 
+/// Sayfaları sınırlı eşzamanlılıkla çeker ve **sırayla** birleştirir.
+///
+/// Sayfa başına tek tek istek atmak Garanti'nin 260 sayfalık arşivinde ilk
+/// kurulumu dakikalara yayıyordu. Sayfalar birbirinden bağımsız olduğu için
+/// bir arada istenir; sonuçlar yine sayfa sırasına göre eklenir ki arşivde
+/// tarih sırası bozulmasın.
+///
+/// Boş sayfa **son** demektir: o sayfadan sonrası atılır. Hata veren sayfa da
+/// sonu işaretler ama önce yeniden denenir (bkz. `page_failure_is_final`).
+/// Bir sayfa için toplam deneme sayısı (ilki dahil).
+const PAGE_ATTEMPTS: u32 = 2;
+
+/// Sayfa hatası gerçekten "arşivin sonu" mu, yoksa geçici arıza mı?
+///
+/// Sayfalama tükendiğinde kaynaklar 404 veriyor; bu beklenen sondur ve
+/// yeniden denemek boşuna istek demektir. Zaman aşımı ya da 5xx ise geçicidir
+/// ama eskiden ikisi aynı sepetteydi: **tek bir yavaş sayfa arşivi sessizce
+/// kırpıyordu**. Ölçümde Integral'in 60 sayfalık arşivi 40. sayfada kesildi,
+/// hata listesi boş kaldı, ekran dolu göründü. Eksik veriyi hatasız
+/// göstermek, hata göstermekten daha kötüdür.
+fn page_failure_is_final(error: &str) -> bool {
+    error.contains("404") || crate::retry::is_rate_limited(error)
+}
+
+async fn fetch_pages<F, Fut>(pages: usize, fetch: F) -> Vec<AnalystReport>
+where
+    F: Fn(usize) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<AnalystReport>, String>>,
+{
+    use futures::stream::StreamExt;
+
+    let fetch = &fetch;
+    let results: Vec<Result<Vec<AnalystReport>, String>> =
+        futures::stream::iter((1..=pages.max(1)).map(|page| async move {
+            crate::retry::with_retry(PAGE_ATTEMPTS, page_failure_is_final, || fetch(page)).await
+        }))
+        .buffered(PAGE_CONCURRENCY)
+        .collect()
+        .await;
+
+    let mut all = Vec::new();
+    for result in results {
+        match result {
+            Ok(reports) if !reports.is_empty() => all.extend(reports),
+            _ => break,
+        }
+    }
+    all
+}
+
+/// Garanti'nin JSON ucundan tek sayfa çeker.
+///
+/// `keyword` boşken bütün akış, doluyken o kelimeyi (hisse kodu) içeren
+/// raporlar gelir — hisse bazlı geçmiş bu ikinci biçimden alınır.
+async fn garanti_page(
+    client: &reqwest::Client,
+    url: &str,
+    page: usize,
+    keyword: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Result<Vec<AnalystReport>, String> {
+    // Sayfa numarası sorgu dizesinde değil `Page` başlığında taşınır;
+    // başlıksız çağrı hep ilk sayfayı verir.
+    let full = format!("{url}?keyword={keyword}&dateRange=");
+    let response = client
+        .get(&full)
+        .timeout(std::time::Duration::from_secs(20))
+        .header("User-Agent", BROWSER_UA)
+        .header("Page", page.to_string())
+        .header("X-Bone-Language", "TR")
+        .send()
+        .await
+        .map_err(|error| format!("{full}: {error}"))?;
+    let body = crate::retry::check_status(response, &full)?
+        .text()
+        .await
+        .map_err(|error| format!("{full}: {error}"))?;
+    parse_garanti_json(&body, spec, universe)
+}
+
+/// Ziraat'in Clockwork ucundan tek sayfa çeker.
+async fn ziraat_page(
+    client: &reqwest::Client,
+    url: &str,
+    base: &str,
+    category_id: &str,
+    page: usize,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Result<Vec<AnalystReport>, String> {
+    // Uç tarih aralığı ister; arşivin tamamı istendiği için pencere sitenin en
+    // eski kaydından bugüne kadar açık tutulur. Biçim katı: "31.12.2026" 400
+    // döndürür, ISO çalışır.
+    let end = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let body = serde_json::json!({
+        "BeginDate": "2015-01-01",
+        "EndDate": end,
+        "Page": page,
+        "PageSize": 50,
+        "SearchTerm": serde_json::Value::Null,
+        "CategoryId": category_id,
+        "CheckSubCategory": "True",
+    });
+    let response = client
+        .post(url)
+        .timeout(std::time::Duration::from_secs(20))
+        .header("User-Agent", BROWSER_UA)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("{url}: {error}"))?;
+    let html = crate::retry::check_status(response, url)?
+        .text()
+        .await
+        .map_err(|error| format!("{url}: {error}"))?;
+    Ok(parse_ziraat_listing(&html, base, spec, universe))
+}
+
 /// Tek bir kaynağı tarar.
 pub async fn fetch_source(
     client: &reqwest::Client,
@@ -1184,25 +1730,19 @@ pub async fn fetch_source(
     universe: &HashSet<String>,
     pages: usize,
 ) -> Result<Vec<AnalystReport>, String> {
+    let pages = pages.max(1).min(spec.deep_pages.max(1));
     match spec.feed {
-        Feed::WordPress { base, .. } => {
-            let mut all = Vec::new();
-            for page in 1..=pages.max(1).min(MAX_PAGES) {
-                let url = if page == 1 {
-                    format!("{base}/feed/")
-                } else {
-                    format!("{base}/feed/?paged={page}")
-                };
-                // Sayfa tükendiğinde WordPress 404 verir; bu hata değil, sondur.
-                let Ok(body) = get_text(client, &url).await else { break };
-                let reports = parse_wordpress_feed(body.as_bytes(), spec, universe)?;
-                if reports.is_empty() {
-                    break;
-                }
-                all.extend(reports);
-            }
-            Ok(all)
-        }
+        Feed::WordPress { base, .. } => Ok(fetch_pages(pages, |page| async move {
+            let url = if page == 1 {
+                format!("{base}/feed/")
+            } else {
+                format!("{base}/feed/?paged={page}")
+            };
+            // Sayfa tükendiğinde WordPress 404 verir; bu hata değil, sondur.
+            let body = get_text(client, &url).await?;
+            parse_wordpress_feed(body.as_bytes(), spec, universe)
+        })
+        .await),
         Feed::VakifListing { url, base } => {
             let html = get_text(client, url).await?;
             Ok(parse_vakif_listing(&html, base, spec, universe))
@@ -1212,100 +1752,157 @@ pub async fn fetch_source(
             Ok(parse_halk_listing(&html, spec, universe))
         }
         Feed::GarantiJson { url } => {
-            let mut all = Vec::new();
-            for page in 1..=pages.max(1).min(MAX_PAGES) {
-                // Sayfa numarası sorgu dizesinde değil `Page` başlığında taşınır;
-                // başlıksız çağrı hep ilk sayfayı verir.
-                let response = client
-                    .get(url)
-                    .timeout(std::time::Duration::from_secs(20))
-                    .header("User-Agent", BROWSER_UA)
-                    .header("Page", page.to_string())
-                    .header("X-Bone-Language", "TR")
-                    .send()
-                    .await
-                    .map_err(|error| format!("{url}: {error}"))?;
-                let body = crate::retry::check_status(response, url)?
-                    .text()
-                    .await
-                    .map_err(|error| format!("{url}: {error}"))?;
-                let reports = parse_garanti_json(&body, spec, universe)?;
-                if reports.is_empty() {
-                    break;
-                }
-                all.extend(reports);
-            }
-            Ok(all)
+            Ok(fetch_pages(pages, |page| garanti_page(client, url, page, "", spec, universe)).await)
         }
-        Feed::ZiraatClockwork { url, base, category_id } => {
-            const PAGE_SIZE: usize = 50;
-            // Uç tarih aralığı ister; arşivin tamamı istendiği için pencere
-            // sitenin en eski kaydından bugüne kadar açık tutulur.
-            let end = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            let mut all = Vec::new();
-            for page in 1..=pages.max(1).min(MAX_PAGES) {
-                let body = serde_json::json!({
-                    "BeginDate": "2015-01-01",
-                    "EndDate": end,
-                    "Page": page,
-                    "PageSize": PAGE_SIZE,
-                    "SearchTerm": serde_json::Value::Null,
-                    "CategoryId": category_id,
-                    "CheckSubCategory": "True",
-                });
-                let response = client
-                    .post(url)
-                    .timeout(std::time::Duration::from_secs(20))
-                    .header("User-Agent", BROWSER_UA)
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(|error| format!("{url}: {error}"))?;
-                let html = crate::retry::check_status(response, url)?
-                    .text()
-                    .await
-                    .map_err(|error| format!("{url}: {error}"))?;
-                let reports = parse_ziraat_listing(&html, base, spec, universe);
-                if reports.is_empty() {
-                    break;
-                }
-                all.extend(reports);
-            }
-            Ok(all)
-        }
+        Feed::ZiraatClockwork { url, base, category_id } => Ok(fetch_pages(pages, |page| {
+            ziraat_page(client, url, base, category_id, page, spec, universe)
+        })
+        .await),
         Feed::GedikNextData { url } => {
             // Sayfalama yok: bütün liste ilk yanıtın gömülü verisinde gelir.
             let html = get_text(client, url).await?;
             parse_gedik_next_data(&html, spec, universe)
         }
+        Feed::AhlatciTimeline { url, base } => Ok(fetch_pages(pages, |page| async move {
+            let full = if page == 1 { url.to_string() } else { format!("{url}?sayfa={page}") };
+            let html = get_text(client, &full).await?;
+            Ok(parse_ahlatci_timeline(&html, base, spec, universe))
+        })
+        .await),
+        Feed::PhillipCards { url, base } => Ok(fetch_pages(pages, |page| async move {
+            let full = if page == 1 { url.to_string() } else { format!("{url}?page={page}") };
+            let html = get_text(client, &full).await?;
+            Ok(parse_phillip_cards(&html, base, spec, universe))
+        })
+        .await),
+        Feed::IntegralCards { url, base } => Ok(fetch_pages(pages, |page| async move {
+            let full = if page == 1 { url.to_string() } else { format!("{url}/p{page}") };
+            let html = get_text(client, &full).await?;
+            Ok(parse_integral_cards(&html, base, spec, universe))
+        })
+        .await),
     }
 }
 
-/// Tek bir hissenin raporlarını kurumun etiket akışından çeker.
+/// Tek bir hissenin raporlarını kurumların hisse bazlı uçlarından çeker.
 ///
 /// Arşiv taraması geriye doğru sınırlıdır; kullanıcı bir hisseyi açtığında o
-/// hissenin geçmişi tam istenir. WordPress `/tag/{kod}/feed/` bunu tek istekte
-/// verir, arşivin tamamını taramaya gerek kalmaz.
+/// hissenin geçmişi tam istenir. Üç kurum bunu doğrudan veriyor ve üçü üç ayrı
+/// biçimde: İş Yatırım `/tag/{kod}/feed/` etiket akışıyla, Garanti arama
+/// kelimesiyle (`?keyword=EREGL`), Ziraat ise hissenin kendi alt kategorisiyle.
+/// Diğer kurumlarda böyle bir uç yok; onların kayıtları arşivden gelir.
 pub async fn fetch_ticker_feed(
     client: &reqwest::Client,
     ticker: &str,
     universe: &HashSet<String>,
 ) -> Vec<AnalystReport> {
-    let code = ticker.trim().trim_end_matches(".IS").to_lowercase();
+    let upper = ticker.trim().to_uppercase();
+    let code = upper.trim_end_matches(".IS");
     if code.is_empty() {
         return Vec::new();
     }
     let mut out = Vec::new();
+
     for spec in SOURCES {
-        let Feed::WordPress { base, tag_feeds: true } = spec.feed else { continue };
-        let url = format!("{base}/tag/{code}/feed/");
-        let Ok(body) = get_text(client, &url).await else { continue };
-        if let Ok(reports) = parse_wordpress_feed(body.as_bytes(), spec, universe) {
-            out.extend(reports);
+        match spec.feed {
+            Feed::WordPress { base, tag_feeds: true } => {
+                let url = format!("{base}/tag/{}/feed/", code.to_lowercase());
+                let Ok(body) = get_text(client, &url).await else { continue };
+                if let Ok(reports) = parse_wordpress_feed(body.as_bytes(), spec, universe) {
+                    out.extend(reports);
+                }
+            }
+            Feed::GarantiJson { url } => {
+                // Arama bütün arşivi tarar; birkaç sayfa o hissenin geçmişini
+                // fazlasıyla veriyor (ölçümde THYAO 59 rapor, 2023'e kadar).
+                out.extend(
+                    fetch_pages(6, |page| garanti_page(client, url, page, code, spec, universe))
+                        .await,
+                );
+            }
+            Feed::ZiraatClockwork { url, base, .. } => {
+                let Some(category) = ziraat_category_for(code) else { continue };
+                out.extend(
+                    fetch_pages(3, |page| {
+                        ziraat_page(client, url, base, category, page, spec, universe)
+                    })
+                    .await,
+                );
+            }
+            _ => {}
         }
     }
+
+    // Arama kelimesi başlıkta geçtiği halde başka bir şirketin raporu olabilir
+    // ("EREGL etkisiyle ISDMR…"); yalnız kayda gerçekten bağlananlar kalır.
+    out.retain(|report| report.tickers.iter().any(|found| found == code));
     out.sort_by(|a, b| b.published_ts.cmp(&a.published_ts));
+    out.dedup_by(|a, b| a.id == b.id);
     out
+}
+
+/// Ziraat'in hisse bazlı alt kategori kimliği.
+///
+/// Kurum şirket raporlarını hisse başına ayrı bir klasörde tutuyor ve
+/// kimlikler sabit. Listede olmayan pay için `None` döner — uydurma kimlikle
+/// istek atılmaz.
+fn ziraat_category_for(code: &str) -> Option<&'static str> {
+    // Kimlikler kurumun kendi seçim listesinden birebir alındı; sıra sayısal
+    // değil ve tahmin edilemez (HALKB 42141, THYAO 42149).
+    const CATEGORIES: &[(&str, &str)] = &[
+        ("AKBNK", "41127"), ("AKCNS", "42118"), ("ARCLK", "42119"), ("ASELS", "42120"),
+        ("AYGAZ", "42121"), ("BIMAS", "42122"), ("CIMSA", "42123"), ("EKGYO", "42124"),
+        ("ENKAI", "42125"), ("EREGL", "42127"), ("FROTO", "42128"), ("GARAN", "42129"),
+        ("ISDMR", "42130"), ("ISCTR", "42131"), ("ISGYO", "42132"), ("KRDMD", "42133"),
+        ("KCHOL", "42134"), ("KORDS", "42135"), ("KOZAL", "42136"), ("MAVI", "42137"),
+        ("OTKAR", "42138"), ("PETKM", "42139"), ("SAHOL", "42140"), ("HALKB", "42141"),
+        ("TSKB", "42142"), ("TAVHL", "42143"), ("TKFEN", "42144"), ("TOASO", "42145"),
+        ("TRGYO", "42146"), ("TCELL", "42147"), ("TUPRS", "42148"), ("THYAO", "42149"),
+        ("TTKOM", "42150"), ("TURSG", "42151"), ("ULKER", "42152"), ("VAKBN", "42153"),
+        ("YKBNK", "42154"),
+    ];
+    CATEGORIES.iter().find(|(ticker, _)| *ticker == code).map(|(_, id)| *id)
+}
+
+/// Bir kaynağın tek turda harcayabileceği en uzun süre.
+///
+/// Sayfa isteklerinin kendi zaman aşımı var ama sayfa sayısıyla çarpılıyor;
+/// üstelik takılan bir sayfa isteği hiç geri dönmeyebiliyor. Ölçümde derin
+/// tarama tek bir kaynakta **20 saat** asılı kaldı: arşiv sığ kaldı, hata
+/// listesi boş göründü, kullanıcı tarafında çark hiç durmadı. Sessiz sonsuz
+/// bekleme, açık bir hatadan çok daha kötüdür.
+const SOURCE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(240);
+
+/// `fetch_source`'u ölüm süresiyle sarar: süre dolarsa kaynak hata verir.
+///
+/// Tarama bir kaynağın iyi niyetine bırakılmaz — bir kurumun yanıt vermemesi
+/// yalnız o kurumu listeden düşürür.
+pub async fn fetch_source_bounded(
+    client: &reqwest::Client,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+    pages: usize,
+) -> Result<Vec<AnalystReport>, String> {
+    match tokio::time::timeout(SOURCE_DEADLINE, fetch_source(client, spec, universe, pages)).await {
+        Ok(result) => result,
+        Err(_) => Err(format!("{} sn içinde tamamlanmadı", SOURCE_DEADLINE.as_secs())),
+    }
+}
+
+/// Kaynağı tarar ve sonucu **hangi kaynağa ait olduğuyla** birlikte döndürür.
+///
+/// Bu ayrı bir `async fn`, kapanış içinde yazılmış bir `async` blok değil:
+/// `|spec| async move { … }` biçimi derleyicinin yüksek dereceli ömür
+/// çıkarımına takılıyor ve hata ancak Tauri komut sınırında ("implementation
+/// of `FnOnce` is not general enough") ortaya çıkıyor — çekirdek tek başına
+/// sorunsuz derlendiği için fark edilmesi zor.
+async fn fetch_labelled(
+    client: &reqwest::Client,
+    spec: &'static SourceSpec,
+    universe: &HashSet<String>,
+    pages: usize,
+) -> (&'static SourceSpec, Result<Vec<AnalystReport>, String>) {
+    (spec, fetch_source_bounded(client, spec, universe, pages).await)
 }
 
 /// Bütün kaynakları tarar, arşive işler ve arşivi diske yazar.
@@ -1319,13 +1916,36 @@ pub async fn refresh(client: &reqwest::Client, deep: bool) -> (usize, Vec<String
         .map(|(code, _)| code)
         .collect();
 
-    let pages = if deep { MAX_PAGES } else { 2 };
+    // Derin turda sayfa sınırını kaynağın kendi bütçesi belirler; buradaki
+    // sayı yalnız üst sınırdır ve `fetch_source` onu `deep_pages` ile keser.
+    let pages = if deep { usize::MAX } else { INCREMENTAL_PAGES };
     let mut archive = load();
     let mut added = 0;
     let mut errors = Vec::new();
 
+    // Kaynaklar birbirinden bağımsız; sırayla beklemek derin turu kaynakların
+    // toplamı kadar uzatıyordu. Eşzamanlılık düşük tutulur: her kaynak kendi
+    // içinde de sayfaları paralel çekiyor, çarpım hızla büyür.
+    use futures::stream::StreamExt;
+    const SOURCE_CONCURRENCY: usize = 3;
+
+    let universe = &universe;
+    // Görevler kapanışsız kurulur: `SOURCES.iter().map(|spec| …)` biçiminde
+    // derleyici kapanışın bağımsız değişkenini yüksek dereceli ömür sanıyor ve
+    // hata ancak Tauri komut sınırında patlıyor. Düz döngüde kapanış yok,
+    // dolayısıyla `FnOnce` sınırı da yok.
+    let mut tasks = Vec::with_capacity(SOURCES.len());
     for spec in SOURCES {
-        match fetch_source(client, spec, &universe, pages).await {
+        tasks.push(fetch_labelled(client, spec, universe, pages));
+    }
+    let results: Vec<(&'static SourceSpec, Result<Vec<AnalystReport>, String>)> =
+        futures::stream::iter(tasks)
+            .buffer_unordered(SOURCE_CONCURRENCY)
+            .collect()
+            .await;
+
+    for (spec, result) in results {
+        match result {
             Ok(reports) => added += merge(&mut archive, reports),
             Err(error) => errors.push(format!("{}: {error}", spec.broker)),
         }
@@ -1360,6 +1980,8 @@ const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
 ///
 /// Adres kullanıcı arayüzünden geldiği için serbest bırakılamaz: bilgi
 /// deposunun gösterdiği kayıtların konakları neyse yalnız onlar çekilir.
+/// **Yeni kaynak eklerken buraya da eklenmeli**, yoksa raporlar listede
+/// görünür ama açılmaz.
 fn document_host_is_allowed(url: &str) -> bool {
     const ALLOWED_SUFFIXES: &[&str] = &[
         "isyatirim.com.tr",
@@ -1370,6 +1992,9 @@ fn document_host_is_allowed(url: &str) -> bool {
         "garantibbvayatirim.com.tr",
         "ziraatyatirim.com.tr",
         "gedik.com",
+        "ahlatciyatirim.com.tr",
+        "phillipcapital.com.tr",
+        "integralyatirim.com.tr",
         // Bilgi deposu SPK haftalık bültenlerini de aynı okuyucuda açar.
         "spk.gov.tr",
     ];
@@ -1528,6 +2153,23 @@ mod tests {
         assert!(extract_tickers("Şirket Raporu: Filanca-ZZZZZ.IS", &[], &universe()).is_empty());
         // Kodsuz başlık: strateji raporu hisseye bağlanmaz.
         assert!(extract_tickers("Haftalık Strateji Bülteni", &[], &universe()).is_empty());
+    }
+
+    /// Unvan başlığın ortasında ve arkasında rapor türüyle geçebiliyor;
+    /// eskiden yalnız son bölüm denendiği için bu kayıtlar bağlanmıyordu.
+    #[test]
+    fn tickers_match_company_name_anywhere_in_title() {
+        let universe: HashSet<String> = ["THYAO", "EREGL", "AKFYE"].into_iter().map(String::from).collect();
+        assert_eq!(
+            extract_tickers("Ereğli Demir ve Çelik Fabrikaları 2Ç26 Bilanço Analizi", &[], &universe),
+            vec!["EREGL".to_string()]
+        );
+        assert_eq!(
+            extract_tickers("Şirket Bilgi Notu | Akfen Yenilenebilir Enerji", &[], &universe),
+            vec!["AKFYE".to_string()]
+        );
+        // Evrende olmayan şirket üretilmez.
+        assert!(extract_tickers("Filanca Holding 2Ç26 Değerlendirme", &[], &universe).is_empty());
     }
 
     #[test]
@@ -1690,6 +2332,117 @@ mod tests {
         assert_eq!(reports[1].kind, ReportKind::Bulletin);
     }
 
+    /// Ahlatcı: başlıktaki "Yeni" rozeti metne karışmamalı, tarih virgülle
+    /// bitse de çözülmeli, eski kayıtlarda kod dosya adından gelmeli.
+    #[test]
+    fn ahlatci_timeline_maps_to_reports() {
+        let html = r#"<div class="ar-timeline">
+            <a class="ar-entry ar-new" href="/arastirma/sirket-raporlari/35473/EREGL_26Q2_Finansal_Degerlendirme.pdf">
+              <div class="ar-edate"><span class="ar-day">10</span><span class="ar-mon">Ağu</span></div>
+              <div class="ar-emeta"><div class="ar-etitle">EREGL 26Q2 Finansal Değerlendirme <span class="ar-badge">Yeni</span></div>
+              <div class="ar-esub"><span> 10 Ağustos 2026, Pazartesi </span></div></div></a>
+            <a class="ar-entry" href="/arastirma/sirket-raporlari/30743/asels-20192-ceyrek-bilanco-analizi_4239_2019-08-22.pdf">
+              <div class="ar-emeta"><div class="ar-etitle">2019/2 Çeyrek Bilanço Analizi</div>
+              <div class="ar-esub"><span> 22 Ağustos 2019, Perşembe </span></div></div></a>
+        </div>"#;
+        let spec = source("ahlatci");
+        let universe: HashSet<String> = ["EREGL", "ASELS"].into_iter().map(String::from).collect();
+        let reports = parse_ahlatci_timeline(html, "https://www.ahlatciyatirim.com.tr", &spec, &universe);
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[0].title, "EREGL 26Q2 Finansal Değerlendirme", "rozet metne karıştı");
+        assert_eq!(reports[0].published, "2026-08-10");
+        assert_eq!(reports[0].tickers, vec!["EREGL".to_string()]);
+        // Başlıkta kod yok; dosya adının başındaki küçük harfli koddan gelir.
+        assert_eq!(reports[1].tickers, vec!["ASELS".to_string()]);
+        assert_eq!(reports[1].published, "2019-08-22");
+    }
+
+    /// PhillipCapital: tarih, kategori ve başlık ayrı alanlarda.
+    #[test]
+    fn phillip_cards_map_to_reports() {
+        let html = r#"<article class="product-item">
+            <div class="product-meta"><span class="product-date">07 A&#x11F;ustos 2026</span>
+            <span class="product-category">&#x15E;irket Raporlar&#x131;</span></div>
+            <h3 class="product-title">EREGL Company Update Report </h3>
+            <a href="/Files/CompanyReport/0654e001-8778-4847-a71a-404d3b309822.pdf" class="btn-review">Raporu İncele</a>
+          </article>"#;
+        let spec = source("phillip");
+        let universe: HashSet<String> = ["EREGL"].into_iter().map(String::from).collect();
+        let reports = parse_phillip_cards(html, "https://www.phillipcapital.com.tr", &spec, &universe);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].title, "EREGL Company Update Report");
+        assert_eq!(reports[0].published, "2026-08-07");
+        assert_eq!(reports[0].tickers, vec!["EREGL".to_string()]);
+        assert_eq!(reports[0].kind, ReportKind::Company);
+    }
+
+    /// Türkçe 'İ' küçültülünce iki kod noktasına açılır ve metnin bayt
+    /// uzunluğu değişir. Konumlar küçültülmüş kopyadan alınırsa yanlış yer
+    /// silinir, etiket yerinde kalır ve döngü aynı etiketi yeniden bulur:
+    /// derin tarama Ahlatcı sayfalarında saatlerce %100 CPU'da asılı kaldı.
+    #[test]
+    fn strip_elements_survives_turkish_dotted_i() {
+        // 'İ'ler `<style>`den önce: kopyada her biri bir bayt uzatır.
+        let html = "İŞ İLETİŞİM<style>.ar-entry{color:red}</style> 10 Ağustos 2026";
+        assert_eq!(strip_html(html), "İŞ İLETİŞİM 10 Ağustos 2026");
+
+        // Etiket adı büyük harfli de olabilir; duyarsızlık korunmalı.
+        let mixed = "İİİ<SCRIPT>var a=1;</SCRIPT>Rapor";
+        assert_eq!(strip_html(mixed), "İİİRapor");
+
+        // Kapanışı olmayan etiket sonuna kadar atılır, döngü kilitlenmez.
+        assert_eq!(strip_html("İİİ<style>.a{}"), "İİİ");
+    }
+
+    /// Ahlatcı bloklarına sayfanın CSS'i karışıyor (`.ar-entry` kuralı
+    /// yüzünden blok `<style>` ortasından başlıyor); tarih yine de çözülmeli.
+    #[test]
+    fn ahlatci_date_reads_past_stylesheet_noise() {
+        let block = ".ar-entry{display:flex}</style><div class=\"ar-esub\">\
+                     <span> 22 Ağustos 2019, Perşembe </span></div>";
+        assert_eq!(ahlatci_date(block).map(|(iso, _)| iso), Some("2019-08-22".to_string()));
+    }
+
+    /// Integral: tarih göreli metinde değil `title` özniteliğinde; eski
+    /// kayıtlar kodu yalnız dosya adında taşıyor.
+    #[test]
+    fn integral_cards_map_to_reports() {
+        let html = r#"<div class="card-title d-flex justify-content-between ">
+            <a href="https://integralyatirim.com.tr/sirket-sektor-raporlari/ekdmr-2c26-bilanco-analizi" class="text-dark">
+            <h3 class="fw-600"> EKDMR 2Ç26 Bilanço Analizi </h3></a>
+            <small title="07.08.2026"> 4 Gün Önce </small></div>
+            <p class="card-text fs-18"> EKDMR 2Ç26 finansallarına ilişkin raporumuza ulaşabilirsiniz. </p>
+            <a href="https://integralyatirim.com.tr/uploads/PDF/ekdmr-2c26-bilanco-analizi/Sirket-Analizi_EKDMR.pdf" class="card-link">Dosyayı Görüntüle</a>
+          <div class="card-title d-flex justify-content-between ">
+            <a href="https://integralyatirim.com.tr/sirket-sektor-raporlari/ford-otosan"><h3> Ford Otosan 2Ç23 Bilanço Analizi </h3></a>
+            <small title="06.09.2023"> 3 Yıl Önce </small></div>
+            <a href="https://integralyatirim.com.tr/uploads/PDF/SirketAnalizi_FROTO.pdf" class="card-link">Dosyayı Görüntüle</a>"#;
+        let spec = source("integral");
+        let universe: HashSet<String> = ["EKDMR", "FROTO"].into_iter().map(String::from).collect();
+        let reports = parse_integral_cards(html, "https://integralyatirim.com.tr", &spec, &universe);
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[0].title, "EKDMR 2Ç26 Bilanço Analizi");
+        // Görünen metin "4 Gün Önce"; tarih öznitelikten gelmeli.
+        assert_eq!(reports[0].published, "2026-08-07");
+        assert_eq!(reports[0].tickers, vec!["EKDMR".to_string()]);
+        assert!(reports[0].summary.as_deref().unwrap_or_default().starts_with("EKDMR 2Ç26"));
+        assert!(reports[0].pdf_url.as_deref().unwrap_or_default().ends_with("Sirket-Analizi_EKDMR.pdf"));
+        // Başlıkta kod yok: unvandan da, dosya adındaki koddan da FROTO çıkar.
+        assert_eq!(reports[1].tickers, vec!["FROTO".to_string()]);
+        assert_eq!(reports[1].published, "2023-09-06");
+    }
+
+    /// Ziraat'in hisse bazlı kategori kimlikleri tahmin edilemez; listedeki
+    /// eşleşme birebir kurumun seçim listesinden gelmeli.
+    #[test]
+    fn ziraat_category_map_is_exact() {
+        assert_eq!(ziraat_category_for("THYAO"), Some("42149"));
+        assert_eq!(ziraat_category_for("HALKB"), Some("42141"));
+        assert_eq!(ziraat_category_for("AKBNK"), Some("41127"));
+        // Listede olmayan pay için uydurma kimlik üretilmez.
+        assert_eq!(ziraat_category_for("ZZZZZ"), None);
+    }
+
     /// Aynı rapor ikinci turda çoğalmaz, güncellenir.
     #[test]
     fn merge_is_idempotent_and_sorts_newest_first() {
@@ -1800,6 +2553,46 @@ mod tests {
         println!("SPK: {} · {} bayt · {}", document.content_type, document.bytes, bulletin.title);
     }
 
+    /// Derin tarama gerçekten derin olmalı. Arşivin sığ kalması sessiz bir
+    /// hatadır: ekran dolu görünür ama kapsam yoktur.
+    #[tokio::test]
+    #[ignore = "requires live broker site access"]
+    async fn live_deep_scan_is_actually_deep() {
+        let client = reqwest::Client::new();
+        let universe: HashSet<String> = crate::bist_universe::load(&client)
+            .await
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect();
+
+        let mut total = 0;
+        let mut linked = 0;
+        for spec in SOURCES {
+            // Süre de ölçülür: yavaşlayan bir kaynak ölüm süresine dayanıp
+            // bütün turu uzatır, sayıya bakınca bu görünmez.
+            let started = std::time::Instant::now();
+            let outcome = fetch_source_bounded(&client, spec, &universe, usize::MAX).await;
+            let elapsed = started.elapsed().as_secs_f32();
+            let reports = match outcome {
+                Ok(reports) => reports,
+                Err(error) => {
+                    println!("{:24} DÜŞTÜ ({elapsed:.0} sn): {error}", spec.broker);
+                    continue;
+                }
+            };
+            let with_ticker = reports.iter().filter(|r| !r.tickers.is_empty()).count();
+            total += reports.len();
+            linked += with_ticker;
+            let oldest = reports.iter().map(|r| r.published.as_str()).filter(|d| !d.is_empty()).min().unwrap_or("-");
+            println!(
+                "{:24} {:5} rapor | {:5} hisseli | en eski {} | {elapsed:.0} sn",
+                spec.broker, reports.len(), with_ticker, oldest
+            );
+        }
+        println!("TOPLAM {total} rapor, {linked} tanesi hisseye bağlı");
+        assert!(total > 2_000, "derin tarama sığ kaldı: {total}");
+    }
+
     /// Hisse bazlı etiket akışı gerçekten o hissenin raporlarını vermeli.
     #[tokio::test]
     #[ignore = "requires live broker site access"]
@@ -1863,6 +2656,21 @@ mod tests {
         assert_eq!(inject_base_href(&patched, "https://example.com/"), patched);
         // `<head>` yoksa parça başına konur.
         assert!(inject_base_href("<p>x</p>", "https://a1capital.com.tr/").starts_with("<base href="));
+    }
+
+    /// Her kaynağın konağı belge beyaz listesinde olmalı. Kaynak eklenip
+    /// listeye eklenmezse raporlar listede görünür ama açılmaz — sessiz ve
+    /// ancak tıklandığında fark edilen bir kusur.
+    #[test]
+    fn every_source_host_can_be_opened_in_the_reader() {
+        for spec in SOURCES {
+            let url = spec.feed.primary_url();
+            assert!(
+                document_host_is_allowed(url),
+                "{} beyaz listede yok: {url}",
+                spec.broker
+            );
+        }
     }
 
     /// Kaynak kimlikleri benzersiz olmalı; arşiv kaydı `source_id` ile eşlenir.

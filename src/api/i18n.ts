@@ -594,7 +594,8 @@ export const translations = {
     reportsPartialSources: 'Bazı kurumlar çekilemedi',
     reportsSourcesNote:
       'Kaynaklar: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
-      'Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Ahlatcı Yatırım · PhillipCapital · Integral Yatırım · Vakıf Yatırım · Halk Yatırım · ' +
+      'Marbaş Menkul · A1 Capital. ' +
       'Raporlar kurumların kendi yayınlarıdır; tıklayınca özgün PDF uygulama içinde açılır. ' +
       'Hedef fiyat ve tavsiye, rapor metninden çıkarılır ve kurumun resmi beyanı yerine geçmez.',
     reportsViewerLoading: 'Rapor indiriliyor…',
@@ -1618,7 +1619,8 @@ export const translations = {
     reportsPartialSources: 'Some brokers could not be fetched',
     reportsSourcesNote:
       'Sources: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
-      'Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Ahlatcı Yatırım · PhillipCapital · Integral Yatırım · Vakıf Yatırım · Halk Yatırım · ' +
+      'Marbaş Menkul · A1 Capital. ' +
       'Reports are the brokers’ own publications; clicking opens the original PDF inside the app. ' +
       'Target price and rating are extracted from the report text and do not replace the broker’s official statement.',
     reportsViewerLoading: 'Downloading report…',

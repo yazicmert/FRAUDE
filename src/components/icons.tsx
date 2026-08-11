@@ -310,6 +310,17 @@ export function MonitorIcon({ size = 15 }: IconProps) {
 }
 
 /** Halka Arz (Sütunlu Bina / Banka / Borsaya Açılış). */
+/** Analiz raporu: üzerinde çizgi grafiği olan bir belge. */
+export function ReportIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 17l3-3 2 2 3-4" />
+    </svg>
+  );
+}
+
 export function IpoIcon({ size = 15 }: IconProps) {
   return (
     <svg {...svgProps(size)}>
