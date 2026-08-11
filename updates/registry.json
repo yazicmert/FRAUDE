@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-11-bilgi-deposu-analiz-raporlari-birlesti",
+      "date": "2026-08-11",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "ui",
+      "title": {
+        "tr": "Bilgi Deposu tek kapı oldu: Analiz Raporları içine girdi, şirket odağı eklendi",
+        "en": "Knowledge Base becomes the single door: research reports folded in, company focus added"
+      },
+      "summary": {
+        "tr": "Analiz Raporları ayrı bir modül olmaktan çıktı ve Bilgi Deposu'nun içine girdi. Kenar çubuğunda KAP ve analiz için iki ayrı giriş vardı; bir şirket hakkında ne olduğunu görmek için hâlâ iki ekran arasında gidip gelmek gerekiyordu. Artık tek kapı var: KAP bildirimleri, SPK bültenleri, 12 kurumun analiz raporları ve haberler aynı zaman çizgisinde, sekmeleri Tümü / KAP / SPK / Analiz / Haber / Konsensüs.\n\nEklenen asıl yetenek şirket odağı: bir kod yazıp Enter'a bastığınızda dört kaynak da o şirkete indirgeniyor ve o payın rapor geçmişi kurumların hisse bazlı uçlarından yeniden çekiliyor (İş Yatırım etiket akışı, Garanti arama, Ziraat hisse kategorisi) — arşiv taraması geriye doğru sınırlı olduğu için depoda duran kayıtlar bir şirketin tam geçmişini vermiyor. Odaktaki şirketin konsensüs özeti de şeritte görünüyor. SPK bültenleri hisse kodu taşımadığı için yalnız başlığında kod geçenler odağa giriyor; olmayan bir ilişki uydurulmuyor.\n\nAnaliz Raporları'nın her şeyi taşındı: kurum ve tür çipleri, konsensüs tablosu, kısmi kaynak uyarısı, tavsiye ve hedef fiyat etiketleri. Eski modül kimliği kaldırılmadı, deponun analiz sekmesine yönlendiriliyor — açık sekmesi olan kullanıcı boş pano görmüyor.\n\nAyrıca Şeker Yatırım kaynak olarak eklendi (tek istekte 449 rapor, 2018'e kadar) ve raporların uygulama içinde açılmasını engelleyen bir hata giderildi: PDF adresini gövdeden çıkaran işlev konumu küçük harfli bir kopyadan alıyordu; Türkçe 'İ' kopyanın uzunluğunu değiştirdiği için adresin sonuna `\">` yapışıyor ve İş Yatırım raporları 404 veriyordu. Ölçüm: 12 kurum, 9.961 rapor, 2.957'si bir hisseye bağlı.",
+        "en": "Research Reports is no longer a separate module: it now lives inside the Knowledge Base. The sidebar had two entries — KAP and research — so seeing what happened to a company still meant hopping between screens. There is now one door: KAP disclosures, SPK bulletins, research from 12 brokers and news on one timeline, with All / KAP / SPK / Research / News / Consensus tabs.\n\nThe headline addition is company focus: type a ticker and all four sources narrow to that company, while its report history is re-pulled from the brokers' per-ticker endpoints (İş Yatırım tag feed, Garanti keyword search, Ziraat per-ticker category) — the archive is scanned to a bounded depth, so stored records alone don't cover a company's full history. The focused company's consensus summary shows in the strip. SPK bulletins carry no ticker, so only those naming the code in their title enter the focus; no relationship is invented.\n\nEverything from Research Reports moved across: broker and type chips, the consensus table, the partial-source warning, rating and target-price labels. The old module id was kept and now redirects to the research tab, so users with that tab open don't get a blank pane.\n\nŞeker Yatırım was also added as a source (449 reports in a single request, back to 2018) and a bug that stopped reports opening in-app was fixed: the function that extracts the PDF address from the body took its offset from a lowercased copy, and Turkish 'İ' changes that copy's length, so `\">` stuck to the end of the URL and İş Yatırım reports 404'd. Measured: 12 brokers, 9,961 reports, 2,957 linked to a ticker."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/research_reports.rs",
+        "src/api/i18n.ts",
+        "src/features/guide/GuideView.tsx",
+        "src/features/knowledge/KnowledgeBaseView.tsx",
+        "src/features/reports/ConsensusTable.tsx",
+        "src/modules/workspaceRegistry.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda Analiz Raporları modülünü Bilgi Deposu'nun içine taşı.\n\n1. `src/features/reports/ReportsView.tsx` içindeki konsensüs tablosunu ayrı bir bileşene çıkar (`src/features/reports/ConsensusTable.tsx`): satır bileşeni, tavsiye rengi ve fiyat/yüzde biçimleyicileri oraya taşınsın. Tablo geniş olduğu için kendi kabında yatay kaydırılmalı (`overflow-x: auto`), sayfa gövdesi yana kaymamalı.\n\n2. `src/features/knowledge/KnowledgeBaseView.tsx` içine şunları ekle: 'consensus' sekmesi; yalnız analiz sekmesinde görünen kurum ve rapor türü çipleri; `errors` uyarı şeridi ve `last_updated` damgası; rapor satırlarında tür, tavsiye, hedef fiyat ve analist etiketleri.\n\n3. Şirket odağı ekle. Kod yazılıp Enter'a basıldığında (ya da satırdaki hisse rozetine tıklandığında) dört kaynak da o şirkete indirgenmeli VE `getAnalystReports(kod, false)` çağrılıp o payın rapor geçmişi kurumların hisse bazlı uçlarından çekilmeli; gelen kayıtlar depodakilerle kimlik üzerinden teklenerek birleşmeli. Hisse istendiğinde uç tek konsensüs kaydı döndürür, onu listeyle birleştir ki odak kapatılınca tablo boşalmasın. SPK bültenleri hisse kodu TAŞIMAZ: odakta yalnız başlığında kod geçenleri göster, kod uydurup bülteni şirkete bağlama.\n\n4. `src/modules/workspaceRegistry.tsx` içinde `reports` modülünü kenar çubuğu listesinden çıkar ve `ReportsView`'i sil. Modül kaydını SİLME: kullanıcının açık sekmesi bu kimliği taşıyor ve bilinmeyen kimlik `renderTabContent`'te sessizce boş pano olarak çiziliyor. Bunun yerine kimliği manifest'siz (`nav: false`, `defaultTab: false`) bırakıp `<KnowledgeBaseView initialTab=\"report\" …/>` çizdir — manifest'siz modül her zaman etkin sayılır ve modül mağazasında görünmez.\n\n5. i18n anahtarlarını (TR+EN) ve Rehber'i güncelle: Rehber'deki 'AR' girdisi Bilgi Deposu girdisiyle birleşmeli, ayrı girdi kalmamalı.\n\nSonunda `npx tsc --noEmit` ve `npx vite build` çalıştır.",
+      "notes": "Menü etiketi zaten `knowledgeBase`'e bağlıydı; ekranda 'KAP Akışı' görünüyorsa çalışan derleme eskidir. Ölçüm 2026-08-11: 12 kurum, 9.961 rapor, 2.957'si hisseye bağlı, tam tarama 154 sn. Yoklanıp elenenler: Ak, Deniz, Tacirler, Oyak, Tera (kamuya açık rapor ucu yok), Ünlü & Co (yalnız bülten), QNB (yalnız kategori başına sabit dosya adı — tarih ve arşiv yok, aynı adres her hafta değişiyor)."
+    },
+    {
       "id": "2026-08-11-analiz-raporlari-derin-tarama-kilitlenmesi",
       "date": "2026-08-11",
       "author": "yazicmert",

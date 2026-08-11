@@ -32,7 +32,6 @@ const ResearchView = lazy(() => import('../features/research/ResearchView'));
 const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
 const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
-const ReportsView = lazy(() => import('../features/reports/ReportsView'));
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 
 export const CORE_VERSION = '0.1.18';
@@ -354,20 +353,18 @@ export const workspaceModules: WorkspaceModule[] = [
     render: (_tab, host) => <CorporateActionsView initialTab="ipo" onSelectTicker={host.openTicker} />,
   },
   {
+    // Analiz Raporları Bilgi Deposu'na taşındı. Kayıt silinmiyor: kullanıcının
+    // açık sekmesi ve kaydedilmiş çalışma alanı bu kimliği taşıyor ve
+    // bilinmeyen modül `renderTabContent`'te sessizce **boş pano** olarak
+    // çiziliyor. Eski kimlik deponun analiz sekmesine yönlendirilir.
+    // Manifest yok: modül mağazasında ve kenar çubuğunda görünmez.
     kind: 'reports',
-    titleKey: 'reportsTitle',
-    manifest: manifest(
-      'fraude.research-reports',
-      { tr: 'Analiz Raporları', en: 'Research Reports' },
-      {
-        tr: 'Aracı kurum ve banka raporları ile analist konsensüsü.',
-        en: 'Brokerage and bank reports with analyst consensus.',
-      },
-      ['network:yahoo'],
-      'reports',
-      'reportsTitle',
+    titleKey: 'knowledgeBase',
+    nav: false,
+    defaultTab: false,
+    render: (_tab, host) => (
+      <KnowledgeBaseView initialTab="report" onSelectTicker={host.openTicker} />
     ),
-    render: (_tab, host) => <ReportsView onSelectTicker={host.openTicker} />,
   },
   {
     kind: 'guide',
@@ -543,7 +540,6 @@ export const NAV_TREE: NavSection[] = [
               { type: 'module', kind: 'kap' },
               { type: 'module', kind: 'corporate' },
               { type: 'module', kind: 'ipo' },
-              { type: 'module', kind: 'reports' },
               { type: 'module', kind: 'monitor' },
             ],
           },

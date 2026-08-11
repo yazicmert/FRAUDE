@@ -166,6 +166,9 @@ pub enum Feed {
     /// Integral Yatırım: `card-title` blokları; sayfa numarası sorgu dizesinde
     /// değil **yolun sonunda** durur (`…/sirket-sektor-raporlari/p2`).
     IntegralCards { url: &'static str, base: &'static str },
+    /// Şeker Yatırım: `/Arastirma/Raporlar` tablo satırları. Sayfalama yok —
+    /// tek istek bütün listeyi veriyor.
+    SekerTable { url: &'static str, base: &'static str },
 }
 
 impl Feed {
@@ -180,7 +183,8 @@ impl Feed {
             | Feed::GedikNextData { url }
             | Feed::AhlatciTimeline { url, .. }
             | Feed::PhillipCards { url, .. }
-            | Feed::IntegralCards { url, .. } => url,
+            | Feed::IntegralCards { url, .. }
+            | Feed::SekerTable { url, .. } => url,
         }
     }
 }
@@ -317,6 +321,19 @@ pub const SOURCES: &[SourceSpec] = &[
         // son sayfayı yeniden döndürüyor. Bütçe fazla tutulursa boş sayfa
         // beklentisiyle biten tarama aynı kayıtları tekrar tekrar çeker.
         deep_pages: 60,
+    },
+    SourceSpec {
+        id: "seker",
+        broker: "Şeker Yatırım",
+        scope: BrokerScope::Domestic,
+        feed: Feed::SekerTable {
+            url: "https://www.sekeryatirim.com.tr/Arastirma/Raporlar",
+            base: "https://www.sekeryatirim.com.tr",
+        },
+        // Sayfalama yok: tek istek 450 kayıt ve 2018'e kadar geriye gidiyor.
+        // (Sayfada `KategoriKod` / `IlkTarih` / `SonTarih` ile POST süzgeci de
+        // var; daha derin geçmiş gerekirse oradan alınır.)
+        deep_pages: 1,
     },
 ];
 
@@ -775,8 +792,13 @@ pub fn parse_wordpress_feed(
 
 fn find_first_pdf(body: &str) -> Option<String> {
     let decoded = decode_entities(body);
-    let lower = decoded.to_lowercase();
-    let position = lower.find(".pdf")?;
+    // Konum küçük harfli bir kopyadan alınmaz: Türkçe 'İ' küçültülünce iki kod
+    // noktasına açılıyor, kopya uzuyor ve konum kayıyor. Kayma yüzünden adresin
+    // sonuna gövdedeki işaretler (`">`) yapışıyor, adres yüzde-kodlanıp
+    // `…pdf%22%3E` olarak isteniyor ve kurumun sunucusu 404 veriyordu: İş
+    // Yatırım raporları uygulama içindeki okuyucuda hiç açılmıyordu.
+    // Bkz. `strip_elements` — aynı tuzağın ikinci görünümü.
+    let position = find_ascii_ci(&decoded, ".pdf")?;
     let start = decoded[..position].rfind("http")?;
     Some(decoded[start..position + 4].to_string())
 }
@@ -1471,6 +1493,104 @@ pub fn parse_integral_cards(
     reports
 }
 
+// ---------------------------------------------------------------------------
+// Şeker Yatırım
+// ---------------------------------------------------------------------------
+
+/// Şeker Yatırım'ın rapor tablosunu ayrıştırır.
+///
+/// Her `<tr>` bir rapordur: PDF bağlantısı satırda iki kez geçer (ikon ve
+/// başlık aynı adrese bağlanır), başlık ve tarih ayrı hücrelerdedir. Tarih
+/// satır metninin sonunda "11.08.2026" biçiminde durduğu için başlık, tarih
+/// damgasının **öncesinde** kalan metindir.
+///
+/// Başlıklar kod değil unvan taşıyor ("Coca-Cola İçecek - 2Ç26"); kod unvandan
+/// çözülür, o da tutmazsa dosya adının başındaki küçük harfli koddan
+/// ("ccola-2c26.pdf") alınır.
+pub fn parse_seker_reports(
+    html: &str,
+    base: &str,
+    spec: &SourceSpec,
+    universe: &HashSet<String>,
+) -> Vec<AnalystReport> {
+    let mut reports = Vec::new();
+    for row in html.split("<tr").skip(1) {
+        // Menü ve tanıtım satırları da tabloya benziyor; rapor bağlantısı
+        // taşımayan satır atlanır.
+        if !row.contains("ArastirmaRaporDosya") {
+            continue;
+        }
+        let Some(href) = attr_value(row, "href") else { continue };
+        if !href.contains("ArastirmaRaporDosya") {
+            continue;
+        }
+        let text = strip_html(row);
+        let Some((at, stamp)) = first_dotted_date(&text) else { continue };
+        let Some((published, published_ts)) = parse_dotted_date(stamp) else { continue };
+        let title = text[..at].trim().trim_end_matches(['-', '|', '·']).trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        let pdf_url = if href.starts_with("http") {
+            encode_url_path(&decode_entities(&href))
+        } else {
+            encode_url_path(&format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                decode_entities(&href).trim_start_matches('/')
+            ))
+        };
+
+        let mut tickers = extract_tickers(&title, &[], universe);
+        if tickers.is_empty() {
+            tickers = tickers_from_slug(&pdf_url, universe);
+        }
+
+        reports.push(AnalystReport {
+            id: report_id(&pdf_url),
+            broker: spec.broker.to_string(),
+            scope: spec.scope,
+            kind: classify_with_tickers(&title, &[], &tickers),
+            tickers,
+            rating: extract_rating(&title),
+            target_price: extract_target_price(&title),
+            title,
+            summary: None,
+            url: pdf_url.clone(),
+            pdf_url: Some(pdf_url),
+            published,
+            published_ts,
+            analyst: None,
+            source_id: spec.id.to_string(),
+        });
+    }
+    reports
+}
+
+/// Metindeki ilk "GG.AA.YYYY" damgasının konumu ve kendisi.
+///
+/// Eşleştirme baytlar üzerinde yapılır ve dilim **yalnız kalıp tuttuktan
+/// sonra** alınır: damganın on baytı da ASCII olduğu için o iki konum kesin
+/// karakter sınırıdır. Önce dilip sonra bakmak Türkçe başlıklarda 'İ' harfinin
+/// ortasından kesip panikliyordu.
+fn first_dotted_date(text: &str) -> Option<(usize, &str)> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 10 {
+        return None;
+    }
+    for at in 0..=bytes.len() - 10 {
+        let window = &bytes[at..at + 10];
+        if window[2] == b'.'
+            && window[5] == b'.'
+            && [0, 1, 3, 4, 6, 7, 8, 9].iter().all(|&i| window[i].is_ascii_digit())
+        {
+            return Some((at, &text[at..at + 10]));
+        }
+    }
+    None
+}
+
 /// `open` etiketinin açılışından `close` etiketine kadarki ham metin.
 fn text_between<'a>(block: &'a str, open: &str, close: &str) -> Option<&'a str> {
     let start = block.find(open)?;
@@ -1781,6 +1901,11 @@ pub async fn fetch_source(
             Ok(parse_integral_cards(&html, base, spec, universe))
         })
         .await),
+        Feed::SekerTable { url, base } => {
+            // Sayfalama yok: bütün liste tek yanıtta geliyor.
+            let html = get_text(client, url).await?;
+            Ok(parse_seker_reports(&html, base, spec, universe))
+        }
     }
 }
 
@@ -1995,6 +2120,7 @@ fn document_host_is_allowed(url: &str) -> bool {
         "ahlatciyatirim.com.tr",
         "phillipcapital.com.tr",
         "integralyatirim.com.tr",
+        "sekeryatirim.com.tr",
         // Bilgi deposu SPK haftalık bültenlerini de aynı okuyucuda açar.
         "spk.gov.tr",
     ];
@@ -2394,6 +2520,26 @@ mod tests {
         assert_eq!(strip_html("İİİ<style>.a{}"), "İİİ");
     }
 
+    /// Aynı tuzağın ikinci görünümü: WordPress gövdesinde PDF bağlantısından
+    /// önce Türkçe 'İ' geçiyor. Konum küçük harfli kopyadan alınınca adresin
+    /// sonuna gövdedeki `">` yapışıyor, adres `…pdf%22%3E` olarak isteniyor ve
+    /// kurumun sunucusu 404 veriyordu — İş Yatırım raporları uygulama içindeki
+    /// okuyucuda hiç açılmıyordu.
+    #[test]
+    fn first_pdf_link_survives_turkish_dotted_i() {
+        let body = "<p>İŞ YATIRIM · ELÜS Günlük Bülteni</p>\
+                    <p><a href=\"https://arastirma.isyatirim.com.tr/x/ELUS-11.08.2026.pdf\">\
+                    Pdf rapora ulaşmak için tıklayınız.</a></p>";
+        assert_eq!(
+            find_first_pdf(body).as_deref(),
+            Some("https://arastirma.isyatirim.com.tr/x/ELUS-11.08.2026.pdf"),
+        );
+
+        // Varlık olarak kaçırılmış gövde de aynı yoldan geçer.
+        let escaped = "&lt;p&gt;İLETİŞİM&lt;/p&gt;&lt;a href=&quot;https://a.com/r.PDF&quot;&gt;x&lt;/a&gt;";
+        assert_eq!(find_first_pdf(escaped).as_deref(), Some("https://a.com/r.PDF"));
+    }
+
     /// Ahlatcı bloklarına sayfanın CSS'i karışıyor (`.ar-entry` kuralı
     /// yüzünden blok `<style>` ortasından başlıyor); tarih yine de çözülmeli.
     #[test]
@@ -2430,6 +2576,34 @@ mod tests {
         // Başlıkta kod yok: unvandan da, dosya adındaki koddan da FROTO çıkar.
         assert_eq!(reports[1].tickers, vec!["FROTO".to_string()]);
         assert_eq!(reports[1].published, "2023-09-06");
+    }
+
+    /// Şeker: başlık tarih damgasından önce biter, kod unvandan ya da dosya
+    /// adından gelir, rapor bağlantısı taşımayan satır listeye girmez.
+    #[test]
+    fn seker_table_maps_to_reports() {
+        let html = r#"<table><tr><td><a href="/Menu/Ajanda">Ajanda</a></td><td>11.08.2026</td></tr>
+          <tr>
+            <td><a href="/Arastirma/ArastirmaRaporDosya/71675/ccola-2c26.pdf"><div class="view-icon"><img src="/images/pdf-icon.jpg"></div></a></td>
+            <td><a href="/Arastirma/ArastirmaRaporDosya/71675/ccola-2c26.pdf"><div>Coca-Cola İçecek - 2Ç26</div></a></td>
+            <td>11.08.2026</td>
+          </tr>
+          <tr>
+            <td><a href="/Arastirma/ArastirmaRaporDosya/71656/seker-yatirim-gyo-sektoru-analizi.pdf"><div>GYO Sektörü Prim İskonto Analizi</div></a></td>
+            <td>10.08.2026</td>
+          </tr></table>"#;
+        let spec = source("seker");
+        let universe: HashSet<String> = ["CCOLA"].into_iter().map(String::from).collect();
+        let reports = parse_seker_reports(html, "https://www.sekeryatirim.com.tr", &spec, &universe);
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[0].title, "Coca-Cola İçecek - 2Ç26");
+        assert_eq!(reports[0].published, "2026-08-11");
+        // Başlıkta kod yok; dosya adındaki küçük harfli koddan gelir.
+        assert_eq!(reports[0].tickers, vec!["CCOLA".to_string()]);
+        assert!(reports[0].pdf_url.as_deref().unwrap().starts_with("https://www.sekeryatirim.com.tr/"));
+        // Sektör raporu hisseye bağlanmaz; "seker" evrende olmadığı için kod uydurulmaz.
+        assert_eq!(reports[1].title, "GYO Sektörü Prim İskonto Analizi");
+        assert!(reports[1].tickers.is_empty(), "{:?}", reports[1].tickers);
     }
 
     /// Ziraat'in hisse bazlı kategori kimlikleri tahmin edilemez; listedeki

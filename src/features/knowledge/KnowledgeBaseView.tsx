@@ -12,15 +12,23 @@ import ReportDocumentModal, {
   documentFromReport,
   type ViewerDocument,
 } from '../reports/ReportDocumentModal';
+import ConsensusTable, { formatPrice } from '../reports/ConsensusTable';
 import { NewsList } from '../news/NewsFeedView';
-import type { AnalystReport, KapAnnouncement, NewsItem, SpkBulletin } from '../../types';
+import type {
+  AnalystConsensus,
+  AnalystReport,
+  KapAnnouncement,
+  NewsItem,
+  SpkBulletin,
+} from '../../types';
 
 /** Deponun beslendiği dört kaynak. */
 type EntryKind = 'kap' | 'spk' | 'report' | 'news';
 
-type TabKey = 'all' | EntryKind;
+/** Dört kaynağın sekmeleri + kurum toplamlarının kendi sekmesi. */
+type TabKey = 'all' | EntryKind | 'consensus';
 
-const TABS: TabKey[] = ['all', 'kap', 'spk', 'report', 'news'];
+const TABS: TabKey[] = ['all', 'kap', 'spk', 'report', 'news', 'consensus'];
 
 const TAB_KEY: Record<TabKey, string> = {
   all: 'knowledgeTabAll',
@@ -28,6 +36,7 @@ const TAB_KEY: Record<TabKey, string> = {
   spk: 'knowledgeTabSpk',
   report: 'knowledgeTabReports',
   news: 'knowledgeTabNews',
+  consensus: 'reportsTabConsensus',
 };
 
 const KIND_COLOR: Record<EntryKind, string> = {
@@ -44,6 +53,24 @@ const REPORT_KIND_KEY: Record<AnalystReport['kind'], string> = {
   bulletin: 'reportKindBulletin',
   other: 'reportKindOther',
 };
+
+/**
+ * Rapor türlerinin ekran sırası. Şirket raporları en değerlisi olduğu için
+ * başta; bültenler günlük akışta çok sayıda olduğundan sonda.
+ */
+const REPORT_KIND_ORDER: AnalystReport['kind'][] = [
+  'company',
+  'sector',
+  'strategy',
+  'bulletin',
+  'other',
+];
+
+/** "Hepsi" seçeneği için süzgeç değeri. */
+const ALL = '__all__';
+
+/** Bir seferde çizilen kayıt sayısı. */
+const PAGE_SIZE = 80;
 
 /**
  * Deponun tek satırı. Dört kaynak da buna indirgenir; liste kaydın nereden
@@ -116,8 +143,24 @@ function scoreClass(score: number): string {
   return 'low';
 }
 
+/**
+ * Kaydın odaklanılan şirkete ait olup olmadığını söyler.
+ *
+ * KAP, rapor ve haber kayıtları hisse kodu taşır. SPK bültenleri taşımaz —
+ * haftalık bülten tek bir şirkete ait değil — bu yüzden onlar yalnız başlıkta
+ * kod geçiyorsa listeye girer. Kodu uydurup bülteni şirkete bağlamak, olmayan
+ * bir ilişki göstermek olur.
+ */
+function belongsToCompany(entry: FeedEntry, code: string): boolean {
+  if (entry.tickers.some((ticker) => ticker.toUpperCase() === code)) return true;
+  if (entry.kind === 'spk') return entry.title.toUpperCase().includes(code);
+  return false;
+}
+
 interface KnowledgeBaseViewProps {
   initialRows?: KapAnnouncement[];
+  /** Açılışta seçili sekme; eski "Analiz Raporları" kimliği buraya yönlendirilir. */
+  initialTab?: TabKey;
   onSelectTicker?: (ticker: string) => void;
 }
 
@@ -130,18 +173,42 @@ interface KnowledgeBaseViewProps {
  * kendi okuyucusuna gider: KAP bildirimi KAP okuyucusuna, SPK bülteni ve
  * analiz raporu gömülü belge okuyucusuna, haber ise haber okuyucusuna —
  * hiçbiri uygulamadan çıkmaz.
+ *
+ * **Şirket odağı** deponun ana kullanımıdır: bir kod yazıldığında dört kaynak
+ * da o şirkete indirgenir ve o şirketin rapor geçmişi kurumların hisse bazlı
+ * uçlarından **yeniden çekilir** — arşiv taraması geriye doğru sınırlı olduğu
+ * için depoda duran kayıtlar tek başına yetmez.
  */
-export default function KnowledgeBaseView({ initialRows, onSelectTicker }: KnowledgeBaseViewProps) {
+export default function KnowledgeBaseView({
+  initialRows,
+  initialTab,
+  onSelectTicker,
+}: KnowledgeBaseViewProps) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<TabKey>('all');
+  const [tab, setTab] = useState<TabKey>(initialTab ?? 'all');
   const [query, setQuery] = useState('');
-  const [visible, setVisible] = useState(80);
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  /** Odaklanılan şirket kodu (büyük harf) ya da boş. */
+  const [company, setCompany] = useState('');
+  /** Arama kutusundaki ham metin; Enter'a basılınca odak olur. */
+  const [companyDraft, setCompanyDraft] = useState('');
+
+  const [broker, setBroker] = useState<string>(ALL);
+  const [reportKind, setReportKind] = useState<string>(ALL);
 
   const [kap, setKap] = useState<KapAnnouncement[]>(initialRows ?? []);
   const [spk, setSpk] = useState<SpkBulletin[]>([]);
   const [reports, setReports] = useState<AnalystReport[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
+  const [consensus, setConsensus] = useState<AnalystConsensus[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  /** Şirket odağında kurumların hisse bazlı uçlarından gelen ek raporlar. */
+  const [companyReports, setCompanyReports] = useState<AnalystReport[]>([]);
+  const [companyLoading, setCompanyLoading] = useState(false);
 
   const [openKap, setOpenKap] = useState<KapAnnouncement | null>(null);
   const [openDocument, setOpenDocument] = useState<ViewerDocument | null>(null);
@@ -160,7 +227,12 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
     ]);
     if (kapResult.status === 'fulfilled') setKap(kapResult.value);
     if (snapshotResult.status === 'fulfilled') setSpk(snapshotResult.value.spk_bulletins ?? []);
-    if (reportResult.status === 'fulfilled') setReports(reportResult.value.reports);
+    if (reportResult.status === 'fulfilled') {
+      setReports(reportResult.value.reports);
+      setConsensus(reportResult.value.consensus);
+      setLastUpdated(reportResult.value.last_updated);
+      setSourceErrors(reportResult.value.errors);
+    }
     if (newsResult.status === 'fulfilled') setNews(newsResult.value);
     setLoading(false);
   }, []);
@@ -175,6 +247,54 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
     window.addEventListener('fraude-sync-completed', handler);
     return () => window.removeEventListener('fraude-sync-completed', handler);
   }, [load]);
+
+  /**
+   * Şirket odaklanınca o payın rapor geçmişi kurumların hisse bazlı uçlarından
+   * istenir (İş Yatırım etiket akışı, Garanti arama, Ziraat hisse kategorisi).
+   * Arşiv sınırlı derinlikte tarandığı için depodaki kayıtlar bir şirketin tam
+   * geçmişini vermez.
+   */
+  useEffect(() => {
+    if (!company) {
+      setCompanyReports([]);
+      return;
+    }
+    let cancelled = false;
+    setCompanyLoading(true);
+    getAnalystReports(company, false)
+      .then((payload) => {
+        if (cancelled) return;
+        setCompanyReports(payload.reports);
+        // Hisse istendiğinde uç tek konsensüs kaydı döner; listedekiyle
+        // birleştirilir ki odak kapatılınca tablo boşalmasın.
+        if (payload.consensus.length > 0) {
+          setConsensus((current) => {
+            const rest = current.filter((row) => row.ticker !== company);
+            return [...payload.consensus, ...rest];
+          });
+        }
+      })
+      .catch(() => {
+        // Uç düşerse depodaki kayıtlarla devam edilir; ekran boşalmaz.
+        if (!cancelled) setCompanyReports([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCompanyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [company]);
+
+  /**
+   * Depodaki raporlar ile şirket odağında gelen raporlar tek listede
+   * birleşir; aynı rapor iki uçtan gelebildiği için kimlikle teklenir.
+   */
+  const allReports = useMemo(() => {
+    if (companyReports.length === 0) return reports;
+    const seen = new Set(reports.map((report) => report.id));
+    return [...reports, ...companyReports.filter((report) => !seen.has(report.id))];
+  }, [reports, companyReports]);
 
   const entries = useMemo<FeedEntry[]>(() => {
     const all: FeedEntry[] = [];
@@ -206,7 +326,7 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
       });
     }
 
-    for (const item of reports) {
+    for (const item of allReports) {
       all.push({
         key: `report-${item.id}`,
         kind: 'report',
@@ -235,18 +355,59 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
     }
 
     return all.sort((a, b) => b.ts - a.ts);
-  }, [kap, spk, reports, news]);
+  }, [kap, spk, allReports, news]);
+
+  /** Şirket odağı uygulanmış akış; sekme ve arama bunun üzerine biner. */
+  const scoped = useMemo(() => {
+    if (!company) return entries;
+    return entries.filter((entry) => belongsToCompany(entry, company));
+  }, [entries, company]);
 
   const counts = useMemo(() => {
-    const map: Record<TabKey, number> = { all: entries.length, kap: 0, spk: 0, report: 0, news: 0 };
-    for (const entry of entries) map[entry.kind] += 1;
+    const map: Record<TabKey, number> = {
+      all: scoped.length,
+      kap: 0,
+      spk: 0,
+      report: 0,
+      news: 0,
+      consensus: 0,
+    };
+    for (const entry of scoped) map[entry.kind] += 1;
+    map.consensus = company
+      ? consensus.filter((row) => row.ticker === company).length
+      : consensus.length;
     return map;
-  }, [entries]);
+  }, [scoped, consensus, company]);
+
+  /** Odaktaki akışta gerçekten kaydı olan kurumlar; boş çip gösterilmez. */
+  const brokers = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const entry of scoped) {
+      if (entry.kind !== 'report') continue;
+      seen.set(entry.badge, (seen.get(entry.badge) ?? 0) + 1);
+    }
+    return [...seen.entries()].sort((a, b) => b[1] - a[1]);
+  }, [scoped]);
+
+  const reportKinds = useMemo(() => {
+    const seen = new Set(
+      scoped
+        .filter((entry) => entry.payload.kind === 'report')
+        .map((entry) => (entry.payload as { kind: 'report'; item: AnalystReport }).item.kind),
+    );
+    return REPORT_KIND_ORDER.filter((value) => seen.has(value));
+  }, [scoped]);
 
   const filtered = useMemo(() => {
     const needle = normalize(query.trim());
-    return entries.filter((entry) => {
+    return scoped.filter((entry) => {
       if (tab !== 'all' && entry.kind !== tab) return false;
+      // Kurum ve tür süzgeci yalnız raporlara uygulanır; "Tümü" sekmesinde
+      // seçili bir kurum diğer kaynakları gizlemez.
+      if (entry.payload.kind === 'report') {
+        if (broker !== ALL && entry.badge !== broker) return false;
+        if (reportKind !== ALL && entry.payload.item.kind !== reportKind) return false;
+      }
       if (!needle) return true;
       return (
         normalize(entry.title).includes(needle) ||
@@ -254,11 +415,35 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
         entry.tickers.some((code) => normalize(code).includes(needle))
       );
     });
-  }, [entries, tab, query]);
+  }, [scoped, tab, query, broker, reportKind]);
+
+  const consensusRows = useMemo(() => {
+    const rows = company ? consensus.filter((row) => row.ticker === company) : consensus;
+    const needle = query.trim().toLocaleLowerCase('tr');
+    if (!needle) return rows;
+    return rows.filter((row) => row.ticker.toLocaleLowerCase('tr').includes(needle));
+  }, [consensus, company, query]);
+
+  /** Odaktaki şirketin konsensüs kaydı — özet şeridinde gösterilir. */
+  const companyConsensus = useMemo(
+    () => (company ? consensus.find((row) => row.ticker === company) : undefined),
+    [consensus, company],
+  );
 
   useEffect(() => {
-    setVisible(80);
-  }, [tab, query]);
+    setVisible(PAGE_SIZE);
+  }, [tab, query, company, broker, reportKind]);
+
+  const focusCompany = (raw: string) => {
+    const code = raw.trim().toUpperCase().replace(/\.IS$/, '');
+    setCompany(code);
+    setCompanyDraft(code);
+  };
+
+  const clearCompany = () => {
+    setCompany('');
+    setCompanyDraft('');
+  };
 
   const openEntry = (entry: FeedEntry) => {
     const { payload } = entry;
@@ -284,6 +469,18 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
     // Haber kaydı kendi okuyucusunu satırın içinde açar; burada bir iş yok.
   };
 
+  const chip = (active: boolean, label: string, onClick: () => void, key: string) => (
+    <button
+      key={key}
+      type="button"
+      className={`tab-button${active ? ' active' : ''}`}
+      onClick={onClick}
+      style={{ borderRadius: '12px', border: '1px solid var(--border-color)' }}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="view">
       <div className="view-header">
@@ -294,7 +491,12 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
             {t('knowledgeBaseSubtitle')}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {lastUpdated && (
+            <span style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+              {t('lastUpdatedLabel')}: {lastUpdated.slice(0, 10)}
+            </span>
+          )}
           <input
             className="kap-filter-input"
             placeholder={t('knowledgeSearchPlaceholder')}
@@ -307,7 +509,56 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
         </div>
       </div>
 
-      <div className="tabs" style={{ width: 'fit-content', margin: '10px 0 14px' }}>
+      {/* Şirket odağı: deponun ana kullanımı. Kod yazılıp Enter'a basılınca
+          dört kaynak da o şirkete indirgenir. */}
+      <div
+        className="panel"
+        style={{ padding: '10px 12px', margin: '10px 0 12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}
+      >
+        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{t('knowledgeCompanyLabel')}</span>
+        <input
+          className="kap-filter-input"
+          style={{ maxWidth: '160px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}
+          placeholder={t('knowledgeCompanyPlaceholder')}
+          value={companyDraft}
+          onChange={(event) => setCompanyDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') focusCompany(companyDraft);
+          }}
+        />
+        <button type="button" className="small-button" onClick={() => focusCompany(companyDraft)}>
+          {t('knowledgeCompanyApply')}
+        </button>
+        {company && (
+          <>
+            <span
+              style={{
+                padding: '3px 10px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700,
+                background: '#58a6ff22', color: '#58a6ff', fontFamily: 'var(--font-mono)',
+              }}
+            >
+              {company}
+            </span>
+            {companyConsensus && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {companyConsensus.rating ?? '—'} · {companyConsensus.total} {t('consensusAnalysts')} ·{' '}
+                {t('consensusTargetAvg')}: {formatPrice(companyConsensus.target_average)}
+              </span>
+            )}
+            {companyLoading && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('loadingData')}</span>
+            )}
+            <button type="button" className="small-button" onClick={clearCompany}>
+              {t('knowledgeCompanyClear')}
+            </button>
+            <button type="button" className="small-button" onClick={() => onSelectTicker?.(company)}>
+              {t('knowledgeCompanyOpen')}
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="tabs" style={{ width: 'fit-content', margin: '0 0 14px' }}>
         {TABS.map((value) => (
           <button
             key={value}
@@ -320,111 +571,165 @@ export default function KnowledgeBaseView({ initialRows, onSelectTicker }: Knowl
         ))}
       </div>
 
+      {/* Bir kurumun düşmesi listeyi gizlemez; uyarı olarak gösterilir. */}
+      {sourceErrors.length > 0 && (
+        <div className="panel" style={{ padding: '8px 12px', marginBottom: '12px', borderColor: '#d2992255' }}>
+          <span style={{ fontSize: '0.72rem', color: '#d29922' }}>
+            {t('reportsPartialSources')}: {sourceErrors.join(' · ')}
+          </span>
+        </div>
+      )}
+
+      {/* Kurum ve tür çipleri yalnız rapor sekmesinde; başka sekmede
+          rapora özel süzgeç göstermek yanıltıcı olur. */}
+      {tab === 'report' && (brokers.length > 0 || reportKinds.length > 0) && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {chip(broker === ALL, t('reportsAllBrokers'), () => setBroker(ALL), 'broker-all')}
+          {brokers.map(([name, count]) =>
+            chip(broker === name, `${name} (${count})`, () => setBroker(name), `broker-${name}`),
+          )}
+          <span style={{ width: '1px', height: '18px', background: 'var(--border-color)' }} />
+          {chip(reportKind === ALL, t('reportsAllKinds'), () => setReportKind(ALL), 'kind-all')}
+          {reportKinds.map((value) =>
+            chip(reportKind === value, t(REPORT_KIND_KEY[value]), () => setReportKind(value), `kind-${value}`),
+          )}
+        </div>
+      )}
+
       {loading && entries.length === 0 && <div className="empty-state">{t('loadingData')}</div>}
-      {!loading && filtered.length === 0 && <div className="empty-state">{t('knowledgeEmpty')}</div>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {filtered.slice(0, visible).map((entry) =>
-          entry.payload.kind === 'news' ? (
-            // Haber satırı kendi bileşeniyle çizilir; okuyucusu ve önizleme
-            // getirmesi orada yaşıyor, burada kopyalanmaz.
-            <NewsList key={entry.key} news={[entry.payload.item]} />
-          ) : (
-            <article
-              key={entry.key}
-              className="kap-item-enhanced"
-              role="button"
-              tabIndex={0}
-              onClick={() => openEntry(entry)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  openEntry(entry);
-                }
-              }}
-            >
-              <div className="kap-item-header">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                    <span
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: '0.66rem',
-                        fontWeight: 'bold',
-                        background: `${KIND_COLOR[entry.kind]}22`,
-                        color: KIND_COLOR[entry.kind],
-                      }}
-                    >
-                      {t(TAB_KEY[entry.kind])}
-                    </span>
-                    <span className="kap-item-ticker">{entry.badge}</span>
-                    <span className="kap-item-title">{entry.title}</span>
-                  </div>
-                  <div className="kap-item-meta">
-                    <span className="kap-item-date">{entry.date}</span>
-                    {entry.payload.kind === 'kap' && (
-                      <>
-                        <span className="kap-item-category">{entry.payload.item.category}</span>
-                        <span className={`kap-item-score ${scoreClass(entry.payload.item.ai_importance_score)}`}>
-                          AI {entry.payload.item.ai_importance_score}
-                        </span>
-                      </>
-                    )}
-                    {entry.payload.kind === 'report' && entry.payload.item.rating && (
-                      <span className="kap-item-category">{entry.payload.item.rating}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+      {tab === 'consensus' ? (
+        consensusRows.length === 0 ? (
+          <div className="empty-state">{t('reportsConsensusEmpty')}</div>
+        ) : (
+          <ConsensusTable rows={consensusRows} onSelectTicker={onSelectTicker} />
+        )
+      ) : (
+        <>
+          {!loading && filtered.length === 0 && <div className="empty-state">{t('knowledgeEmpty')}</div>}
 
-              {entry.summary && <p className="kap-item-summary">{entry.summary}</p>}
-
-              {entry.tickers.length > 0 && (
-                <div
-                  style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}
-                  onClick={(event) => event.stopPropagation()}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filtered.slice(0, visible).map((entry) =>
+              entry.payload.kind === 'news' ? (
+                // Haber satırı kendi bileşeniyle çizilir; okuyucusu ve önizleme
+                // getirmesi orada yaşıyor, burada kopyalanmaz.
+                <NewsList key={entry.key} news={[entry.payload.item]} />
+              ) : (
+                <article
+                  key={entry.key}
+                  className="kap-item-enhanced"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openEntry(entry)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openEntry(entry);
+                    }
+                  }}
                 >
-                  {entry.tickers.map((code) => (
+                  <div className="kap-item-header">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            fontSize: '0.66rem',
+                            fontWeight: 'bold',
+                            background: `${KIND_COLOR[entry.kind]}22`,
+                            color: KIND_COLOR[entry.kind],
+                          }}
+                        >
+                          {t(TAB_KEY[entry.kind])}
+                        </span>
+                        <span className="kap-item-ticker">{entry.badge}</span>
+                        <span className="kap-item-title">{entry.title}</span>
+                      </div>
+                      <div className="kap-item-meta">
+                        <span className="kap-item-date">{entry.date}</span>
+                        {entry.payload.kind === 'kap' && (
+                          <>
+                            <span className="kap-item-category">{entry.payload.item.category}</span>
+                            <span className={`kap-item-score ${scoreClass(entry.payload.item.ai_importance_score)}`}>
+                              AI {entry.payload.item.ai_importance_score}
+                            </span>
+                          </>
+                        )}
+                        {entry.payload.kind === 'report' && (
+                          <>
+                            <span className="kap-item-category">
+                              {t(REPORT_KIND_KEY[entry.payload.item.kind])}
+                            </span>
+                            {entry.payload.item.rating && (
+                              <span className="kap-item-category">{entry.payload.item.rating}</span>
+                            )}
+                            {entry.payload.item.target_price != null && (
+                              <span className="kap-item-category">
+                                {t('targetPriceLabel')}: {formatPrice(entry.payload.item.target_price)}
+                              </span>
+                            )}
+                            {entry.payload.item.analyst && (
+                              <span className="kap-item-category">{entry.payload.item.analyst}</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {entry.summary && <p className="kap-item-summary">{entry.summary}</p>}
+
+                  <div
+                    style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {entry.tickers.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        className="small-button"
+                        style={{ fontSize: '0.68rem', padding: '3px 9px' }}
+                        onClick={() => focusCompany(code)}
+                        title={t('knowledgeCompanyFocusHint')}
+                      >
+                        {code}
+                      </button>
+                    ))}
                     <button
-                      key={code}
                       type="button"
                       className="small-button"
                       style={{ fontSize: '0.68rem', padding: '3px 9px' }}
-                      onClick={() => onSelectTicker?.(code)}
+                      onClick={() =>
+                        dispatchAiAsk(
+                          `${entry.badge} — "${entry.title}" başlıklı kaydı yatırımcı gözüyle 2-3 cümlede özetle ve olası etkisini belirt. Yatırım tavsiyesi verme.`,
+                        )
+                      }
                     >
-                      {code}
+                      🤖 {t('knowledgeSummarize')}
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="small-button"
-                    style={{ fontSize: '0.68rem', padding: '3px 9px' }}
-                    onClick={() =>
-                      dispatchAiAsk(
-                        `${entry.badge} — "${entry.title}" başlıklı kaydı yatırımcı gözüyle 2-3 cümlede özetle ve olası etkisini belirt. Yatırım tavsiyesi verme.`,
-                      )
-                    }
-                  >
-                    🤖 {t('knowledgeSummarize')}
-                  </button>
-                </div>
-              )}
-            </article>
-          ),
-        )}
+                  </div>
+                </article>
+              ),
+            )}
 
-        {filtered.length > visible && (
-          <button
-            type="button"
-            className="tab-button"
-            onClick={() => setVisible((current) => current + 80)}
-            style={{ alignSelf: 'center', padding: '8px 18px', marginTop: '4px' }}
-          >
-            {t('reportsShowMore')} ({filtered.length - visible})
-          </button>
-        )}
-      </div>
+            {filtered.length > visible && (
+              <button
+                type="button"
+                className="tab-button"
+                onClick={() => setVisible((current) => current + PAGE_SIZE)}
+                style={{ alignSelf: 'center', padding: '8px 18px', marginTop: '4px' }}
+              >
+                {t('reportsShowMore')} ({filtered.length - visible})
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      <p style={{ marginTop: '14px', fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        {tab === 'consensus' ? t('consensusSourcesNote') : t('reportsSourcesNote')}
+      </p>
 
       <KapDocumentViewerModal
         announcement={openKap}
