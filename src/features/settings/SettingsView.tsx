@@ -16,7 +16,7 @@ import { useTranslation } from '../../api/i18n';
 import { openUrl } from '../../lib/openExternal';
 import { getSession, signOut, AUTH_EVENT } from '../auth/session';
 import { supabase } from '../auth/supabaseClient';
-import { checkLicense, licenseOverview, type LicenseOverview } from '../auth/license';
+import { checkLicense, licenseOverview, releaseDevice, type LicenseOverview } from '../auth/license';
 import { GithubIcon } from '../../components/icons';
 import UpdatesView from '../updates/UpdatesView';
 import './SettingsView.css';
@@ -80,6 +80,20 @@ export default function SettingsView() {
   const account = getSession();
   const [activeTab, setActiveTab] = useState<'account' | 'keys' | 'agents' | 'updates'>('account');
   const [license, setLicense] = useState<LicenseOverview | null | 'loading'>('loading');
+  // Cihaz çıkarılırken düğmeyi kilitler (device_id).
+  const [releasing, setReleasing] = useState<string | null>(null);
+
+  /** Cihazı lisanstan bırakır; boşalan yer başka bilgisayara açılır. */
+  const dropDevice = async (deviceId: string) => {
+    setReleasing(deviceId);
+    try {
+      if (!(await releaseDevice(deviceId))) return;
+      const refreshed = await licenseOverview();
+      if (refreshed) setLicense(refreshed);
+    } finally {
+      setReleasing(null);
+    }
+  };
 
   // Hesap sekmesi: lisans özeti (cihaz listesi RPC'si yoksa temel bilgiye düş).
   useEffect(() => {
@@ -590,10 +604,20 @@ export default function SettingsView() {
                 {license.devices.length > 0 && (
                   <ul className="st-devices">
                     {license.devices.map((device, index) => (
-                      <li key={index}>
-                        <span>{device.device_name ?? 'unknown'}</span>
+                      <li key={device.device_id ?? index}>
+                        <span>{device.device_name ?? t('authUnknownDevice')}</span>
                         {device.current && <span className="cur">● {t('authThisDevice')}</span>}
                         <span className="seen">{new Date(device.last_seen_at).toLocaleString()}</span>
+                        {!device.current && device.device_id && (
+                          <button
+                            type="button"
+                            className="st-device-drop"
+                            disabled={releasing !== null}
+                            onClick={() => dropDevice(device.device_id!)}
+                          >
+                            {releasing === device.device_id ? t('authWorking') : t('authReleaseDevice')}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

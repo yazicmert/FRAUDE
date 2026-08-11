@@ -8,9 +8,14 @@
 --    Üretim: scripts/gen-licenses.mjs (service-role ile hash yazar, anahtarı
 --    ekrana/CSV'ye döker).
 --  • İstemci tablolara dokunamaz (RLS açık, policy yok). Tüm işlemler
---    security definer RPC'lerle: activate_license / check_license.
---  • Bir lisans tek hesaba bağlanır; max_devices kadar cihazda çalışır.
+--    security definer RPC'lerle: activate_license / check_license /
+--    release_device / license_overview.
+--  • Bir lisans tek HESABA bağlanır; max_devices kadar cihazda çalışır.
 --    expires_at null ise süresizdir. status='revoked' anında erişimi keser.
+--  • Anahtar YALNIZCA BİR KEZ sorulur: lisansı etkin olan e-posta yeniden
+--    giriş yaptığında check_license cihazı kendiliğinden bağlar; anahtar
+--    ekranı bir daha çıkmaz. Cihaz sınırı dolduğunda kullanıcı Ayarlar →
+--    Hesap'tan (ya da kapıdaki ekrandan) release_device ile yer açar.
 
 create table if not exists public.licenses (
   id            uuid primary key default gen_random_uuid(),
@@ -113,46 +118,159 @@ end;
 $$;
 
 -- ── Açılış denetimi ─────────────────────────────────────────────────────────
-create or replace function public.check_license(p_device_id text)
+-- Lisans CİHAZA değil HESABA bağlıdır: anahtarı bir kez etkinleştiren e-posta
+-- yeni bir bilgisayarda (ya da uygulama verisi silindiğinde oluşan yeni cihaz
+-- kimliğiyle) tekrar giriş yaptığında anahtar SORULMAZ — cihaz max_devices
+-- sınırı içinde kendiliğinden bağlanır. Sınır dolduysa 'device-limit' döner;
+-- kullanıcı release_device ile bir cihaz çıkarıp yer açabilir.
+create or replace function public.check_license(p_device_id text, p_device_name text)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_user uuid := auth.uid();
-  v_plan text;
-  v_expires timestamptz;
+  v_user       uuid := auth.uid();
+  v_license    licenses%rowtype;
+  v_license_id uuid;
+  v_devices    int;
+  v_bound      boolean;
+begin
+  if v_user is null then
+    return jsonb_build_object('ok', false, 'error', 'not-authenticated');
+  end if;
+  if p_device_id is null or length(p_device_id) < 8 then
+    return jsonb_build_object('ok', false, 'error', 'no-license');
+  end if;
+
+  -- 1) Hesabın kendi etkinleştirdiği lisans (cihazdan bağımsız).
+  select l.* into v_license
+    from licenses l
+   where l.activated_by = v_user
+     and l.status = 'active'
+     and (l.expires_at is null or l.expires_at > now())
+   order by l.activated_at desc nulls last
+   limit 1;
+
+  -- 2) Devir/eski kayıt durumu: lisans başka hesapta görünse de bu kullanıcının
+  --    cihaz kaydı varsa o lisans geçerli sayılır.
+  if not found then
+    select l.* into v_license
+      from license_activations a
+      join licenses l on l.id = a.license_id
+     where a.user_id = v_user
+       and l.status = 'active'
+       and (l.expires_at is null or l.expires_at > now())
+     order by a.last_seen_at desc
+     limit 1;
+  end if;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'no-license');
+  end if;
+
+  select exists (
+           select 1 from license_activations
+            where license_id = v_license.id and device_id = p_device_id
+         ) into v_bound;
+
+  -- Yeni cihaz bağlanacaksa sınırı kilit altında say (eşzamanlı açılışlarda
+  -- limitin aşılmaması için lisans satırı kilitlenir).
+  if not v_bound then
+    v_license_id := v_license.id;
+    select * into v_license from licenses where id = v_license_id for update;
+    select count(*) into v_devices
+      from license_activations
+     where license_id = v_license_id;
+    if v_devices >= v_license.max_devices then
+      return jsonb_build_object(
+        'ok', false,
+        'error', 'device-limit',
+        'plan', v_license.plan,
+        'expires_at', v_license.expires_at,
+        'max_devices', v_license.max_devices
+      );
+    end if;
+  end if;
+
+  insert into license_activations (license_id, user_id, device_id, device_name)
+  values (v_license.id, v_user, p_device_id, p_device_name)
+  on conflict (license_id, device_id)
+  do update set last_seen_at = now(),
+                user_id     = excluded.user_id,
+                device_name = coalesce(excluded.device_name, license_activations.device_name);
+
+  return jsonb_build_object('ok', true, 'plan', v_license.plan, 'expires_at', v_license.expires_at);
+end;
+$$;
+
+-- Eski sürümlerin çağırdığı tek argümanlı biçim korunur (cihaz adı olmadan).
+create or replace function public.check_license(p_device_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return public.check_license(p_device_id, null::text);
+end;
+$$;
+
+-- ── Cihaz çıkarma ───────────────────────────────────────────────────────────
+-- Kullanıcı kendi lisansına bağlı bir cihazı bırakabilir; böylece sınır dolduğunda
+-- yeni bilgisayara yer açmak için geliştiriciye başvurmak gerekmez.
+create or replace function public.release_device(p_device_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user    uuid := auth.uid();
+  v_license licenses%rowtype;
+  v_deleted int;
 begin
   if v_user is null then
     return jsonb_build_object('ok', false, 'error', 'not-authenticated');
   end if;
 
-  select l.plan, l.expires_at into v_plan, v_expires
-    from license_activations a
-    join licenses l on l.id = a.license_id
-   where a.user_id = v_user
-     and a.device_id = p_device_id
-     and l.status = 'active'
-     and (l.expires_at is null or l.expires_at > now())
+  select l.* into v_license
+    from licenses l
+   where l.activated_by = v_user and l.status = 'active'
+   order by l.activated_at desc nulls last
    limit 1;
+  if not found then
+    select l.* into v_license
+      from license_activations a
+      join licenses l on l.id = a.license_id
+     where a.user_id = v_user and l.status = 'active'
+     order by a.last_seen_at desc
+     limit 1;
+  end if;
   if not found then
     return jsonb_build_object('ok', false, 'error', 'no-license');
   end if;
 
-  update license_activations
-     set last_seen_at = now()
-   where user_id = v_user and device_id = p_device_id;
+  delete from license_activations
+   where license_id = v_license.id and device_id = p_device_id;
+  get diagnostics v_deleted = row_count;
+  if v_deleted = 0 then
+    return jsonb_build_object('ok', false, 'error', 'no-license');
+  end if;
 
-  return jsonb_build_object('ok', true, 'plan', v_plan, 'expires_at', v_expires);
+  return jsonb_build_object('ok', true, 'plan', v_license.plan, 'expires_at', v_license.expires_at);
 end;
 $$;
 
 -- Yalnızca oturumlu kullanıcılar çağırabilir.
 revoke execute on function public.activate_license(text, text, text) from public, anon;
 revoke execute on function public.check_license(text) from public, anon;
+revoke execute on function public.check_license(text, text) from public, anon;
+revoke execute on function public.release_device(text) from public, anon;
 grant execute on function public.activate_license(text, text, text) to authenticated;
 grant execute on function public.check_license(text) to authenticated;
+grant execute on function public.check_license(text, text) to authenticated;
+grant execute on function public.release_device(text) to authenticated;
 
 -- Lisans üretim script'i (service_role) tablolara doğrudan yazar; bu projede
 -- yeni tablolara varsayılan grant gelmediği için açıkça verilir.
@@ -189,6 +307,7 @@ begin
   select coalesce(
            jsonb_agg(
              jsonb_build_object(
+               'device_id', a.device_id,
                'device_name', a.device_name,
                'last_seen_at', a.last_seen_at,
                'current', a.device_id = p_device_id

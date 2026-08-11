@@ -199,6 +199,22 @@
 .settings-view .st-devices li:hover { border-color: rgba(0, 255, 157, 0.3); }
 .settings-view .st-devices .cur { color: #00e896; font-size: 11px; }
 .settings-view .st-devices .seen { margin-left: auto; color: var(--text-muted); font-size: 11px; }
+.settings-view .st-device-drop {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 106, 94, 0.35);
+  background: transparent;
+  color: #ff6a5e;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.settings-view .st-device-drop:hover:not(:disabled) {
+  background: rgba(255, 106, 94, 0.12);
+  border-color: rgba(255, 106, 94, 0.6);
+}
+.settings-view .st-device-drop:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Çıkış butonu ─────────────────────────────────── */
 .settings-view .st-danger-btn {
