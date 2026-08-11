@@ -2,6 +2,39 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-11-bilgi-deposu-hiz-ve-kaynak-derinligi",
+      "date": "2026-08-11",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Bilgi Deposu: yüklenme beklemesi, kendiliğinden refresh ve sığ kaynaklar giderildi",
+        "en": "Knowledge Base: load stalls, spontaneous refresh and shallow sources fixed"
+      },
+      "summary": {
+        "tr": "Üç şikâyet ölçülüp giderildi.\n\n**Uygulama kendiliğinden refresh atıyordu.** Vite yalnız `src-tauri/**`'ı yok sayıyordu; oysa izlediği proje kökünde 1,8 GB'lık `target/` ve kökün içinde duran ayrı bir çalışma kopyası (`.claude/worktrees/…`, kendi target'ıyla) var. Her cargo derlemesi yüzlerce dosya olayı üretiyor, vite bunu kaynak değişikliği sanıp sayfayı tam yeniden yüklüyordu. Derleme çıktıları izleme dışına alındı.\n\n**Yüklenme çok uzun sürüyordu.** Arşiv boşsa açılış örtük olarak DERİN tarama yapıyordu: 12 kaynağı sonuna kadar taramak 154 sn ve ekran o süre boyunca boş. Derin tarama artık yalnız \"Yenile\" ile. Ayrıca dört kaynak tek bekleyişte toplanıyordu, yani en yavaş olan diğer üçünü de bekletiyordu; her kaynak artık geldiği anda çiziliyor. SPK için çağrılan pano anlık görüntüsü deponun hiç kullanmadığı piyasa göstergelerini de ağdan topluyordu, o çağrı akıştan çıktı.\n\n**Kaynaklar sığdı.** SPK sekmesi en fazla 10 bülten gösteriyordu (birkaç haftalık pencere): yeni bülten dizini üç yılı veriyor, 10 → 178. KAP sekmesi ise istemcide sabitlenmiş `limit: 25` yüzünden bütün depodan 25 bildirim görüyordu; pencere açıldı. En önemlisi şirket odağı: o payın KAP geçmişi artık 40 satırlık depoyu süzmek yerine 7011 kayıtlık hisse bazlı uçtan çekiliyor.\n\nBunların üstünü örten bir kusur: SPK bülteninin tarihi \"08 Temmuz 2026 Çarşamba\" biçiminde geliyor ve ayrıştırılamıyordu; bütün SPK kayıtları zaman damgası 0 ile akışın en dibine düşüyor, zaman çizgisine hiç karışmıyorlardı.",
+        "en": "Three complaints measured and fixed.\n\n**The app refreshed itself.** Vite only ignored `src-tauri/**`, while the watched project root holds a 1.8 GB `target/` and a second working copy inside it (`.claude/worktrees/…`, with its own target). Every cargo build produced hundreds of file events that vite read as source changes and answered with a full page reload. Build outputs are now excluded from watching.\n\n**Loading took far too long.** With an empty archive, startup implicitly ran a DEEP scan: 154 s to walk 12 sources to the end, with a blank screen throughout. Deep scanning is now reserved for \"Refresh\". The four sources were also awaited together, so the slowest blocked the other three; each now paints as it lands. The dashboard snapshot fetched for SPK also pulled market metrics the base never uses; that call is gone.\n\n**Sources were shallow.** The SPK tab showed at most 10 bulletins — a few weeks. A new bulletin index covers three years: 10 → 178. The KAP tab saw only 25 disclosures out of the whole store because the client hard-coded `limit: 25`; the window is now the caller's choice. Most importantly, company focus pulls that ticker's KAP history from the per-ticker endpoint (a 7011-record pool) instead of filtering 40 stored rows.\n\nOne defect had been masking all of this: SPK bulletin dates arrive as \"08 Temmuz 2026 Çarşamba\" and could not be parsed, so every SPK record fell to the bottom of the feed with timestamp 0 and never mixed into the timeline."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/api.rs",
+        "core/src/spk.rs",
+        "server/src/rpc.rs",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs",
+        "src/api/tauriClient.ts",
+        "src/features/knowledge/KnowledgeBaseView.tsx",
+        "vite.config.ts"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonunda Bilgi Deposu'nun yüklenme süresini ve kaynak derinliğini düzelt.\n\n1. `vite.config.ts` içinde `server.watch.ignored` yalnız `**/src-tauri/**` içeriyor. İzleyici proje kökünün tamamını kapsıyor ve kökte cargo'nun yazdığı `target/` var; her derleme sayfayı tam yeniden yükletiyor. `**/target/**`, `**/dist/**` ve `**/.claude/**` de yok sayılmalı.\n\n2. `core/src/api.rs::get_analyst_reports` içinde derin tarama arşiv boşsa örtük olarak çalışıyor (`let deep = archive.reports.is_empty()`); 12 kaynağı sonuna kadar taramak dakikalar sürüyor ve ekran o süre boyunca boş kalıyor. Derin tarama yalnız `force_refresh` ile yapılmalı.\n\n3. `KnowledgeBaseView` dört kaynağı tek `Promise.allSettled` ile bekliyor: en yavaş olan diğerlerini de bekletiyor. Her kaynağı kendi `then`inde ekrana yaz, hangilerinin beklendiğini kullanıcıya adıyla göster. \"Yenile\" düğmesi derin tarama tetiklesin ve sürerken devre dışı kalsın.\n\n4. SPK derinliği: `spk::fetch_latest_bulletins` yalnız 10 kayıt veriyor. `spk.rs` içine üç yılı `fetch_year_bulletins` ile tarayan, adrese göre tekleyen ve diskte GÜNLÜK önbelleklenen bir `bulletin_index` ekle; hepsi düşerse eldeki dizini döndür. Komutu uçtan uca bağla: `api::get_spk_bulletins` → Tauri komutu + `generate_handler` → `server/src/rpc.rs` (isim listesi VE dispatch kolu) → `tauriClient`. Bilgi Deposu artık pano anlık görüntüsü yerine bunu okusun (o çağrı ayrıca gereksiz piyasa göstergesi isteği yapıyor).\n\n5. KAP derinliği: `tauriClient.listKapAnnouncements` `limit: 25` sabitliyor. Pencereyi parametre yap (varsayılan 25 kalsın), Bilgi Deposu deponun tamamını istesin. Şirket odağında o payın KAP geçmişini `getKapForTicker` ile ayrıca çek ve kimlikle tekleyerek birleştir — depo canlı akışın yalnız son ~40 bildirimini tutuyor, süzmek yetmiyor.\n\n6. `parseFeedTimestamp` SPK'nın \"08 Temmuz 2026 Çarşamba\" biçimini tanımıyor ve bütün SPK kayıtları ts=0 ile akışın dibine düşüyor. Türkçe ay adlarını çöz.\n\nSonunda `cargo test --manifest-path core/Cargo.toml`, üç kabuk için `cargo check`, `npx tsc --noEmit` ve `npx vite build` çalıştır; SPK dizininin derinliğini canlı bir testle doğrula.",
+      "notes": "Ölçüm 2026-08-11: SPK 10 → 178 bülten (2024-2026), dizin günlük önbellekli. Hisse bazlı KAP ucu 7011 kayıtlık havuzdan süzüyor. Ölçülüp EKLENMEYEN kaynak: Şeker'in `EnstrumanKodList` alanı hisse bazlı süzmüyor — THYAO ve EREGL bayt bayt aynı 449 kaydı döndürüyor, yani hisse odağı için kullanılabilir bir uç değil."
+    },
+    {
       "id": "2026-08-11-bilgi-deposu-analiz-raporlari-birlesti",
       "date": "2026-08-11",
       "author": "yazicmert",
