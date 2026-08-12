@@ -7,7 +7,7 @@ const STORAGE_KEY = 'fraude-site-lang';
 const STRINGS = {
   tr: {
     // Nav & genel
-    navFeatures: 'Özellikler',
+    navFeatures: 'Modüller',
     navStart: 'Başlangıç',
     navDownload: 'İndir',
     navUpdates: 'Güncellemeler',
@@ -18,34 +18,50 @@ const STRINGS = {
     working: 'İşleniyor…',
 
     // Hero
-    heroTitleTop: 'Finansal dostunuz',
-    heroTitleAccent: 'tüm piyasalar tek ekranda',
+    heroEyebrow: '{n} modül · macOS + Windows · açık kaynak',
+    heroLine1: 'KAP, TEFAS, izahname, bülten.',
+    heroLine2: 'Hepsi tek terminalde.',
     heroLead:
-      "Borsa İstanbul'dan küresel endekslere, fonlardan emtia ve dövize — canlı veri, KAP izleme ve yapay zeka destekli araştırma tek masaüstü uygulamasında.",
-    heroDownload: '⬇ Uygulamayı İndir',
-    heroRequest: 'Lisans Talep Et',
-    heroNote: 'macOS ve Windows için hazır · Lisans anahtarıyla etkinleştirilir',
+      "Borsa İstanbul'u izlemek için açtığınız onlarca sekme tek bir masaüstü uygulamasında toplanır: canlı fiyat, FQL ile tarama, bildirim radarı, TEFAS fon kırılımı ve kendi API anahtarınızla çalışan araştırma ajanları.",
+    heroNote: 'Lisans anahtarıyla açılır; talebinizi hesabınızdan iletirsiniz.',
 
-    // Özellikler
-    featuresTitle: 'Araştırma masanız, tek uygulamada',
-    featuresSub:
-      'FRAUDE, dağınık sekmeler yerine tek bir çalışma alanında piyasaları izlemeniz, taramanız ve araştırmanız için tasarlandı.',
-    f1t: 'Canlı Piyasa Verisi',
-    f1x: 'BIST hisseleri, küresel endeksler, emtia, döviz ve kripto — ~15 dk gecikmeli kotasyon şeridiyle.',
-    f2t: 'Teknik Tarayıcı',
-    f2x: 'RSI, hacim ve temel oranlarla FQL sorgu dili üzerinden tüm evreni saniyeler içinde tarayın.',
-    f3t: 'KAP İzleme Radarı',
-    f3x: 'Takip listenizdeki şirketlerin KAP bildirimlerini arka planda izler; önemli değişimlerde anında bildirim üretir.',
-    f4t: 'Fon Analizi',
-    f4x: 'TEFAS fonlarının getirileri, varlık dağılımları ve portföy raporlarından fon içi tek tek varlık kırılımı.',
-    f5t: 'Yapay Zeka Araştırma',
-    f5x: 'Kendi API anahtarınızla çalışan AI ajanları: bildirimleri, haberleri ve fiyatları okuyup Türkçe özet notlar hazırlar.',
-    f6t: 'Ekonomik Takvim',
-    f6x: 'TCMB faiz kararları, enflasyon ve makro veriler; temettü, bedelli/bedelsiz ve halka arz takvimiyle birlikte.',
+    // Kahraman terminali
+    termTitle: 'Teknik Tarayıcı',
+    termSample: 'örnek tarama',
+    termAria:
+      "FRAUDE teknik tarayıcısı: BIST100 üzerinde RSI'si 30'un altındaki hisseleri listeleyen örnek bir tarama ve altında düşen bir KAP bildirimi.",
+    termKap: 'Pay Geri Alım İşlemine İlişkin Bildirim',
+    colTicker: 'KOD',
+    colLast: 'SON',
+    colChange: 'GÜN',
+
+    // Kaynaklar
+    srcTitle: 'Veri kaynakları',
+
+    // Modüller
+    modKicker: 'Modüller',
+    modTitle: 'Tek çalışma alanı, {n} modül',
+    modSub:
+      'Her modül kendi sekmesinde açılır, aynı çalışma alanını paylaşır; sıralamasını ve hangilerinin yükleneceğini siz belirlersiniz.',
+    modAlways: 'Ayrıca her yerden:',
+
+    // Farklar
+    whyKicker: 'Farklar',
+    whyTitle: 'Üç tasarım kararı',
+    p1l: 'Veri',
+    p1t: 'Doğrudan resmî kaynaktan',
+    p1x: "Fiyat, bildirim ve fon verisi KAP, SPK, TEFAS, Borsa İstanbul ve İş Yatırım'ın kendi uçlarından okunur. Araya veri satan bir katman girmez; her satırın kaynağına ekrandan gidersiniz.",
+    p2l: 'Yapay zeka',
+    p2t: 'Kendi anahtarınızla çalışır',
+    p2x: 'Araştırma ajanları sizin sağlayıcı hesabınıza bağlanır. Sorgularınız bizim sunucumuzdan geçmez ve sağlayıcıyı istediğiniz zaman değiştirirsiniz.',
+    p3l: 'Kaynak kodu',
+    p3t: 'Açık kaynak, ajanla katkı',
+    p3x: 'Depoyu klonlar, değişikliği kendi AI ajanınızla geliştirir ve PR açarsınız. Güvenlik incelemesinden geçen katkı hem bu sitede hem uygulamanın içinde listelenir.',
 
     // Adımlar
+    stepsKicker: 'Kurulum',
     stepsTitle: 'Üç adımda başlayın',
-    stepsSub: 'Kurulumdan ilk taramaya birkaç dakika.',
+    stepsSub: 'İndirmeden ilk taramaya birkaç dakika.',
     s1t: 'Uygulamayı indirin',
     s1x: 'macOS veya Windows sürümünü indirip kurun; uygulama açılışta sizi karşılar.',
     s2t: 'Hesap oluşturun',
@@ -56,9 +72,9 @@ const STRINGS = {
     // İndir bandı
     dlTitle: "FRAUDE'yi masaüstünüze kurun",
     dlSub: 'Erişim lisans anahtarıyla sağlanır; anahtarınız yoksa hesabınızdan talep edin.',
-    dlMac: ' macOS için indir',
-    dlWin: '⊞ Windows için indir',
-    dlRequest: 'Lisans Talep Et →',
+    dlMac: 'macOS için indir',
+    dlWin: 'Windows için indir',
+    dlRequest: 'Lisans talep et',
     dlGatekeeper:
       'macOS ilk açılışta uyarı verirse uygulamaya sağ tıklayıp "Aç" seçin; Windows SmartScreen\'de "Yine de çalıştır" deyin.',
 
@@ -261,7 +277,7 @@ const STRINGS = {
     metaTitle: 'FRAUDE — Finansal Dostunuz',
   },
   en: {
-    navFeatures: 'Features',
+    navFeatures: 'Modules',
     navStart: 'Getting Started',
     navDownload: 'Download',
     navUpdates: 'Updates',
@@ -271,32 +287,45 @@ const STRINGS = {
     loading: 'Loading…',
     working: 'Working…',
 
-    heroTitleTop: 'Your financial companion',
-    heroTitleAccent: 'every market on one screen',
+    heroEyebrow: '{n} modules · macOS + Windows · open source',
+    heroLine1: 'Filings, funds, prospectuses, bulletins.',
+    heroLine2: 'One terminal.',
     heroLead:
-      'From Borsa Istanbul to global indices, funds to commodities and FX — live data, disclosure monitoring and AI-powered research in a single desktop app.',
-    heroDownload: '⬇ Download the App',
-    heroRequest: 'Request a License',
-    heroNote: 'Ready for macOS & Windows · Activated with a license key',
+      'The dozen tabs you keep open to follow Borsa Istanbul collapse into a single desktop app: live prices, FQL screening, a disclosure radar, TEFAS fund breakdowns and research agents that run on your own API key.',
+    heroNote: 'Unlocked with a license key; request yours from your account.',
 
-    featuresTitle: 'Your research desk, in one app',
-    featuresSub:
-      'FRAUDE is built for watching, screening and researching the markets in a single workspace instead of scattered tabs.',
-    f1t: 'Live Market Data',
-    f1x: 'BIST equities, global indices, commodities, FX and crypto — with a ~15-min delayed quote tape.',
-    f2t: 'Technical Screener',
-    f2x: 'Scan the entire universe in seconds with the FQL query language over RSI, volume and fundamentals.',
-    f3t: 'Disclosure Radar',
-    f3x: 'Monitors KAP filings for your watchlist in the background and alerts you instantly on material changes.',
-    f4t: 'Fund Analytics',
-    f4x: 'TEFAS fund returns, asset allocations and per-holding breakdowns extracted from portfolio reports.',
-    f5t: 'AI Research',
-    f5x: 'AI agents running on your own API key read filings, news and prices to draft concise summary notes.',
-    f6t: 'Economic Calendar',
-    f6x: 'Central bank decisions, inflation and macro data — alongside dividend, rights and IPO calendars.',
+    termTitle: 'Technical Screener',
+    termSample: 'sample scan',
+    termAria:
+      'The FRAUDE technical screener: a sample scan listing BIST100 stocks with an RSI below 30, and a KAP disclosure arriving underneath it.',
+    termKap: 'Notification on share buy-back transaction',
+    colTicker: 'CODE',
+    colLast: 'LAST',
+    colChange: 'CHG',
 
+    srcTitle: 'Data sources',
+
+    modKicker: 'Modules',
+    modTitle: 'One workspace, {n} modules',
+    modSub:
+      'Every module opens in its own tab and shares one workspace; you decide the order and which ones load.',
+    modAlways: 'Also available everywhere:',
+
+    whyKicker: 'Differences',
+    whyTitle: 'Three design decisions',
+    p1l: 'Data',
+    p1t: 'Straight from the official source',
+    p1x: 'Prices, filings and fund data are read from the endpoints of KAP, SPK, TEFAS, Borsa İstanbul and İş Yatırım themselves. No data reseller sits in between, and you can reach any row’s source from the screen.',
+    p2l: 'AI',
+    p2t: 'Runs on your own key',
+    p2x: 'Research agents connect to your provider account. Your queries never pass through our servers, and you can switch providers whenever you want.',
+    p3l: 'Source code',
+    p3t: 'Open source, built with agents',
+    p3x: 'Clone the repository, build your change with your own AI agent and open a PR. Once it passes security review, your contribution is listed both on this site and inside the app.',
+
+    stepsKicker: 'Setup',
     stepsTitle: 'Start in three steps',
-    stepsSub: 'A few minutes from install to your first scan.',
+    stepsSub: 'A few minutes from download to your first scan.',
     s1t: 'Download the app',
     s1x: 'Install the macOS or Windows build; the app greets you on first launch.',
     s2t: 'Create an account',
@@ -306,9 +335,9 @@ const STRINGS = {
 
     dlTitle: 'Get FRAUDE on your desktop',
     dlSub: 'Access requires a license key; request one from your account if you don’t have it yet.',
-    dlMac: ' Download for macOS',
-    dlWin: '⊞ Download for Windows',
-    dlRequest: 'Request a License →',
+    dlMac: 'Download for macOS',
+    dlWin: 'Download for Windows',
+    dlRequest: 'Request a license',
     dlGatekeeper:
       'If macOS warns on first launch, right-click the app and choose "Open"; on Windows SmartScreen pick "Run anyway".',
 

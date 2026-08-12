@@ -11,6 +11,12 @@ interface LocalizedText {
   en: string;
 }
 
+/**
+ * Kayıt defterindeki girdiler yalnız title/summary alanlarını garanti eder;
+ * kısa düzeltmeler commit, security, agentPrompt ve touches olmadan yazılıyor.
+ * Bu yüzden çekirdek dışındaki her alan isteğe bağlı — eksik alan sayfanın
+ * tamamını çökertmemeli.
+ */
 interface CommunityUpdate {
   id: string;
   date: string;
@@ -19,12 +25,12 @@ interface CommunityUpdate {
   area: string;
   title: LocalizedText;
   summary: LocalizedText;
-  commit: string;
-  includedIn: string | null;
-  security: { reviewed: boolean; reviewer: string };
-  touches: string[];
-  agentPrompt: string;
-  notes: LocalizedText | null;
+  commit?: string;
+  includedIn?: string | null;
+  security?: { reviewed: boolean; reviewer: string | null };
+  touches?: string[];
+  agentPrompt?: string;
+  notes?: LocalizedText | null;
 }
 
 export default function Updates() {
@@ -48,6 +54,7 @@ export default function Updates() {
   }, []);
 
   const copyPrompt = (update: CommunityUpdate) => {
+    if (!update.agentPrompt) return;
     navigator.clipboard.writeText(update.agentPrompt).then(() => {
       setCopiedId(update.id);
       setTimeout(() => setCopiedId((prev) => (prev === update.id ? null : prev)), 2000);
@@ -85,8 +92,8 @@ export default function Updates() {
                 {update.kind === 'fix' ? t('updKindFix') : t('updKindFeature')}
               </span>
               <span className="badge badge-gray">{update.area}</span>
-              {update.security.reviewed && (
-                <span className="small" style={{ color: '#3fb950' }}>{t('updSecurityOk')}</span>
+              {update.security?.reviewed && (
+                <span className="small" style={{ color: 'var(--up)' }}>{t('updSecurityOk')}</span>
               )}
               <div style={{ flex: 1 }} />
               <span className="muted small">
@@ -101,14 +108,18 @@ export default function Updates() {
                   ? t('updShippedIn').replace('{v}', update.includedIn)
                   : t('updNotShipped')}
               </span>
-              <a href={update.commit} target="_blank" rel="noreferrer" className="small">
-                {t('updViewCommit')}
-              </a>
-              <button className="btn btn-sm" onClick={() => setExpanded(open ? null : update.id)}>
-                {open ? '▾' : '▸'} {t('updPromptTitle')}
-              </button>
+              {update.commit && (
+                <a href={update.commit} target="_blank" rel="noreferrer" className="small">
+                  {t('updViewCommit')}
+                </a>
+              )}
+              {update.agentPrompt && (
+                <button className="btn btn-sm" onClick={() => setExpanded(open ? null : update.id)}>
+                  {open ? '▾' : '▸'} {t('updPromptTitle')}
+                </button>
+              )}
             </div>
-            {open && (
+            {open && update.agentPrompt && (
               <div style={{ marginTop: 12 }}>
                 <p className="muted small">{t('updPromptHint')}</p>
                 <pre

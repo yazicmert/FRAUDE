@@ -55,7 +55,7 @@ export default function App() {
           <Wordmark />
         </a>
         <div className="links">
-          <a href="/#ozellikler">{t('navFeatures')}</a>
+          <a href="/#moduller">{t('navFeatures')}</a>
           <a href="/#baslangic">{t('navStart')}</a>
           <a href="/#indir">{t('navDownload')}</a>
           <a onClick={() => navigate('/guncellemeler')}>{t('navUpdates')}</a>
