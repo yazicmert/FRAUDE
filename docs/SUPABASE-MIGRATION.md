@@ -10,6 +10,95 @@ uygulanmalıdır — her adım bir öncekine dayanır.
 
 ---
 
+## DURUM — 2026-08-12
+
+Taşımanın **veri ve altyapı tarafı bitti**. Yeni proje canlıya alınmaya hazır
+değil: aşağıdaki "kalanlar" tamamlanmadan istemci yayınlanmamalı.
+
+### Yapıldı
+
+| Adım | Sonuç |
+| --- | --- |
+| Şema | 4 migration uygulandı — 8 tablo, 14 RPC (eski projede olmayan `license_overview` + `release_device` dahil) |
+| Edge Function | 5'i de dağıtıldı ve ACTIVE (`market-watch`, `notify-feed`, `refresh-bist-universe` `verify_jwt=false`; `send-license-email`, `report-license-abuse` `verify_jwt=true`) |
+| Auth kullanıcıları | 6/6 — UUID'ler korundu |
+| Tablo verisi | `bist_tickers` 796, `licenses` 13, `license_activations` 6, `license_requests` 3, `admins` 1, `notify_seen` 2; `notify_prefs`/`notify_deliveries` kaynakta boş |
+| Bütünlük | Öksüz yabancı anahtar yok; 4 active lisansın 4'ü de hesaba bağlı (`activated_by` dolu) |
+| pg_cron | `market-watch` (10 dk) + `refresh-bist-universe` (06:30) kuruldu, ikisi de `active` |
+| İstemci kodu | Uygulama, site ve Chrome eklentisi yeni adrese çevrildi; `npm run build` ve `npm --prefix site run build` geçiyor |
+
+### Kalanlar — yayından ÖNCE
+
+1. **Auth ayarları** (`--only=auth`): `SMTP_USER`, `SMTP_PASS`, `GITHUB_CLIENT_ID`,
+   `GITHUB_SECRET` girilmeden çalıştırılamadı. Bunlar olmadan yeni projede
+   **GitHub girişi ve doğrulama/şifre e-postaları çalışmaz**.
+2. **Edge Function gizli anahtarları** (`--only=gizli`): `BREVO_API_KEY`,
+   `MAIL_FROM`, `ADMIN_EMAIL`, `LLM_API_KEY` girilmedi. Bunlar olmadan lisans
+   e-postası ve market-watch bildirimleri sessizce çalışmaz.
+3. **GitHub OAuth uygulaması** (GitHub tarafında): *Authorization callback URL* →
+   `https://emrusyelfekcfyisfzzl.supabase.co/auth/v1/callback`.
+4. **Mail şablonları**: `docs/email-templates/` içindekiler yeni panoya elle
+   yapıştırılmalı (bkz. o dizindeki README).
+5. **Parolalar taşınmadı** (bilinçli karar): auth API parola hash'ini okutmaz,
+   eski projenin DB parolası da yok. Mevcut **4 e-posta/parola kullanıcısı ilk
+   girişte şifre yenilemeli**. Onlara haber verilmeli.
+
+---
+
+## Bağlantı notu — doğrudan DB adresi IPv4'ten erişilmez
+
+`db.<ref>.supabase.co` yalnız **IPv6** çözümlenir. IPv4 bir ağdaysan `psql` ve
+`pg_dump` oraya bağlanamaz ("no route to host" / sessiz zaman aşımı). Havuz
+(pooler) adresi IPv4'tür ve kullanıcı adı farklıdır:
+
+```
+postgresql://postgres.<ref>:<parola>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
+```
+
+Konaktaki sayı bölgeye/projeye göre `aws-0` ya da `aws-1` olabilir; yeni proje
+`aws-1`, eski nesil projeler `aws-0`. `run-migration.mjs` ikisini de sırayla
+dener (`POOLERS`). `supabase db push` bunu kendi hallettiği için şema adımı
+doğrudan çalışır.
+
+---
+
+## HIZLI YOL — tek dosya doldur, tek komut çalıştır
+
+Aşağıdaki uzun anlatımın tamamı otomatikleştirildi. Yapman gereken:
+
+```bash
+cp scripts/.env.migration.example scripts/.env.migration
+# dosyayı doldur (içinde her alanın nereden alınacağı yazıyor)
+
+node scripts/run-migration.mjs            # kuru çalışma — hiçbir şey değişmez
+node scripts/run-migration.mjs --apply    # taşımayı yapar
+```
+
+Script şu yedi adımı sırayla yürütür ve **eksik kimlik bilgisi olan adımı
+atlayıp nedenini söyler** — elindekiyle başlayıp sonra tamamlayabilirsin:
+
+| # | Adım | Gerektirdiği |
+| --- | --- | --- |
+| 1 | Şema (`supabase db push`) | `DST_DB_PASSWORD` |
+| 2 | Auth ayarları (`supabase config push`) | `SMTP_*`, `GITHUB_*`, `SITE_URL` |
+| 3 | Edge Function gizli anahtarları | `BREVO_API_KEY`, `MAIL_FROM`, `CRON_SECRET` |
+| 4 | Kullanıcı parolaları (`pg_dump`) | `SRC_DB_PASSWORD` + `DST_DB_PASSWORD` |
+| 5 | Tablo verisi | `SRC_/DST_SERVICE_KEY` |
+| 6 | pg_cron zamanlaması | `DST_DB_PASSWORD`, `CRON_SECRET` |
+| 7 | İstemci proje adresi | `DST_ANON_KEY` |
+
+Tek bir adımı çalıştırmak için: `--only=sema` (ya da `auth`, `gizli`, `parola`,
+`veri`, `cron`, `istemci`).
+
+**Elle kalan tek iş:** GitHub'daki OAuth uygulamasının *Authorization callback
+URL* alanını `https://emrusyelfekcfyisfzzl.supabase.co/auth/v1/callback`
+yapmak (bu GitHub tarafında, Supabase'de değil) ve mail şablonlarını panoya
+yapıştırmak (Adım 3).
+
+Aşağısı ne olup bittiğinin ayrıntısı — script'in yaptığı işin karşılığıdır.
+
+---
+
 ## 0. Taşınacakların envanteri
 
 2026-08-11'de canlı projeden çıkarılan gerçek durum:
@@ -24,7 +113,7 @@ uygulanmalıdır — her adım bir öncekine dayanır.
 | Tablo | `notify_seen` | 2 |
 | Tablo | `notify_prefs` | 0 |
 | Tablo | `notify_deliveries` | 0 |
-| Auth | `auth.users` | 5 (4 e-posta/parola, 1 GitHub) |
+| Auth | `auth.users` | 6 (4 e-posta/parola, kalanı OAuth) |
 | RPC | 12 adet | `activate_license`, `check_license`, `is_admin`, `admin_*` (6), `_generate_license`, `rls_auto_enable` |
 | Edge Function | 5 adet | `market-watch`, `notify-feed`, `refresh-bist-universe`, `report-license-abuse`, `send-license-email` |
 
@@ -51,7 +140,15 @@ kullanıcılarının yeni projede **parola sıfırlamak zorunda kalması**.
 
 ## 2. Şema
 
-Yeni panonun SQL Editor'ında **bu sırayla** çalıştır:
+**Yol A — tek komut (DB parolası gerekir).** Üç SQL dosyası
+`supabase/migrations/` altına sıralı migration olarak konuldu:
+
+```bash
+supabase link --project-ref emrusyelfekcfyisfzzl   # yapıldıysa atla
+supabase db push --linked                          # DB parolasını sorar
+```
+
+**Yol B — panodan elle.** Yeni panonun SQL Editor'ında **bu sırayla** çalıştır:
 
 1. `docs/supabase-licenses.sql` — lisans çekirdeği (tablolar + RPC'ler)
 2. `docs/supabase-site.sql` — lisans talepleri, admin RPC'leri, site tarafı
@@ -134,11 +231,24 @@ Script **UUID'leri korur** — `licenses.activated_by`, `admins.user_id`,
 
 ## 5. Edge Function'lar
 
-Önce projeyi bağla (DB parolasını sorar):
+> ✅ **Bu adımın deploy kısmı 2026-08-11'de yapıldı.** Beş fonksiyon da yeni
+> projede `ACTIVE`, `verify_jwt` bayrakları doğru (`market-watch`,
+> `notify-feed`, `refresh-bist-universe` → false; `send-license-email`,
+> `report-license-abuse` → true). Proje de `supabase link` ile bağlandı.
+> **Gizli anahtarlar hâlâ girilmedi** — aşağıdaki `secrets set` şart, yoksa
+> fonksiyonlar çalışma anında hata verir.
+
+Kod değişirse yeniden deploy:
 
 ```bash
-supabase link --project-ref emrusyelfekcfyisfzzl
+supabase functions deploy market-watch          --no-verify-jwt --use-api
+supabase functions deploy notify-feed           --no-verify-jwt --use-api
+supabase functions deploy refresh-bist-universe --no-verify-jwt --use-api
+supabase functions deploy send-license-email    --use-api
+supabase functions deploy report-license-abuse  --use-api
 ```
+
+(`--use-api` Docker gerektirmez; bu makinede Docker kapalı.)
 
 Gizli anahtarları gir — **eski projeden okunamaz**, elindeki asıl değerleri
 kullan (Brevo panosu, Qwen/DashScope panosu):
@@ -157,17 +267,6 @@ supabase secrets set \
 
 `SUPABASE_URL` ve `SUPABASE_SERVICE_ROLE_KEY` Supabase tarafından otomatik
 sağlanır, elle girilmez.
-
-Beşini de deploy et — `market-watch`, `notify-feed` ve `refresh-bist-universe`
-JWT doğrulaması **olmadan** çalışır (cron ve eklenti çağırır):
-
-```bash
-supabase functions deploy send-license-email
-supabase functions deploy report-license-abuse
-supabase functions deploy market-watch          --no-verify-jwt
-supabase functions deploy notify-feed           --no-verify-jwt
-supabase functions deploy refresh-bist-universe --no-verify-jwt
-```
 
 ---
 

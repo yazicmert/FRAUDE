@@ -12,7 +12,7 @@ açıp önizleyebilirsin.
 
 ## Supabase şablonları (kayıt + şifre)
 
-1. Panoda (proje `frfbmutvkekctpacktlz`) Authentication → Emails bölümünü aç.
+1. Panoda (proje `emrusyelfekcfyisfzzl`) Authentication → Emails bölümünü aç.
 2. İlgili şablonun **Message body** alanına HTML dosyasının tamamını yapıştır.
 3. Konu satırları:
    - Confirm sign up: `FRAUDE Terminal — hesabını doğrula`
