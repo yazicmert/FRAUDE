@@ -437,6 +437,21 @@ fn drop_fabricated_values(ipos: &mut [PersistedIpo]) -> bool {
             }
         }
 
+        // İlk işlem tarihi henüz açıklanmadığında kaynak sayfa yer tutucu
+        // yazıyor ("Hazırlanıyor…"). Bu değer alanda kalırsa iki zarar verir:
+        // arayüz onu tarih gibi gösterir ve `detail_is_complete` kaydı DOLU
+        // sayıp künyeyi bir daha tazelemez — gerçek tarih yayımlandığında
+        // kayda hiç işlenmez. Yükleme sırasında temizlenir ki eski arşivler
+        // de kendiliğinden düzelsin.
+        if ipo
+            .trading_start_date
+            .as_deref()
+            .is_some_and(|value| !value.chars().any(|c| c.is_ascii_digit()))
+        {
+            ipo.trading_start_date = None;
+            changed = true;
+        }
+
         // "<tarih> Dönemi" gerçek bir talep toplama aralığı değil, arz
         // tarihinden türetilmiş bir dolgudur.
         if ipo
@@ -696,6 +711,33 @@ mod tests {
             status: status.into(),
             ..Default::default()
         }
+    }
+
+    /// İlk işlem tarihi açıklanmadan önce kaynak sayfa yer tutucu yazıyor
+    /// ("Hazırlanıyor…"). Bu değer alanda kalırsa kayıt "tamam" sayılır ve
+    /// gerçek tarih yayımlandığında künye bir daha tazelenmez.
+    #[test]
+    fn placeholder_trading_start_date_is_cleared_on_load() {
+        let mut archive = vec![
+            PersistedIpo {
+                ticker: "CITAS".into(),
+                trading_start_date: Some("Hazırlanıyor…".into()),
+                ..Default::default()
+            },
+            PersistedIpo {
+                ticker: "THYAO".into(),
+                trading_start_date: Some("2026-08-12".into()),
+                ..Default::default()
+            },
+        ];
+
+        assert!(drop_fabricated_values(&mut archive), "temizlik değişiklik bildirmeli");
+        assert_eq!(archive[0].trading_start_date, None, "yer tutucu silinmeli");
+        assert_eq!(
+            archive[1].trading_start_date.as_deref(),
+            Some("2026-08-12"),
+            "gerçek tarihe dokunulmamalı"
+        );
     }
 
     /// SPK onayı halka arzın kesinleştiğinin resmî kanıtı; halkarz.com aynı
