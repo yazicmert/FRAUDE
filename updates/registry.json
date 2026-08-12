@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-halka-arz-grafigi-uydurmuyor",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "data",
+      "title": {
+        "tr": "Henüz işlem görmeyen halka arzda uydurma fiyat grafiği gösteriliyordu",
+        "en": "A fabricated price chart was shown for an IPO that had not started trading"
+      },
+      "summary": {
+        "tr": "Talep toplaması yeni biten bir halka arzın künyesinde, pay borsada hiç işlem görmemişken yeşil bir mum ve hacim çubuğu görünüyordu. Grafik gerçek değildi: fiyat verisi yoksa kod seri ÜRETİYORDU — arz fiyatının %10 üstünü \"güncel fiyat\" varsayıp aradaki günleri dolduruyor, hacmi rastgele üretiyor, arz fiyatı bile bilinmiyorsa 35 TL kabul ediyordu. CITAS örneğinde ekrandaki 81,07 değeri tam olarak 73,70 × 1,10 idi.\n\nPiyasa verisi artık uydurulmuyor. Veri yoksa grafik çizilmez; yerine payın henüz işlem görmediğini söyleyen açık bir bilgi ve (biliniyorsa) ilk işlem tarihi gösterilir.\n\nAynı kod, kaynak yalnız kapanış fiyatı verdiğinde ±%0,5'lik sahte gövde ve fitil üreterek gün içi hareket varmış gibi mum çiziyordu. Bu da kaldırıldı: grafik bu durumu kendisi algılayıp çizgiye düşüyor — zaten öyle tasarlanmıştı, uydurma değerler o korumayı devre dışı bırakıyordu.\n\nİkinci düzeltme künyede: ilk işlem tarihi açıklanmadığında kaynak sayfa \"Hazırlanıyor…\" yazıyor ve bu metin tarih alanına kaydediliyordu. Alan dolu göründüğü için kayıt tamamlanmış sayılıyor, tarih gerçekten yayımlandığında künye bir daha tazelenmiyordu. Artık rakam içermeyen değerler tarih sayılmıyor; eski kayıtlar da açılışta kendiliğinden temizleniyor.",
+        "en": "An IPO whose book building had just closed showed a green candle and a volume bar in its profile, although the share had never traded. The chart was not real: with no price data the code GENERATED a series — it assumed a \"current price\" 10% above the offer price, filled the days in between, produced random volume, and fell back to ₺35 when even the offer price was unknown. In the CITAS case the 81.07 on screen was exactly 73.70 × 1.10.\n\nMarket data is no longer fabricated. With no data the chart is not drawn; instead the screen states plainly that the share has not started trading and shows the first trading date when it is known.\n\nThe same code also faked ±0.5% bodies and wicks when the source provides closing prices only, making candles look like real intraday movement. That is gone too: the chart detects close-only data and falls back to a line — it was designed to do exactly that, and the fabricated values were defeating the safeguard.\n\nA second fix in the IPO profile: when the first trading date has not been announced, the source page writes \"Hazırlanıyor…\" and that text was stored in the date field. Because the field looked filled, the record counted as complete and was never refreshed once the real date appeared. Values without digits no longer count as dates, and existing records clean themselves up on load."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-ekonomik-takvim-dayanikliligi",
       "date": "2026-08-13",
       "author": "yazicmert",

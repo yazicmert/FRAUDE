@@ -100,6 +100,21 @@ fn current_year_string() -> String {
     chrono::Local::now().format("%Y").to_string()
 }
 
+/// Değer bir tarih GİBİ mi duruyor? Sayfa henüz açıklanmamış alanlara
+/// "Hazırlanıyor…", "Belirlenmedi", "-" gibi yer tutucular yazar; bunlar
+/// tarih alanına yazılırsa "bilinmiyor" ile "şu tarih" ayrımı kaybolur.
+///
+/// Ölçüt bilerek gevşek: rakam içermeyen her değer yer tutucu sayılır.
+/// Tarih biçimi kaynaktan kaynağa değişiyor ("12 Ağustos 2026", "12.08.2026",
+/// "2026-08-12"), ama hepsinde rakam var; yer tutucularda yok.
+pub(crate) fn date_like(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.chars().any(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 /// "05 Ağustos 2026 Çarşamba" → "2026-08-05". Ay adı bulunamazsa metin
 /// olduğu gibi döner; çağıranlar ISO olup olmadığına `looks_like_iso_date`
 /// ile bakar.
@@ -494,7 +509,12 @@ fn parse_detail(html: &str) -> DetailData {
             l if l.contains("Fiili Dolaşımdaki Pay") => data.free_float_lots = Some(value),
             l if l.contains("Endeks") => data.index_name = Some(value),
             l if l.contains("Pazar") => data.market = Some(value),
-            l if l.contains("İlk İşlem Tarihi") => data.trading_start_date = Some(value),
+            // Tarih henüz açıklanmadıysa sayfa "Hazırlanıyor…" gibi bir yer
+            // tutucu yazar. Bunu kaydetmek iki yerde zarar veriyordu: arayüz
+            // metni tarihmiş gibi gösteriyor, ve `detail_is_complete` alanı
+            // DOLU sayıp kaydı tamamlanmış kabul ediyordu — böylece gerçek
+            // tarih yayımlandığında künye bir daha tazelenmiyordu.
+            l if l.contains("İlk İşlem Tarihi") => data.trading_start_date = date_like(value),
             _ => {}
         }
     }

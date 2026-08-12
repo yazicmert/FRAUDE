@@ -623,87 +623,38 @@ function renderSourceChips(ipo: IpoRecord) {
   );
 }
 
-function prepareIpoCandles(rawQuotes: HistoricalQuote[] | null, ipo?: IpoRecord | null): HistoricalQuote[] {
-  const price = typeof ipo?.price === 'number' && ipo.price > 0 ? ipo.price : 35;
-  const current = typeof ipo?.current_price === 'number' && ipo.current_price > 0 ? ipo.current_price : Math.round(price * 1.10 * 100) / 100;
-  const isOverallDown = current < price || (typeof ipo?.return_pct === 'number' && ipo.return_pct < 0);
+/**
+ * Grafiğe verilecek gerçek fiyat serisini hazırlar. Veri yoksa **null** döner
+ * ve grafik hiç çizilmez.
+ *
+ * Burası eskiden veri yokken seri UYDURUYORDU: arz fiyatı bilinmiyorsa 35 TL
+ * varsayıyor, "güncel fiyat" olarak arz fiyatının %1,10 katını koyuyor ve
+ * ikisi arasını interpolasyonla dolduruyordu. Sonuç, henüz işlem görmeyen bir
+ * paya ait gerçekmiş gibi duran bir mum grafiğiydi (CITAS: 73,70 × 1,10 =
+ * 81,07 — ekranda tam bu değer görünüyordu). Piyasa verisi uydurulmaz;
+ * bilinmiyorsa bilinmediği söylenir.
+ *
+ * Kaynak yalnız kapanış veriyorsa (İş Yatırım böyledir) open/high/low
+ * DOLDURULMAZ: PriceChart bu durumu kendisi algılayıp mum yerine çizgi çizer.
+ * Eski kod ±%0,5'lik sahte gövde/fitil üreterek tam da bu korumayı devre dışı
+ * bırakıyor ve olmayan bir gün içi hareketi varmış gibi gösteriyordu.
+ */
+function prepareIpoCandles(rawQuotes: HistoricalQuote[] | null, _ipo?: IpoRecord | null): HistoricalQuote[] | null {
+  if (!Array.isArray(rawQuotes) || rawQuotes.length === 0) return null;
 
-  if (Array.isArray(rawQuotes) && rawQuotes.length >= 1) {
-    let prevCloseVal = price;
-    return rawQuotes.map((q) => {
-      let open = q.open > 0 ? q.open : q.close;
-      let high = q.high > 0 ? q.high : q.close;
-      let low = q.low > 0 ? q.low : q.close;
-      const close = q.close;
-
-      if (open === close && high === close && low === close) {
-        if (close >= prevCloseVal) {
-          open = Math.round(close * 0.995 * 100) / 100;
-          high = Math.round(close * 1.005 * 100) / 100;
-          low = Math.round(open * 0.995 * 100) / 100;
-        } else {
-          open = Math.round(close * 1.005 * 100) / 100;
-          high = Math.round(open * 1.005 * 100) / 100;
-          low = Math.round(close * 0.995 * 100) / 100;
-        }
-      }
-      prevCloseVal = close;
-      return { ...q, open, high, low, close };
-    });
-  }
-
-  // Calculate actual trading start date & days count
-  const startDate = parseTradingStartDate(ipo?.trading_start_date);
-  const now = new Date();
-  now.setHours(12, 0, 0, 0);
-
-  let daysCount = 1;
-  if (startDate) {
-    startDate.setHours(12, 0, 0, 0);
-    const diffMs = now.getTime() - startDate.getTime();
-    const diffDays = Math.floor(diffMs / 86_400_000);
-    daysCount = Math.max(1, Math.min(30, diffDays + 1));
-  } else {
-    const returnPct = ipo?.return_pct ?? 10;
-    daysCount = Math.max(1, Math.min(10, Math.round(Math.log(1 + Math.abs(returnPct) / 100) / Math.log(1.10))));
-  }
-
-  const quotes: HistoricalQuote[] = [];
-  const baseStart = startDate || new Date(now.getTime() - (daysCount - 1) * 86_400_000);
-  let currPrice = price;
-  const priceStep = daysCount > 1 ? (current - price) / (daysCount - 1) : 0;
-
-  for (let i = 0; i < daysCount; i++) {
-    const d = new Date(baseStart.getTime() + i * 86_400_000);
-
-    let open = i === 0 ? price : currPrice;
-    const isLast = i === daysCount - 1;
-    let close = isLast ? current : Math.round((open + priceStep) * 100) / 100;
-
-    // Ensure red candle if day/stock is down!
-    if (isOverallDown || close < open) {
-      if (open <= close) {
-        open = Math.round(close * 1.008 * 100) / 100;
-      }
-    }
-
-    const high = Math.round(Math.max(open, close) * 1.005 * 100) / 100;
-    const low = Math.round(Math.min(open, close) * 0.995 * 100) / 100;
-    const volume = Math.floor(150_000 + Math.random() * 350_000);
-
-    quotes.push({
-      time: Math.floor(d.getTime() / 1000),
-      open: Math.round(open * 100) / 100,
-      high,
-      low,
-      close: Math.round(close * 100) / 100,
-      volume,
+  const cleaned = rawQuotes
+    .filter((quote) => typeof quote.close === 'number' && quote.close > 0)
+    .map((quote) => {
+      // Eksik alanlar kapanışla eşitlenir; bu "veri yok" demenin dürüst yolu
+      // ve PriceChart'ın kapanış-tek algısını tetikleyen biçimdir.
+      const close = quote.close;
+      const open = quote.open > 0 ? quote.open : close;
+      const high = quote.high > 0 ? quote.high : close;
+      const low = quote.low > 0 ? quote.low : close;
+      return { ...quote, open, high, low, close };
     });
 
-    currPrice = close;
-  }
-
-  return quotes;
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 function IpoStockPerformanceChart({ ipo, onSelectTicker }: { ipo?: IpoRecord | null; onSelectTicker?: (ticker: string) => void }) {
@@ -744,7 +695,10 @@ function IpoStockPerformanceChart({ ipo, onSelectTicker }: { ipo?: IpoRecord | n
   }, [cleanTicker, ipo]);
 
   const retColor = (returnPctVal ?? 0) >= 0 ? '#3fb950' : '#f85149';
-  const displayQuotes = quotes || prepareIpoCandles(null, ipo);
+  // Veri yoksa grafik ÇİZİLMEZ. Eskiden burada uydurma bir seri üretiliyordu;
+  // henüz işlem görmeyen paylar gerçek fiyat hareketi varmış gibi görünüyordu.
+  const hasQuotes = Array.isArray(quotes) && quotes.length > 0;
+  const tradingStartLabel = (ipo?.trading_start_date || '').trim();
 
   return (
     <div style={{
@@ -810,10 +764,26 @@ function IpoStockPerformanceChart({ ipo, onSelectTicker }: { ipo?: IpoRecord | n
       <div style={{ minHeight: '420px', width: '100%', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)', position: 'relative', background: '#161b22' }}>
         {loading ? (
           <div style={{ display: 'flex', height: '420px', alignItems: 'center', justifyContent: 'center', color: '#8b949e', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
-            <span>⏳ Canlı BİST Mum Grafiği Hazırlanıyor...</span>
+            <span>⏳ BİST fiyat verisi alınıyor…</span>
           </div>
+        ) : hasQuotes ? (
+          <PriceChart ticker={cleanTicker} data={quotes!} range="max" livePrice={currentPriceVal} />
         ) : (
-          <PriceChart ticker={cleanTicker} data={displayQuotes} range="max" livePrice={currentPriceVal} />
+          <div style={{
+            display: 'flex', height: '420px', flexDirection: 'column', gap: '8px',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 24px',
+            color: '#8b949e', fontFamily: 'var(--font-mono)', fontSize: '0.85rem'
+          }}>
+            <span style={{ fontSize: '1.6rem' }}>🕰️</span>
+            <span style={{ color: '#c9d1d9' }}>
+              {cleanTicker ? `${cleanTicker} için BİST fiyat verisi yok` : 'BİST fiyat verisi yok'}
+            </span>
+            <span style={{ maxWidth: '420px', lineHeight: 1.6 }}>
+              Pay büyük olasılıkla henüz işlem görmeye başlamadı. İlk işlem gününden
+              sonra grafik kendiliğinden dolar.
+              {tradingStartLabel ? ` İşlem başlangıcı: ${tradingStartLabel}.` : ''}
+            </span>
+          </div>
         )}
       </div>
     </div>
