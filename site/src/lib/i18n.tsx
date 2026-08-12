@@ -137,6 +137,10 @@ const STRINGS = {
       'FRAUDE bir masaüstü uygulamasıdır (macOS ve Windows). Bu sayfayı telefonda açtıysanız girişi bilgisayarınızdan sürdürün.',
     handoffFailTitle: 'Giriş tamamlanamadı',
     handoffError: 'GitHub girişi tamamlanamadı: ',
+    handoffErrDuplicateEmail:
+      'GitHub hesabınızın e-posta adresi FRAUDE’de birden fazla hesapta kayıtlı; GitHub’ın hangisine bağlanacağı seçilemediği için giriş durdu. Şimdilik e-posta ve şifrenizle girin — fazla hesap kaldırıldıktan sonra GitHub girişi çalışır.',
+    handoffErrProviderEmail:
+      'GitHub e-posta adresinizi paylaşmadı, bu yüzden hesap eşleştirilemedi. GitHub → Settings → Emails bölümünde adresinizi doğrulayıp erişime açın ya da e-posta ve şifrenizle girin.',
     handoffIdleTitle: 'Uygulama girişi',
     handoffInvalid:
       'Bu sayfa GitHub girişinden sonra uygulamaya dönmek içindir. Girişi FRAUDE uygulamasındaki “GitHub ile devam et” düğmesinden başlatın.',
@@ -421,6 +425,10 @@ const STRINGS = {
       'FRAUDE is a desktop app (macOS and Windows). If you opened this page on a phone, continue the sign-in from your computer.',
     handoffFailTitle: 'Sign-in could not be completed',
     handoffError: 'GitHub sign-in could not be completed: ',
+    handoffErrDuplicateEmail:
+      'Your GitHub email address is registered on more than one FRAUDE account, so GitHub cannot tell which one to sign you into. Use your email and password for now — GitHub sign-in works again once the extra account is removed.',
+    handoffErrProviderEmail:
+      'GitHub did not share your email address, so the account could not be matched. Verify and expose your address under GitHub → Settings → Emails, or sign in with your email and password.',
     handoffIdleTitle: 'App sign-in',
     handoffInvalid:
       'This page returns you to the app after a GitHub sign-in. Start the sign-in from the “Continue with GitHub” button inside the FRAUDE app.',

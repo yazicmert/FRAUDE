@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-12-github-girisi-mukerrer-hesap",
+      "date": "2026-08-12",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "GitHub girişi sessizce duruyordu: aynı e-postada birden fazla hesap",
+        "en": "GitHub sign-in stopped silently when one email had more than one account"
+      },
+      "summary": {
+        "tr": "GitHub ile giriş, tarayıcıdan dönüşte hiçbir açıklama vermeden duruyordu. Sebep uygulamada değil hesap tarafındaydı: GitHub'ın döndürdüğü e-posta adresi FRAUDE hesaplarında birden fazla satırla eşleşince Supabase, GitHub kimliğinin hangi hesaba bağlanacağını seçemiyor ve girişi jeton üretmeden durduruyor (\"Multiple accounts with the same email address in the same linking domain detected\"). Bu durum artık hem uygulamada hem devir sayfasında Türkçe ve eyleme dönük anlatılıyor: e-posta ve şifreyle giriş yolu gösteriliyor. Hata metnindeki çift kodlama da temizlendi (\"detected%3A default\" yerine düz metin). GitHub e-postayı hiç paylaşmadığında çıkan hata da ayrı bir açıklama alıyor. Ayrıca teşhis izine sunucunun hata metni ekleniyor; eskiden yalnız HTTP durumu tutulduğu için '400' hatasının hangi adımdan geldiği ayırt edilemiyordu. Mükerrer hesabı bulup veriyi kaybetmeden birleştiren SQL betiği docs/supabase-auth-duplicate-emails.sql içinde.",
+        "en": "GitHub sign-in used to stop without any explanation once the browser handed control back. The cause was account data, not the app: when the email GitHub returns matches more than one FRAUDE account, Supabase cannot decide which account the GitHub identity belongs to and halts before issuing tokens (\"Multiple accounts with the same email address in the same linking domain detected\"). The app and the handoff page now explain this in plain language and point to email + password sign-in. Double-encoded error text is decoded as well (\"detected%3A default\" now reads normally), and the case where GitHub shares no email address gets its own message. The diagnostic trace now records the server's error text — previously only the HTTP status was kept, so a '400' could not be traced to a step. A SQL script that finds duplicate accounts and merges them without losing data lives in docs/supabase-auth-duplicate-emails.sql."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-12-github-girisi-uygulamaya-donmuyordu",
       "date": "2026-08-12",
       "author": "yazicmert",

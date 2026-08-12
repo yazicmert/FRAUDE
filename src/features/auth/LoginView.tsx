@@ -107,7 +107,16 @@ export default function LoginView() {
       setBusy(false);
       if (detail?.status !== 'error') return;
       setInfo(null);
-      if (detail.reason === 'no-callback') return setError(t('authErrOAuthNoReturn'));
+      // Tanınan hatalar Türkçe ve eyleme dönük gösterilir; ham sunucu metni
+      // ("Multiple accounts with the same email address…") kullanıcıya bir şey
+      // anlatmıyordu. Sınıflanamayanlarda ham metin yine görünür.
+      const REASON_KEYS: Record<string, string> = {
+        'no-callback': 'authErrOAuthNoReturn',
+        'duplicate-email': 'authErrOAuthDuplicateEmail',
+        'provider-email': 'authErrOAuthProviderEmail',
+      };
+      const key = detail.reason ? REASON_KEYS[detail.reason] : undefined;
+      if (key) return setError(t(key));
       setError(detail.message ? `${t('authErrOAuthCallback')} ${detail.message}` : t('authErrOAuthCallback'));
     };
     window.addEventListener(AUTH_CALLBACK_EVENT, onCallback);
