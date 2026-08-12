@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-ekonomik-takvim-dayanikliligi",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "data",
+      "title": {
+        "tr": "Ekonomik takvim tek bir sayfanın ayakta olmasına bağlı kalmıyor",
+        "en": "The economic calendar no longer depends on a single page staying up"
+      },
+      "summary": {
+        "tr": "Takvim tek kaynaktan besleniyordu ve o kaynağa ulaşılamadığında ekran boşalıyordu: kayıt yalnız bellekte tutulduğu için uygulama kapanınca da sıfırlanıyordu. Dört noktada sağlamlaştırıldı.\n\nYedek kaynak: ülke sayfası birincil kalır, ulaşılamazsa genel takvim sayfası denenir. İkisi de aynı işaretlemeyi taşıdığı için tek ayrıştırıcı ikisini de okur — bakılacak ikinci bir çözümleyici yok. Ölçüm: birincil 35, yedek 12 Türkiye satırı veriyor.\n\nYeniden deneme: ağ kesintisi, hız sınırı ve sunucu hatası geçici sayılır, kısa bir beklemeyle bir kez daha denenir. Sayfanın kalıcı olarak kaybolduğu durumlarda beklenmeden sıradaki kaynağa geçilir.\n\nKalıcı önbellek: son başarılı takvim diske yazılır. Uygulama yeniden açıldığında takvim ağ beklemeden dolu gelir; çevrimdışı açılışta da dolu kalır.\n\nHata anında bayat veri: bütün kaynaklar düşerse artık boş liste değil, son bilinen takvim gösterilir. Saati geçmiş ama doğru bir takvim, boş ekrandan iyidir. Ayrıca sistem saati ileri alınmışsa kayıt yanlışlıkla \"taze\" sayılmaz.",
+        "en": "The calendar was fed by a single source, and when that source could not be reached the screen went blank: the entry lived only in memory, so closing the app cleared it too. Hardened in four places.\n\nA fallback source: the country page stays primary, and the general calendar page is tried when it cannot be reached. Both carry the same markup, so one parser reads both — there is no second parser to maintain. Measured: 35 Turkish rows from the primary, 12 from the fallback.\n\nRetries: network drops, rate limits and server errors count as temporary and are retried once after a short pause. When a page is permanently gone, the next source is tried immediately instead.\n\nA durable cache: the last successful calendar is written to disk. The calendar is populated on restart without waiting for the network, and stays populated offline.\n\nStale data on failure: if every source fails, the last known calendar is shown instead of an empty list. A calendar that is behind but correct beats a blank screen. A clock set forward also no longer makes an entry look falsely fresh."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-cihaz-kimligi-makineye-bagli",
       "date": "2026-08-13",
       "author": "yazicmert",

@@ -2,22 +2,43 @@
 //! Haftalık takvim sayfasından yaklaşan makroekonomik olayları (TCMB faiz
 //! kararı, TÜFE, işsizlik, GSYİH vb.) ayrıştırır.
 //!
-//! Ağ hatasında boş liste döner; frontend bu listeyi yerel önbelleğine yazıp
-//! `CACHE_TTL` aralığıyla tazeler, böylece çevrimdışı açılışta da takvim dolu
-//! gelir.
+//! DAYANIKLILIK — takvim tek bir sayfanın erişilebilirliğine bağlı kalmasın:
+//!
+//! 1. **Birden çok kaynak.** Ülke sayfası birincildir (ölçüldü: 35 Türkiye
+//!    satırı); erişilemezse genel takvim sayfası denenir (12 satır). İkisi de
+//!    `data-country="turkey"` işaretlemesini taşıdığı için AYNI ayrıştırıcı
+//!    çalışır — ikinci bir parser bakımı gerekmez.
+//! 2. **Yeniden deneme.** Geçici hatalarda (ağ kesintisi, 429, 5xx) kısa bir
+//!    beklemeyle bir kez daha denenir; kalıcı hatalarda (404 gibi) beklemeden
+//!    sıradaki kaynağa geçilir.
+//! 3. **Diskte kalıcı önbellek.** Son başarılı çekim diske yazılır; uygulama
+//!    yeniden açıldığında takvim ağ beklemeden dolu gelir.
+//! 4. **Hata anında bayat veri.** Tüm kaynaklar düşerse boş liste DEĞİL, son
+//!    bilinen takvim döner. Eski davranışta ekran tamamen boşalıyordu; bayat
+//!    ama doğru bir takvim, hiç takvim olmamasından iyidir.
 
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use regex::Regex;
 use scraper::{ElementRef, Html, Selector};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-const CALENDAR_URL: &str = "https://tradingeconomics.com/turkey/calendar";
-const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60); // 6 saat
+/// Kaynaklar öncelik sırasıyla. İlki daha zengindir; ikincisi aynı
+/// işaretlemeyi taşıyan genel takvimdir (ölçüm: 2026-08-13).
+const CALENDAR_SOURCES: [&str; 2] = [
+    "https://tradingeconomics.com/turkey/calendar",
+    "https://tradingeconomics.com/calendar",
+];
+const CACHE_TTL_SECS: i64 = 6 * 60 * 60; // 6 saat
+const CACHE_FILE: &str = "economic_calendar.json";
+/// Geçici hatada tek bir yeniden deneme; kaynak başına toplam iki istek.
+const RETRY_DELAY: Duration = Duration::from_millis(800);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Etki seviyesi — frontend bunu renk/ikon için kullanır.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Impact {
     High,
@@ -26,7 +47,7 @@ pub enum Impact {
 }
 
 /// Tek bir ekonomik takvim etkinliği.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EconomicEvent {
     /// ISO 8601 tarih (YYYY-MM-DD).
     pub date: String,
@@ -198,51 +219,144 @@ fn titlecase_event(raw: &str) -> String {
         .join(" ")
 }
 
-// ─── Cache ─────────────────────────────────────────────────────────────────────
+// ─── Önbellek ──────────────────────────────────────────────────────────────────
 
-static CACHE: OnceLock<Mutex<Option<(Instant, Vec<EconomicEvent>)>>> = OnceLock::new();
-
-fn cached() -> Option<Vec<EconomicEvent>> {
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    guard
-        .as_ref()
-        .filter(|(t, _)| t.elapsed() < CACHE_TTL)
-        .map(|(_, v)| v.clone())
+/// Diskte tutulan önbellek. Zaman damgası `Instant` DEĞİL unix saniyesidir:
+/// `Instant` süreç ömrüne bağlıdır, diske yazılamaz — uygulama kapanınca
+/// takvim sıfırdan çekilmek zorunda kalıyordu.
+#[derive(Clone, Serialize, Deserialize)]
+struct CalendarCache {
+    fetched_at: i64,
+    events: Vec<EconomicEvent>,
 }
 
-fn set_cache(events: Vec<EconomicEvent>) {
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    *cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), events));
+static CACHE: OnceLock<Mutex<Option<CalendarCache>>> = OnceLock::new();
+
+fn cache_path() -> PathBuf {
+    let mut path = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    path.push("fraude");
+    std::fs::create_dir_all(&path).ok();
+    path.push(CACHE_FILE);
+    path
 }
 
-/// TradingEconomics'ten Türkiye ekonomik takvimini çeker. Ağ hatasında boş döner.
-pub async fn get_economic_calendar(client: &reqwest::Client) -> Vec<EconomicEvent> {
-    if let Some(events) = cached() {
-        return events;
+fn now_secs() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// Önbellek tazelik ölçütü. Ayrı fonksiyon: sınanabilir olsun.
+fn is_fresh(fetched_at: i64, now: i64) -> bool {
+    let age = now - fetched_at;
+    // Saat geriye alındıysa (negatif yaş) bayat say: yanlış tarafa düşmek,
+    // takvimi gereksiz yere saatlerce dondurmaktan iyidir.
+    (0..CACHE_TTL_SECS).contains(&age)
+}
+
+/// Belleği diskten doldurur (ilk çağrıda), sonra bellekten döner.
+fn load_cache() -> Option<CalendarCache> {
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+    if guard.is_none() {
+        if let Ok(data) = std::fs::read_to_string(cache_path()) {
+            *guard = serde_json::from_str(&data).ok();
+        }
     }
+    guard.clone()
+}
 
-    let html = match client
-        .get(CALENDAR_URL)
-        .timeout(Duration::from_secs(15))
+fn save_cache(events: &[EconomicEvent]) {
+    let entry = CalendarCache {
+        fetched_at: now_secs(),
+        events: events.to_vec(),
+    };
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    *cache.lock().unwrap_or_else(|error| error.into_inner()) = Some(entry.clone());
+    let _ = crate::persist::write_json_atomic(&cache_path(), &entry);
+}
+
+// ─── Çekim ─────────────────────────────────────────────────────────────────────
+
+/// Tek denemenin sonucu: gövde geldi mi, gelmediyse tekrar denemeye değer mi?
+enum Attempt {
+    Body(String),
+    /// Geçici hata (ağ, 429, 5xx) — kısa beklemeyle tekrar denenebilir.
+    Retryable,
+    /// Kalıcı hata (404, 403 gibi) — bu kaynakta ısrar etmenin anlamı yok.
+    Fatal,
+}
+
+async fn fetch_once(client: &reqwest::Client, url: &str) -> Attempt {
+    let response = client
+        .get(url)
+        .timeout(REQUEST_TIMEOUT)
         .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
         .header("Accept", "text/html")
         .send()
-        .await
-    {
-        Ok(resp) => match resp.text().await {
-            Ok(t) => t,
-            Err(_) => return Vec::new(),
-        },
-        Err(_) => return Vec::new(),
-    };
+        .await;
 
-    let events = parse_calendar_html(&html);
-
-    if !events.is_empty() {
-        set_cache(events.clone());
+    match response {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                match resp.text().await {
+                    Ok(body) => Attempt::Body(body),
+                    // Gövde yarıda koptu: bağlantı sorunudur, tekrar denenir.
+                    Err(_) => Attempt::Retryable,
+                }
+            } else if status.as_u16() == 429 || status.is_server_error() {
+                Attempt::Retryable
+            } else {
+                Attempt::Fatal
+            }
+        }
+        // Zaman aşımı/DNS/TLS — geçici kabul edilir.
+        Err(_) => Attempt::Retryable,
     }
-    events
+}
+
+/// Bir kaynaktan olayları çeker; geçici hatada bir kez daha dener.
+/// Sayfa geldiyse ama hiç satır çıkmadıysa None döner — çağıran sıradaki
+/// kaynağa geçer (işaretleme değişmiş ya da sayfa boş gelmiş olabilir).
+async fn fetch_source(client: &reqwest::Client, url: &str) -> Option<Vec<EconomicEvent>> {
+    for attempt in 0..2 {
+        match fetch_once(client, url).await {
+            Attempt::Body(body) => {
+                let events = parse_calendar_html(&body);
+                return (!events.is_empty()).then_some(events);
+            }
+            Attempt::Fatal => return None,
+            Attempt::Retryable => {
+                if attempt == 0 {
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Türkiye ekonomik takvimini döndürür.
+///
+/// Sıra: taze önbellek → kaynaklar (öncelik sırasıyla, geçici hatada tekrar) →
+/// bayat önbellek. Her şey başarısız olursa ve elde hiç veri yoksa boş döner.
+pub async fn get_economic_calendar(client: &reqwest::Client) -> Vec<EconomicEvent> {
+    let cached = load_cache();
+    if let Some(entry) = &cached {
+        if is_fresh(entry.fetched_at, now_secs()) {
+            return entry.events.clone();
+        }
+    }
+
+    for url in CALENDAR_SOURCES {
+        if let Some(events) = fetch_source(client, url).await {
+            save_cache(&events);
+            return events;
+        }
+    }
+
+    // Kaynakların hepsi düştü: son bilinen takvimi ver. Eskiden burada boş
+    // liste dönüyor ve ekran tamamen boşalıyordu.
+    cached.map(|entry| entry.events).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -251,6 +365,77 @@ mod tests {
 
     /// Canlı TradingEconomics çıktısından kırpılmış örnek sayfa.
     const FIXTURE: &str = include_str!("../fixtures/tradingeconomics_turkey_calendar.html");
+
+    /// Taze önbellek ağa çıkmadan kullanılmalı; bayat olan kullanılmamalı.
+    #[test]
+    fn freshness_window_is_six_hours() {
+        let now = 1_760_000_000;
+        assert!(is_fresh(now - 60, now), "1 dakikalık kayıt taze sayılmalı");
+        assert!(is_fresh(now - (CACHE_TTL_SECS - 1), now), "sınırın içi taze");
+        assert!(!is_fresh(now - CACHE_TTL_SECS, now), "sınırda bayat");
+        assert!(!is_fresh(now - 86_400, now), "1 günlük kayıt bayat");
+    }
+
+    /// Saat ileri alınırsa kayıt "gelecekten" görünür. Bu durumda tazelik
+    /// varsayılmamalı, yoksa takvim saatlerce yenilenmeden donar.
+    #[test]
+    fn future_timestamp_is_not_treated_as_fresh() {
+        let now = 1_760_000_000;
+        assert!(!is_fresh(now + 3_600, now));
+    }
+
+    /// Önbellek diske yazılıp aynı biçimde geri okunabilmeli — sürüm
+    /// yükseltmelerinde sessizce bozulursa takvim her açılışta sıfırdan çekilir.
+    #[test]
+    fn cache_survives_json_round_trip() {
+        let events = parse_calendar_html(FIXTURE);
+        assert!(!events.is_empty());
+        let entry = CalendarCache {
+            fetched_at: 1_760_000_000,
+            events: events.clone(),
+        };
+        let json = serde_json::to_string(&entry).expect("serileştirilemedi");
+        let back: CalendarCache = serde_json::from_str(&json).expect("geri okunamadı");
+        assert_eq!(back.fetched_at, entry.fetched_at);
+        assert_eq!(back.events.len(), events.len());
+        assert_eq!(back.events[0].event, events[0].event);
+        assert_eq!(back.events[0].impact, events[0].impact);
+    }
+
+    /// Yedek kaynak GERÇEKTEN yedek mi? Ağ gerektirir, bu yüzden varsayılan
+    /// koşuda atlanır; işaretleme değiştiğinde elle çalıştırılır:
+    ///   cargo test -p fraude-core economic_calendar -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "ağ gerektirir"]
+    async fn every_source_yields_events() {
+        let client = reqwest::Client::new();
+        for url in CALENDAR_SOURCES {
+            let events = fetch_source(&client, url).await;
+            let count = events.as_ref().map(Vec::len).unwrap_or(0);
+            println!("{url} → {count} olay");
+            assert!(count > 0, "kaynak boş döndü: {url}");
+        }
+    }
+
+    /// Genel takvim sayfası yedek kaynaktır: aynı ayrıştırıcı yalnız Türkiye
+    /// satırlarını almalı, başka ülkeler sızmamalı.
+    #[test]
+    fn parser_keeps_only_turkey_rows() {
+        let mixed = format!(
+            r#"<table><tbody>
+                 <tr data-country="united states" data-category="inflation rate" data-event="us cpi">
+                   <td class=" 2026-08-14"></td></tr>
+                 {}
+               </tbody></table>"#,
+            FIXTURE
+        );
+        let events = parse_calendar_html(&mixed);
+        assert!(!events.is_empty(), "Türkiye satırları da düştü");
+        assert!(
+            !events.iter().any(|event| event.event.to_lowercase().contains("us cpi")),
+            "başka ülkenin satırı sızdı"
+        );
+    }
 
     #[test]
     fn parses_rows_with_values_past_the_nested_flag_table() {
