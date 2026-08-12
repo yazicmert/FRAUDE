@@ -9,7 +9,12 @@ import { supabase } from './supabaseClient';
 import type { User } from '@supabase/supabase-js';
 import { isDesktopRuntime } from '../../api/platformClient';
 import { openUrl } from '../../lib/openExternal';
-import { DESKTOP_AUTH_REDIRECT, DESKTOP_OAUTH_REDIRECT, initAuthDeepLink } from './deepLink';
+import {
+  DESKTOP_AUTH_REDIRECT,
+  DESKTOP_OAUTH_REDIRECT,
+  initAuthDeepLink,
+  markOAuthPending,
+} from './deepLink';
 
 export interface AuthUser {
   id: string;
@@ -137,6 +142,9 @@ export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network
     });
 
     if (error || !data?.url) return 'oauth-unavailable';
+    // Dönüşün beklendiğini işaretle: fraude:// adresi hiç gelmezse
+    // deepLink.ts sessiz kalmak yerine kullanıcıya sebebini gösterir.
+    if (isDesktopRuntime()) markOAuthPending();
     await openUrl(data.url);
     return null;
   } catch (error) {
@@ -164,6 +172,7 @@ export async function linkGitHubIdentity(): Promise<'oauth-unavailable' | 'netwo
     if (error || !data?.url) {
       return signInWithGitHub();
     }
+    if (isDesktopRuntime()) markOAuthPending();
     await openUrl(data.url);
     return null;
   } catch {
