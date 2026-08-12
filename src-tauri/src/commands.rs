@@ -276,12 +276,14 @@ pub async fn get_analyst_reports(
 /// Kurumların çoğu PDF'lerini çerçevelenmeye kapalı sunduğu için adres
 /// doğrudan görüntüleyiciye verilemiyor; belge burada indirilip ekrana
 /// veri-URL'i olarak gömülür.
+///
+/// Paylaşılan istemci kullanılmaz: belge indirmesi yönlendirmeleri kaynak
+/// beyaz listesine karşı yeniden doğrulayan kendi istemcisini kurar.
 #[tauri::command]
 pub async fn get_report_document(
-    state: State<'_, AppState>,
     url: String,
 ) -> Result<fraude_core::research_reports::ReportDocument, String> {
-    fraude_core::research_reports::fetch_document(&state.http, &url).await
+    fraude_core::research_reports::fetch_document(&url).await
 }
 
 #[tauri::command]

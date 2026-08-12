@@ -2133,13 +2133,43 @@ fn document_host_is_allowed(url: &str) -> bool {
         .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
 }
 
+/// Belge indirmede kullanılan istemci.
+///
+/// Paylaşılan istemci `reqwest`'in varsayılanıyla on yönlendirmeyi konağı bir
+/// daha sormadan izler. Beyaz liste yalnız ilk adrese uygulandığından, izin
+/// verilen konaklardan birindeki açık yönlendirme belgeyi herhangi bir adrese
+/// — `127.0.0.1` ya da yerel ağ dahil — çevirebilir ve gövdeyi okuyucuya
+/// taşıyabilirdi. Bu istemci her adımda aynı listeyi yeniden sorar; liste
+/// `https://` şeması da dayattığı için yönlendirmeyle şema düşürülemez.
+fn document_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        crate::http_client_builder()
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= MAX_DOCUMENT_REDIRECTS {
+                    return attempt.error("belge adresi çok fazla yönlendirdi");
+                }
+                if document_host_is_allowed(attempt.url().as_str()) {
+                    return attempt.follow();
+                }
+                let blocked = format!("yönlendirme rapor kaynağı dışına çıktı: {}", attempt.url());
+                attempt.error(blocked)
+            }))
+            .build()
+            .expect("belge istemcisi kurulmalı")
+    })
+}
+
+/// İzlenen en fazla yönlendirme. `reqwest`'in varsayılanıyla aynı.
+const MAX_DOCUMENT_REDIRECTS: usize = 10;
+
 /// Rapor belgesini indirir ve base64 olarak döndürür.
 ///
 /// Kurumların çoğu PDF'lerini `X-Frame-Options: SAMEORIGIN` ile yayımlıyor;
 /// adres doğrudan bir çerçeveye verilirse görüntüleyici boş kalır. Belge
 /// uygulama tarafından indirilip veri-URL'i olarak gömülünce bu kısıt
 /// devreden çıkar ve rapor uygulamanın içinde okunur.
-pub async fn fetch_document(client: &reqwest::Client, url: &str) -> Result<ReportDocument, String> {
+pub async fn fetch_document(url: &str) -> Result<ReportDocument, String> {
     use base64::Engine as _;
 
     if !document_host_is_allowed(url) {
@@ -2152,7 +2182,7 @@ pub async fn fetch_document(client: &reqwest::Client, url: &str) -> Result<Repor
 
     // Süre gövdenin tamamını kapsar. Şirket raporu saniyeler sürer ama aynı
     // akıştaki izahnameler 50 MB'ı bulup dakikaya yaklaşıyor; sınır ona göre.
-    let response = client
+    let response = document_client()
         .get(url)
         .timeout(std::time::Duration::from_secs(180))
         .header("User-Agent", BROWSER_UA)
@@ -2197,13 +2227,21 @@ pub async fn fetch_document(client: &reqwest::Client, url: &str) -> Result<Repor
 }
 
 /// Belgeye `<base href>` ekler; zaten varsa dokunmaz.
+///
+/// Konum küçük harfli bir KOPYADAN alınamaz: Türkçe 'İ' küçültülünce iki kod
+/// noktasına açılır ve kopyanın bayt uzunluğu değişir. Kopyadan alınan konum
+/// özgün metne uygulanınca kayar; karakter sınırına düşmezse dilimleme
+/// panikler, düşerse etiket yanlış yere girer. `strip_elements` ile
+/// `find_first_pdf` aynı tuzağa düşmüştü — arama burada da özgün metinde,
+/// harf duyarsız biçimde yapılır.
 fn inject_base_href(html: &str, url: &str) -> String {
-    let lower = html.to_lowercase();
-    if lower.contains("<base ") {
+    let base_regex = regex::Regex::new(r"(?i)<base\s").expect("geçerli regex");
+    if base_regex.is_match(html) {
         return html.to_string();
     }
     let tag = format!("<base href=\"{}\">", url.replace('"', "%22"));
-    match lower.find("<head").and_then(|at| html[at..].find('>').map(|off| at + off + 1)) {
+    let head_regex = regex::Regex::new(r"(?i)<head[^>]*>").expect("geçerli regex");
+    match head_regex.find(html).map(|found| found.end()) {
         Some(at) => format!("{}{tag}{}", &html[..at], &html[at..]),
         // `<head>` yoksa belge parçası demektir; etiket başa konur.
         None => format!("{tag}{html}"),
@@ -2696,7 +2734,7 @@ mod tests {
                 continue;
             };
             let url = report.pdf_url.as_deref().unwrap();
-            match fetch_document(&client, url).await {
+            match fetch_document(url).await {
                 Ok(document) => {
                     assert!(document.bytes > 1_000, "{}: belge boş ({url})", spec.broker);
                     println!(
@@ -2719,7 +2757,7 @@ mod tests {
         let Some(bulletin) = bulletins.iter().find(|b| b.url.to_lowercase().ends_with(".pdf")) else {
             panic!("SPK bülten listesinde PDF yok: {bulletins:?}");
         };
-        let document = fetch_document(&client, &bulletin.url)
+        let document = fetch_document(&bulletin.url)
             .await
             .unwrap_or_else(|error| panic!("SPK bülteni indirilemedi ({}): {error}", bulletin.url));
         assert!(document.content_type.contains("pdf"), "{}", document.content_type);
@@ -2806,6 +2844,28 @@ mod tests {
         assert!(!document_host_is_allowed("file:///etc/passwd"));
     }
 
+    /// Beyaz liste yönlendirmelerde de geçerli olmalı.
+    ///
+    /// Kontrol yalnız ilk adrese uygulandığında, izin verilen bir kaynaktaki
+    /// açık yönlendirme belgeyi iç ağa çevirebiliyordu: `reqwest` varsayılanı
+    /// on adımı konağı bir daha sormadan izler. `document_client` her adımı
+    /// aynı listeye sorar; burada listenin yönlendirme hedefi olarak
+    /// gelebilecek adresleri de elediği doğrulanır.
+    #[test]
+    fn document_allowlist_blocks_redirect_targets() {
+        for target in [
+            "http://127.0.0.1:8799/ext/v1/state",
+            "https://127.0.0.1/admin",
+            "https://localhost/admin",
+            "https://169.254.169.254/latest/meta-data/",
+            "https://192.168.1.1/",
+            "https://[::1]/",
+            "https://attacker.example/collect",
+        ] {
+            assert!(!document_host_is_allowed(target), "yönlendirme hedefi geçmemeli: {target}");
+        }
+    }
+
     /// Özet, eklenti biçemleriyle başlamamalı. WordPress kurulumları yazının
     /// başına `<style>` gömüyor; etiket atılıp gövde bırakılırsa ekranda
     /// raporun metni yerine CSS görünüyordu.
@@ -2830,6 +2890,23 @@ mod tests {
         assert_eq!(inject_base_href(&patched, "https://example.com/"), patched);
         // `<head>` yoksa parça başına konur.
         assert!(inject_base_href("<p>x</p>", "https://a1capital.com.tr/").starts_with("<base href="));
+    }
+
+    /// Türkçe büyük/küçük harf tuzağı: konum küçük harfli kopyadan alınırsa
+    /// 'İ' iki kod noktasına açılır, kopyanın bayt uzunluğu değişir ve özgün
+    /// metne uygulanan konum kayar — karakter sınırına düşmediğinde dilimleme
+    /// panikler. `<head>`ten önce 'İ' geçen bir belge bunu yakalar.
+    #[test]
+    fn base_href_survives_turkish_dotted_i() {
+        let html = "<!-- İŞ YATIRIM İNCELEMESİ --><html><head><title>İ</title></head><body>x</body></html>";
+        let patched = inject_base_href(html, "https://isyatirim.com.tr/rapor/");
+        assert!(
+            patched.contains("<head><base href=\"https://isyatirim.com.tr/rapor/\">"),
+            "{patched}"
+        );
+        // Gövde bozulmadan kalmalı: kayan konum metnin ortasını keserdi.
+        assert!(patched.contains("<title>İ</title>"), "{patched}");
+        assert!(patched.contains("<!-- İŞ YATIRIM İNCELEMESİ -->"), "{patched}");
     }
 
     /// Her kaynağın konağı belge beyaz listesinde olmalı. Kaynak eklenip
