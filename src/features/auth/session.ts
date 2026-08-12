@@ -8,6 +8,7 @@
 import { supabase } from './supabaseClient';
 import type { User } from '@supabase/supabase-js';
 import { isDesktopRuntime } from '../../api/platformClient';
+import { getLanguage } from '../../api/i18n';
 import { openUrl } from '../../lib/openExternal';
 import {
   DESKTOP_AUTH_REDIRECT,
@@ -93,7 +94,9 @@ export async function signUp(
       email: email.trim().toLowerCase(),
       password,
       options: {
-        data: { name: name.trim() },
+        // `lang`: doğrulama e-postası uygulamanın diliyle gelir ve tercih
+        // hesapta kalır (şablon `.Data.lang` okur — docs/email-templates/).
+        data: { name: name.trim(), lang: getLanguage() },
         // Masaüstünde doğrulama e-postası siteye değil uygulamaya dönsün
         ...(isDesktopRuntime() ? { emailRedirectTo: DESKTOP_AUTH_REDIRECT } : {}),
       },

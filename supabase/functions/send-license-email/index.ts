@@ -44,21 +44,78 @@ function randomToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+type MailLang = 'tr' | 'en';
+
+/**
+ * E-posta metinleri. Tasarım TEK kaynaktır (aşağıdaki HTML); yalnız metinler
+ * dile göre seçilir. Dil, talebin yapıldığı arayüzden gelir:
+ * license_requests.lang (site: pages/Account.tsx). Bilinmiyorsa 'tr'.
+ */
+const MAIL_STRINGS = {
+  tr: {
+    subject: 'FRAUDE Terminal — lisans anahtarın hazır',
+    preview: 'Lisans talebin onaylandı — anahtarın ve kurulum adımları içeride.',
+    title: 'Lisans anahtarın hazır',
+    greeting: (n: string | null) => (n ? `Merhaba ${n},` : 'Merhaba,'),
+    intro:
+      'FRAUDE Terminal lisans talebin onaylandı. Anahtarın aşağıda — uygulamadaki lisans ekranına yapıştırman yeterli.',
+    downloadLabel: 'Uygulamayı indir:',
+    mac: 'macOS (Apple&nbsp;Silicon)',
+    win: 'Windows&nbsp;(x64)',
+    step2: 'Talebi açtığın e-posta adresiyle giriş yap.',
+    step3: 'Lisans ekranında anahtarı yapıştır ve etkinleştir.',
+    note:
+      'Anahtar hesabına bağlanır ve sınırlı sayıda cihazda etkinleştirilebilir. Anahtarını kimseyle paylaşma; sorun yaşarsan bu e-postayı yanıtlaman yeterli.',
+    footer: 'FRAUDE Terminal — finansal dostunuz',
+    revoke: 'Bu talebi ben yapmadım — anahtarı iptal et',
+    revokeFallback: 'Bu talebi sen yapmadıysan bize bu adresten haber ver.',
+  },
+  en: {
+    subject: 'FRAUDE Terminal — your license key is ready',
+    preview: 'Your license request was approved — the key and setup steps are inside.',
+    title: 'Your license key is ready',
+    greeting: (n: string | null) => (n ? `Hello ${n},` : 'Hello,'),
+    intro:
+      'Your FRAUDE Terminal license request was approved. Your key is below — paste it into the license screen in the app.',
+    downloadLabel: 'Download the app:',
+    mac: 'macOS (Apple&nbsp;Silicon)',
+    win: 'Windows&nbsp;(x64)',
+    step2: 'Sign in with the email address you used for the request.',
+    step3: 'Paste the key on the license screen and activate it.',
+    note:
+      'The key is bound to your account and can be activated on a limited number of devices. Do not share it with anyone; if something goes wrong, just reply to this email.',
+    footer: 'FRAUDE Terminal — your financial companion',
+    revoke: 'I did not make this request — revoke the key',
+    revokeFallback: 'If you did not make this request, let us know at this address.',
+  },
+} as const;
+
+/** Gelen değeri güvenli bir dile çevirir; tanımsız/bozuk değer Türkçeye düşer. */
+function toMailLang(value: unknown): MailLang {
+  return value === 'en' ? 'en' : 'tr';
+}
+
 /** docs/email-templates/license-key.html ile aynı tasarım; anahtar ve ad gömülü. */
-function renderEmail(licenseKey: string, name: string | null, revokeUrl: string | null): string {
-  const greeting = name ? `Merhaba ${escapeHtml(name)},` : 'Merhaba,';
+function renderEmail(
+  licenseKey: string,
+  name: string | null,
+  revokeUrl: string | null,
+  lang: MailLang,
+): string {
+  const L = MAIL_STRINGS[lang];
+  const greeting = L.greeting(name ? escapeHtml(name) : null);
   return `<!doctype html>
-<html lang="tr">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="supported-color-schemes" content="dark">
-  <title>FRAUDE Terminal — lisans anahtarın hazır</title>
+  <title>${L.subject}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#0a0d12;" bgcolor="#0a0d12">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-    Lisans talebin onaylandı — anahtarın ve kurulum adımları içeride.
+    ${L.preview}
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0a0d12" style="background-color:#0a0d12;">
     <tr>
@@ -74,14 +131,13 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:21px;font-weight:700;color:#e8f0f7;padding-bottom:14px;">
-                    Lisans anahtarın hazır
+                    ${L.title}
                   </td>
                 </tr>
                 <tr>
                   <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:14.5px;line-height:1.7;color:#b7c2cc;padding-bottom:24px;">
                     ${greeting}<br><br>
-                    FRAUDE Terminal lisans talebin onaylandı. Anahtarın aşağıda —
-                    uygulamadaki lisans ekranına yapıştırman yeterli.
+                    ${L.intro}
                   </td>
                 </tr>
                 <tr>
@@ -98,21 +154,19 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
                 <tr>
                   <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:14px;line-height:1.9;color:#b7c2cc;padding-bottom:26px;">
                     <span style="color:#00e896;font-weight:700;">1.</span>
-                    Uygulamayı indir:
-                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_macos_arm64.dmg" style="color:#00c3ff;text-decoration:none;">macOS (Apple&nbsp;Silicon)</a>
+                    ${L.downloadLabel}
+                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_macos_arm64.dmg" style="color:#00c3ff;text-decoration:none;">${L.mac}</a>
                     &nbsp;&middot;&nbsp;
-                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_windows_x64-setup.exe" style="color:#00c3ff;text-decoration:none;">Windows&nbsp;(x64)</a><br>
+                    <a href="https://github.com/yazicmert/FRAUDE/releases/latest/download/FRAUDE-Terminal_windows_x64-setup.exe" style="color:#00c3ff;text-decoration:none;">${L.win}</a><br>
                     <span style="color:#00e896;font-weight:700;">2.</span>
-                    Talebi açtığın e-posta adresiyle giriş yap.<br>
+                    ${L.step2}<br>
                     <span style="color:#00e896;font-weight:700;">3.</span>
-                    Lisans ekranında anahtarı yapıştır ve etkinleştir.
+                    ${L.step3}
                   </td>
                 </tr>
                 <tr>
                   <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12.5px;line-height:1.7;color:#8b949e;border-top:1px solid #232a33;padding-top:22px;">
-                    Anahtar hesabına bağlanır ve sınırlı sayıda cihazda etkinleştirilebilir.
-                    Anahtarını kimseyle paylaşma; sorun yaşarsan bu e-postayı yanıtlaman
-                    yeterli.
+                    ${L.note}
                   </td>
                 </tr>
               </table>
@@ -120,7 +174,7 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
           </tr>
           <tr>
             <td align="center" style="padding-top:26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-              FRAUDE Terminal — finansal dostunuz
+              ${L.footer}
             </td>
           </tr>
           ${revokeUrl ? `<tr>
@@ -130,7 +184,7 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
                   <td style="border:1px solid rgba(255,106,94,0.5);border-radius:8px;">
                     <a href="${revokeUrl}"
                        style="display:inline-block;padding:9px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12.5px;font-weight:600;color:#ff6a5e;text-decoration:none;border-radius:8px;">
-                      Bu talebi ben yapmadım — anahtarı iptal et
+                      ${L.revoke}
                     </a>
                   </td>
                 </tr>
@@ -138,7 +192,7 @@ function renderEmail(licenseKey: string, name: string | null, revokeUrl: string 
             </td>
           </tr>` : `<tr>
             <td align="center" style="padding-top:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Inter',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-              Bu talebi sen yapmadıysan bize bu adresten haber ver.
+              ${L.revokeFallback}
             </td>
           </tr>`}
         </table>
@@ -190,6 +244,8 @@ Deno.serve(async (req) => {
 
   const { data: request, error: requestError } = await supabase
     .from('license_requests')
+    // `lang` sütunu sonradan eklendi; henüz uygulanmamış bir veritabanında
+    // sorgu tümden hata vermesin diye ayrıca ve toleranslı okunur (aşağıda).
     .select('id, email, name, status, delivered_key')
     .eq('id', requestId)
     .maybeSingle();
@@ -197,6 +253,17 @@ Deno.serve(async (req) => {
   if (request.status !== 'approved' || !request.delivered_key) {
     return json({ ok: false, error: 'not-approved' }, 409);
   }
+
+  // Talebin dili: kullanıcı siteyi hangi dilde kullanıyorsa e-posta da o dilde
+  // gider. Sütun yoksa (migration uygulanmamış) sorgu hata verir; o durumda
+  // Türkçeye düşülür — lisans teslimi dil yüzünden durmamalı.
+  const { data: langRow } = await supabase
+    .from('license_requests')
+    .select('lang')
+    .eq('id', requestId)
+    .maybeSingle();
+  const lang = toMailLang(langRow?.lang);
+  const L = MAIL_STRINGS[lang];
 
   // İptal jetonu: her gönderimde yenilenir (eski mailin bağlantısı geçersizleşir).
   // Kolon yoksa/güncelleme başarısızsa e-posta düğmesiz gönderilir.
@@ -214,8 +281,8 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       sender,
       to: [request.name ? { email: request.email, name: request.name } : { email: request.email }],
-      subject: 'FRAUDE Terminal — lisans anahtarın hazır',
-      htmlContent: renderEmail(request.delivered_key, request.name, revokeUrl),
+      subject: L.subject,
+      htmlContent: renderEmail(request.delivered_key, request.name, revokeUrl, lang),
     }),
   });
   if (!brevoResponse.ok) {
