@@ -10,6 +10,7 @@
 // veritabanına hiç çıkmaz. Şema: docs/supabase-licenses.sql
 
 import { supabase } from './supabaseClient';
+import { isDesktopRuntime } from '../../api/platformClient';
 
 export const LICENSE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
 const PAYLOAD_LEN = 12;
@@ -60,6 +61,10 @@ export async function normalizeKey(input: string): Promise<string | null> {
   return `FRAUDE-${groups.join('-')}`;
 }
 
+/** Makineden türetilen kimlik/etiket bir kez alınır, sonra bellekte tutulur. */
+const DEVICE_NAME_KEY = 'fraude-device-name';
+let identityReady: Promise<void> | null = null;
+
 export function getDeviceId(): string {
   let id = localStorage.getItem(DEVICE_KEY);
   if (!id) {
@@ -69,9 +74,52 @@ export function getDeviceId(): string {
   return id;
 }
 
-/** Ayarlar → Hesap'taki cihaz listesinde görünen ad. */
+/**
+ * Cihaz kimliğini makineye bağlar (yalnız masaüstü, oturum başına bir kez).
+ *
+ * Neden: kimlik eskiden webview'in localStorage'ında üretilen rastgele bir
+ * UUID'ydi. Her webview deposunun kendi UUID'si olduğu için AYNI bilgisayarda
+ * geliştirme derlemesi ile kurulu paket iki ayrı cihaz sayılıyor, max_devices
+ * kotasını boşa harcıyordu; depo silinince cihaz "yeni" görünüyordu.
+ *
+ * Geçiş: elde eski rastgele kimlik varsa yenisine geçmeden ÖNCE bırakılır
+ * (release_device), yoksa aynı makine iki slot işgal etmeye devam eder ve
+ * kullanıcı sınıra takılır. Bırakma başarısız olsa da geçiş sürer — kullanıcı
+ * fazla kaydı listeden elle çıkarabilir.
+ *
+ * Arka uç kimliği veremezse (eski çekirdek, web sürümü, komut hata verdi)
+ * hiçbir şey değişmez: eski rastgele kimlik davranışı sürer.
+ */
+export function ensureDeviceIdentity(): Promise<void> {
+  if (identityReady) return identityReady;
+  identityReady = (async () => {
+    if (!isDesktopRuntime()) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const identity = await invoke<{ id: string | null; name: string | null }>('device_identity');
+      if (identity?.name) localStorage.setItem(DEVICE_NAME_KEY, identity.name);
+      if (!identity?.id) return;
+
+      const previous = localStorage.getItem(DEVICE_KEY);
+      if (previous === identity.id) return;
+      if (previous) await releaseDevice(previous).catch(() => false);
+      localStorage.setItem(DEVICE_KEY, identity.id);
+    } catch {
+      // Komut yoksa/başarısızsa eski davranış geçerli
+    }
+  })();
+  return identityReady;
+}
+
+/**
+ * Ayarlar → Hesap'taki cihaz listesinde görünen ad. Arka uçtan gelen model
+ * etiketi ("MacBook Pro · Apple M4 Pro") tercih edilir; yoksa
+ * `navigator.platform`'a düşülür — o değer tarayıcılarda dondurulduğu için
+ * her Mac'te "MacIntel", her Windows'ta "Win32" görünür, yani cihazları
+ * ayırt etmez.
+ */
 function getDeviceName(): string {
-  return navigator.platform || 'unknown';
+  return localStorage.getItem(DEVICE_NAME_KEY) || navigator.platform || 'unknown';
 }
 
 interface LicenseCache {
@@ -103,6 +151,7 @@ function serverError(result: RpcResult): LicenseError {
 }
 
 export async function activateLicense(canonicalKey: string, userId: string): Promise<LicenseStatus> {
+  await ensureDeviceIdentity();
   const keyHash = await sha256Hex(canonicalKey);
   try {
     const { data, error } = await supabase.rpc('activate_license', {
@@ -142,6 +191,7 @@ export interface LicenseOverview {
  * veya erişilemezse null döner; arayüz check_license temellerine düşer.
  */
 export async function licenseOverview(): Promise<LicenseOverview | null> {
+  await ensureDeviceIdentity();
   try {
     const { data, error } = await supabase.rpc('license_overview', { p_device_id: getDeviceId() });
     if (error) return null;
@@ -190,6 +240,9 @@ export async function releaseDevice(deviceId: string): Promise<boolean> {
 }
 
 export async function checkLicense(userId: string): Promise<LicenseStatus> {
+  // Kimlik/geçiş burada da beklenir: kapıdaki ilk çağrı budur, eski rastgele
+  // kimlik bırakılmadan denetim yapılırsa aynı makine iki slot işgal eder.
+  await ensureDeviceIdentity();
   try {
     const { data, error } = await callCheckLicense();
     if (error) throw error;
