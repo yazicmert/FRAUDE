@@ -2,6 +2,47 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-12-topluluk-forumu",
+      "date": "2026-08-12",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "ui",
+      "title": {
+        "tr": "Topluluk forumu: kullanıcılar yazıyor, etiketlenen hisse konuyu kendi sayfasında gösteriyor",
+        "en": "Community forum: users post, and a tagged ticker shows the thread on its own page"
+      },
+      "summary": {
+        "tr": "FRAUDE'ye ortak bir forum geldi. Kendi bilgisayarındaki uygulamadan yazdığın konu Supabase'e kaydedilir ve diğer kullanıcıların uygulamasında da görünür; kimse ayrı bir siteye gitmez.\n\nAsıl bağ etikette: gövdeye $THYAO yazdığında —ya da \"Hisse etiketle\" kutusundan seçtiğinde— gönderi o hisseye iliştirilir ve aynı konu, hissenin kendi sayfasındaki Forum bölümünde de listelenir. Hisse sayfasından yazarsan etiket kendiliğinden eklenir, yani oradaki yorum baştan doğru yere düşer. Etiket rozetine tıklamak hisse sayfasını açar; bölümdeki \"Forumda aç\" düğmesi ise forum sekmesini o hisseye filtrelenmiş hâlde açar.\n\nModülde konu + yanıt (tek seviye), beğeni, kendi gönderini silme, gönderi ve kişi araması, izleme listesi çipleriyle hızlı filtre ve son bir haftanın etiket sayımından \"En çok konuşulanlar\" paneli var. Yeni gönderiler açık ekrana canlı düşer; projede canlı yayın kapalıysa görünür sekme dakikada bir yoklar, yani akış yine tazelenir.\n\nGüven tarafı sunucuda: yazar adı, sayaçlar ve etiket normalleştirmesi tetikleyicilerde yapılır — istemciden gönderilen ad ya da beğeni sayısı yok sayılır, başkasının adına gönderi atılamaz. Okuma giriş yapmış herkese açık, yazma yalnız kendi adına; silme yumuşaktır ama gövdeyi gerçekten boşaltır, yani metin API'den de okunamaz. Dakikada 8 gönderi sınırı ve en çok 8 etiket sunucuda uygulanır. Forum bölümü kurumsal veri koşuluna bağlı değildir: emtia, döviz ve kripto sayfalarında da çalışır.",
+        "en": "FRAUDE gained a shared forum. A thread you write from the app on your own machine is stored in Supabase and shows up in every other user's app; nobody has to visit a separate site.\n\nThe real link is the tag: type $THYAO in the body — or pick it from the \"Tag a ticker\" box — and the post is attached to that ticker, so the same thread is also listed in the Forum section of the ticker's own page. Writing from a ticker page adds the tag automatically, so a comment made there lands in the right place from the start. Clicking a tag badge opens the ticker page; the section's \"Open in Forum\" button opens the forum tab filtered to that ticker.\n\nThe module has threads + replies (single level), likes, deleting your own post, search over posts and people, quick filters from your watchlist chips, and a \"most discussed\" panel built from the past week's tag counts. New posts arrive live; if realtime is disabled on the project the visible tab polls once a minute, so the feed still refreshes.\n\nTrust lives server-side: the author name, the counters and tag normalization happen in triggers — a client-supplied name or like count is ignored, and nobody can post under someone else's name. Reading is open to every signed-in user, writing only under your own identity; deletion is soft but actually empties the body, so the text cannot be read through the API either. A limit of 8 posts per minute and at most 8 tags is enforced on the server. The forum section is not tied to the corporate-data condition: it works on commodity, FX and crypto pages too."
+      },
+      "commit": "https://github.com/yazicmert/FRAUDE",
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "docs/supabase-forum.sql",
+        "src/App.tsx",
+        "src/api/i18n.ts",
+        "src/components/NavMenu.tsx",
+        "src/components/icons.tsx",
+        "src/features/forum/Forum.css",
+        "src/features/forum/ForumComposer.tsx",
+        "src/features/forum/ForumFeed.tsx",
+        "src/features/forum/ForumPostCard.tsx",
+        "src/features/forum/ForumView.tsx",
+        "src/features/forum/TickerForumSection.tsx",
+        "src/features/forum/forumApi.ts",
+        "src/features/guide/GuideView.tsx",
+        "src/features/ticker/TickerView.tsx",
+        "src/lib/actions.ts",
+        "src/modules/workspaceRegistry.tsx"
+      ],
+      "agentPrompt": "FRAUDE deposunun yerel klonuna ortak bir topluluk forumu ekle: kullanıcı uygulamadan yazar, gönderi Supabase'e kaydedilir, diğer kullanıcılar görür; metinde etiketlenen hisse aynı gönderiyi o hissenin sayfasında da gösterir.\n\n1. `docs/supabase-forum.sql` yaz (SQL Editor'a yapıştırılacak, tekrar çalıştırılabilir). `forum_posts` (id, user_id, author_name, parent_id, body, tickers text[], reply_count, like_count, edited_at, deleted_at, created_at) ve `forum_likes` (post_id + user_id birincil anahtar) tabloları; `tickers` üzerinde GIN indeksi (hisse sayfası `tickers @> ARRAY['THYAO']` sorar), kök akış için `created_at desc where parent_id is null` kısmi indeksi. Kimliği İSTEMCİYE BIRAKMA: before-insert tetikleyicisi `user_id`'yi `auth.uid()`, `author_name`'i JWT'den (name → full_name → user_name → e-posta yerel kısmı; sıralama `src/features/auth/session.ts:toUser` ile aynı olmalı) yazsın, sayaçları sıfırlasın, etiketleri normalleştirip 8'e kessin, yanıta yanıtı kök konuya düşürsün ve dakikada 8 gönderi sınırını uygulasın. Before-update tetikleyicisi sahiplik/sayaç alanlarını eski değerine sabitlesin; `deleted_at` verildiğinde gövdeyi GERÇEKTEN boşaltsın (yumuşak silme metni API'de bırakmamalı). Sayaçları `security definer` bir `forum_counter_bump` işlevi güncellesin ve işlem-yerel bir GUC bayrağı açsın; before-update tetikleyicisi bayrağı görünce erken dönsün, yoksa kendi sabitlemesi sayacı geri alır. RLS: okuma `to authenticated using (true)`, ekleme/güncelleme/silme `user_id = auth.uid()`; tablo GRANT'lerini de ver, RLS tek başına yetmez. Ek olarak `forum_trending_tickers(p_hours, p_limit)` RPC'si ve tabloyu `supabase_realtime` yayınına ekleyen (hata yutan) bir DO bloğu.\n\n2. `src/features/forum/forumApi.ts`: ortak `supabase` istemcisiyle listeleme (kök konular + `contains('tickers', [kod])` filtresi + arama + `created_at` imleçli sayfalama), yanıtlar, oluşturma, yumuşak silme, beğeni ve `subscribeForum` (postgres_changes). Etiket yakalayan `$KOD`/`#KOD` düzenli ifadesi ile gövdeyi metin/etiket parçalarına bölen `splitBody` burada dursun — konumları HER ZAMAN özgün metinden al, büyük harfe çevrilmiş kopyadan alınan konum Türkçe 'İ'de kayar. Hataları (`42P01`/`PGRST205` şema yok, `42501` oturum, `P0001` hız sınırı) i18n anahtarına çeviren bir eşleyici ekle.\n\n3. Arayüz `src/features/forum/` altında: `ForumComposer` (metin kutusu, $KOD'dan kendiliğinden yakalanan + elle seçilen etiket çipleri, BIST evreninden öneri, ⌘/Ctrl+Enter), `ForumPostCard` (avatar, göreli zaman, tıklanabilir etiket rozetleri, beğeni/yanıt/sil, yanıtlar), `ForumFeed` (yükleme + canlı yayın + görünür sekmede 60 sn yoklama + daha fazlası), `ForumView` (modül: arama, izleme listesi çipleri, en çok konuşulanlar) ve `TickerForumSection` (hisse sayfası bölümü: aynı akış, hisseye filtreli, etiket ön-dolu). Modül ile bölüm AYNI akış bileşenini kullanmalı, iki kopya çıkmasın.\n\n4. Bağlantılar: `workspaceRegistry.tsx`'e `kind: 'forum'` girdisi + manifest ekle ve NAV_TREE'nin 'tools' bölümüne koy; `src/lib/actions.ts`'e `dispatchOpenForum(ticker?)` ekleyip App.tsx'te dinle (`openModuleTab('forum', { ticker })`); TickerView'a bölümü kurumsal koşulun DIŞINDA yerleştir (emtia/döviz/kripto sayfalarında da çalışsın) ve registry'den `onSelectTicker={host.openTicker}` geçir; i18n `forum*` anahtarlarını TR+EN ekle; Rehber'e FR kartını ekleyip modül sayısı çipini artır.\n\nSonunda `npx tsc --noEmit` ve `npm run build` çalıştır. SQL'i Supabase SQL Editor'da bir kez çalıştırmayı unutma — şema yokken uygulama akışta 'forum tabloları yok' uyarısı gösterir.",
+      "notes": "Şema tasarım kararları: (1) yazar adı satıra kopyalanır, böylece liste çizerken auth.users'a join gerekmez — istemcinin o tabloya erişimi zaten yoktur; (2) yumuşak silme gövdeyi boşaltır, çünkü satırı okunur bırakmak silmeyi görüntüden ibaret kılardı; (3) sayaç tetikleyicisi ile before-update sabitlemesi birbirini kilitler, işlem-yerel GUC bayrağı bu düğümü çözer; (4) `upper()` yerele bağlı olduğu için normalleştirme işlevi immutable değil stable'dır. İstemci tarafında liste hatası SESSİZ tazelemede yutulur: geçici kopukluk okunan akışı boşaltmamalı. Doğrulama: `npx tsc --noEmit` ve `npm run build` temiz; SQL bu makinede çalıştırılamadı (yerel Postgres sunucusu yok), Supabase SQL Editor'da bir kez çalıştırılmalı."
+    },
+    {
       "id": "2026-08-11-haber-ortak-okuyucuya-tasindi",
       "date": "2026-08-11",
       "author": "yazicmert",

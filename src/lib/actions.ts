@@ -27,6 +27,11 @@ export function dispatchResearchTicker(ticker: string) {
   window.dispatchEvent(new CustomEvent('fraude-research-ticker', { detail: { ticker } }));
 }
 
+/** Forum modülünü açar; ticker verilirse akış o hisseye filtrelenir. */
+export function dispatchOpenForum(ticker?: string) {
+  window.dispatchEvent(new CustomEvent('fraude-open-forum', { detail: { ticker } }));
+}
+
 /** Araştırma listesini yeniden çektirir (yeni iş gönderildikten sonra). */
 export function dispatchResearchRefresh() {
   window.dispatchEvent(new CustomEvent('fraude-research-refresh'));
