@@ -23,7 +23,8 @@ import {
   BookOpenIcon,
   SparklesIcon,
   BellIcon,
-  UserIcon
+  UserIcon,
+  ForumIcon
 } from './icons';
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
@@ -40,6 +41,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
   news: <BookOpenIcon size={15} />,
   ai: <SparklesIcon size={15} />,
   research: <SearchIcon size={15} />,
+  forum: <ForumIcon size={15} />,
   team: <UserIcon size={15} />,
   notifications: <BellIcon size={15} />,
   modules: <ModulesIcon size={15} />,
