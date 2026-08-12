@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import ForumComposer from './ForumComposer';
 import {
+  blockUser,
   deletePost,
   forumErrorKey,
   listReplies,
+  moderatePost,
+  reportPost,
   setLike,
   splitBody,
+  updatePost,
+  MAX_BODY_LENGTH,
+  REPORT_REASONS,
   type ForumPost,
+  type ReportReason,
 } from './forumApi';
 
 const AVATAR_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00c3ff', '#f0883e', '#7ee787'];
@@ -40,27 +47,78 @@ export function timeAgo(iso: string, t: (key: string) => string, lang: string): 
   });
 }
 
+const REASON_KEYS: Record<ReportReason, string> = {
+  spam: 'forumReasonSpam',
+  abuse: 'forumReasonAbuse',
+  misinfo: 'forumReasonMisinfo',
+  other: 'forumReasonOther',
+};
+
 interface Props {
   post: ForumPost;
   currentUserId: string | null;
+  /** Oturum sahibi moderatörse gizle/geri al düğmeleri açılır. */
+  moderator?: boolean;
   compact?: boolean;
   onSelectTicker?: (ticker: string) => void;
   /** Gönderi silindiğinde listeyi tazelemek için. */
   onRemoved: (id: string) => void;
+  /** Düzenleme/moderasyon sonrası güncel satır. */
+  onChanged?: (post: ForumPost) => void;
+  /** Yazar engellendiğinde listeden düşürmek için. */
+  onBlocked?: (userId: string) => void;
 }
 
-export default function ForumPostCard({ post, currentUserId, compact = false, onSelectTicker, onRemoved }: Props) {
+export default function ForumPostCard({
+  post,
+  currentUserId,
+  moderator = false,
+  compact = false,
+  onSelectTicker,
+  onRemoved,
+  onChanged,
+  onBlocked,
+}: Props) {
   const { t, lang } = useTranslation();
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
+  const [replyCount, setReplyCount] = useState(post.replyCount);
+  const [reported, setReported] = useState(post.reportedByMe);
   const [replies, setReplies] = useState<ForumPost[] | null>(null);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [editDraft, setEditDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [replyCount, setReplyCount] = useState(post.replyCount);
+
+  // Satır yayından ya da tazelemeden güncel gelince ekrandaki sayaçlar da
+  // tazelenmeli: aksi hâlde başkasının beğenisi ilk çizimden sonra hiç
+  // görünmez, kart açıldığı andaki sayıda donup kalırdı.
+  useEffect(() => {
+    setLiked(post.likedByMe);
+    setLikeCount(post.likeCount);
+    setReplyCount(post.replyCount);
+    setReported(post.reportedByMe);
+  }, [post.likedByMe, post.likeCount, post.replyCount, post.reportedByMe]);
 
   const isOwn = currentUserId != null && currentUserId === post.userId;
+  const hidden = post.hiddenAt !== null;
+
+  const guard = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(t(forumErrorKey(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleLike = async () => {
     const next = !liked;
@@ -88,18 +146,44 @@ export default function ForumPostCard({ post, currentUserId, compact = false, on
     }
   };
 
-  const remove = async () => {
-    try {
-      await deletePost(post.id);
-      onRemoved(post.id);
-    } catch (err) {
-      setError(t(forumErrorKey(err)));
-      setConfirmDelete(false);
-    }
-  };
+  const remove = () => guard(async () => {
+    await deletePost(post.id);
+    onRemoved(post.id);
+  });
+
+  const saveEdit = () => guard(async () => {
+    const body = (editDraft ?? '').trim();
+    if (!body) return;
+    const next = await updatePost(post.id, body);
+    setEditDraft(null);
+    onChanged?.(next);
+  });
+
+  const sendReport = (reason: ReportReason) => guard(async () => {
+    await reportPost(post.id, reason);
+    setReported(true);
+    setReportOpen(false);
+    setMenuOpen(false);
+  });
+
+  const block = () => guard(async () => {
+    await blockUser(post.userId);
+    setMenuOpen(false);
+    onBlocked?.(post.userId);
+  });
+
+  const moderate = (action: 'hide' | 'restore') => guard(async () => {
+    await moderatePost(post.id, action);
+    setMenuOpen(false);
+    onChanged?.({
+      ...post,
+      hiddenAt: action === 'hide' ? new Date().toISOString() : null,
+      reportCount: action === 'hide' ? post.reportCount : 0,
+    });
+  });
 
   return (
-    <article className={`frm-post${compact ? ' compact' : ''}`}>
+    <article className={`frm-post${compact ? ' compact' : ''}${hidden ? ' hidden' : ''}`}>
       <div className="frm-avatar" style={{ background: avatarColor(post.userId) }}>
         {initials(post.authorName)}
       </div>
@@ -109,25 +193,118 @@ export default function ForumPostCard({ post, currentUserId, compact = false, on
           <strong>{post.authorName}</strong>
           <span className="frm-time">{timeAgo(post.createdAt, t, lang)}</span>
           {post.editedAt && <span className="frm-time">· {t('forumEdited')}</span>}
+          {hidden && <span className="frm-badge warn">{t('forumHidden')}</span>}
+          {moderator && post.reportCount > 0 && (
+            <span className="frm-badge">{t('forumReportCount', { count: post.reportCount })}</span>
+          )}
+          <span className="frm-spacer" />
+          <button
+            type="button"
+            className="frm-menu-button"
+            title={t('forumMore')}
+            onClick={() => {
+              setMenuOpen((open) => !open);
+              setReportOpen(false);
+            }}
+          >
+            ⋯
+          </button>
         </header>
 
-        <p className="frm-text">
-          {splitBody(post.body).map((token, index) => (
-            token.kind === 'ticker' ? (
+        {menuOpen && (
+          <div className="frm-menu">
+            {isOwn ? (
               <button
-                key={`${token.symbol}-${index}`}
                 type="button"
-                className="frm-inline-tag"
-                onClick={() => onSelectTicker?.(token.symbol)}
-                title={t('forumOpenTicker')}
+                disabled={hidden}
+                title={hidden ? t('forumHiddenNote') : undefined}
+                onClick={() => {
+                  setEditDraft(post.body);
+                  setMenuOpen(false);
+                }}
               >
-                {token.value}
+                {t('forumEdit')}
               </button>
             ) : (
-              <span key={`text-${index}`}>{token.value}</span>
-            )
-          ))}
-        </p>
+              <>
+                <button type="button" disabled={reported} onClick={() => setReportOpen((open) => !open)}>
+                  {reported ? t('forumReported') : t('forumReport')}
+                </button>
+                <button type="button" onClick={() => void block()}>{t('forumBlock')}</button>
+              </>
+            )}
+            {moderator && (
+              hidden ? (
+                <button type="button" className="danger" onClick={() => void moderate('restore')}>
+                  {t('forumModRestore')}
+                </button>
+              ) : (
+                <button type="button" className="danger" onClick={() => void moderate('hide')}>
+                  {t('forumModHide')}
+                </button>
+              )
+            )}
+          </div>
+        )}
+
+        {reportOpen && !reported && (
+          <div className="frm-report">
+            <span className="frm-note small">{t('forumReportTitle')}</span>
+            <div className="frm-report-reasons">
+              {REPORT_REASONS.map((reason) => (
+                <button key={reason} type="button" className="small-button" onClick={() => void sendReport(reason)}>
+                  {t(REASON_KEYS[reason])}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hidden && isOwn && <div className="frm-note small">{t('forumHiddenNote')}</div>}
+
+        {editDraft !== null ? (
+          <div className="frm-edit">
+            <textarea
+              className="frm-input"
+              value={editDraft}
+              maxLength={MAX_BODY_LENGTH}
+              rows={3}
+              autoFocus
+              onChange={(event) => setEditDraft(event.target.value)}
+            />
+            <div className="frm-composer-actions">
+              <button type="button" className="small-button" onClick={() => setEditDraft(null)}>
+                {t('forumCancel')}
+              </button>
+              <button
+                type="button"
+                className="frm-send"
+                disabled={busy || editDraft.trim().length === 0}
+                onClick={() => void saveEdit()}
+              >
+                {t('forumSave')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="frm-text">
+            {splitBody(post.body).map((token, index) => (
+              token.kind === 'ticker' ? (
+                <button
+                  key={`${token.symbol}-${index}`}
+                  type="button"
+                  className="frm-inline-tag"
+                  onClick={() => onSelectTicker?.(token.symbol)}
+                  title={t('forumOpenTicker')}
+                >
+                  {token.value}
+                </button>
+              ) : (
+                <span key={`text-${index}`}>{token.value}</span>
+              )
+            ))}
+          </p>
+        )}
 
         {post.tickers.length > 0 && (
           <div className="frm-post-tags">
@@ -202,8 +379,11 @@ export default function ForumPostCard({ post, currentUserId, compact = false, on
                 key={reply.id}
                 post={reply}
                 currentUserId={currentUserId}
+                moderator={moderator}
                 compact
                 onSelectTicker={onSelectTicker}
+                onChanged={(next) => setReplies((current) => (current ?? []).map((item) => (item.id === next.id ? next : item)))}
+                onBlocked={(blockedId) => setReplies((current) => (current ?? []).filter((item) => item.userId !== blockedId))}
                 onRemoved={(id) => {
                   setReplies((current) => (current ?? []).filter((item) => item.id !== id));
                   setReplyCount((count) => Math.max(0, count - 1));

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import ForumFeed from './ForumFeed';
+import ForumTools from './ForumTools';
 import { normalizeTicker, trendingTickers, type TrendingTicker } from './forumApi';
 import './Forum.css';
 
@@ -24,6 +25,9 @@ export default function ForumView({ initialTicker = null, onSelectTicker }: Prop
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [trending, setTrending] = useState<TrendingTicker[]>([]);
+  // Moderasyon/engel kararı listeyi baştan kurar: kararlar seyrektir, doğru
+  // sonucu yeniden çekmek yerinde yamalamaktan daha güvenilirdir.
+  const [feedKey, setFeedKey] = useState(0);
 
   // Hisse sayfasından "Forumda aç" ile gelindiğinde sekme zaten açıksa yalnız
   // yük değişir; filtre bu yüzden prop'u izler.
@@ -114,6 +118,7 @@ export default function ForumView({ initialTicker = null, onSelectTicker }: Prop
           )}
 
           <ForumFeed
+            key={feedKey}
             ticker={ticker}
             search={search}
             onSelectTicker={onSelectTicker}
@@ -137,6 +142,7 @@ export default function ForumView({ initialTicker = null, onSelectTicker }: Prop
             </button>
           ))}
           <p className="frm-note small">{t('forumTagHelp')}</p>
+          <ForumTools onChanged={() => setFeedKey((key) => key + 1)} />
         </aside>
       </div>
     </div>

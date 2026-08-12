@@ -479,6 +479,168 @@
   margin-top: 10px;
 }
 
+/* ── Moderasyon, bildirim ve engel ──────────────────────────────────────── */
+/* Gizlenen gönderi görünür ama silik: yazarı kararı görsün, moderatör de
+   kuyruğu okurken hangisinin gizli olduğunu ayırt edebilsin. */
+.frm-post.hidden .frm-text,
+.frm-post.hidden .frm-post-tags {
+  opacity: 0.45;
+}
+
+.frm-spacer {
+  flex: 1;
+}
+
+.frm-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.frm-badge.warn {
+  color: #d29922;
+  border-color: rgba(210, 153, 34, 0.45);
+  background: rgba(210, 153, 34, 0.1);
+}
+
+.frm-menu-button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.frm-menu-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.frm-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.frm-menu button {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.frm-menu button:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--text-main);
+}
+.frm-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.frm-menu button.danger:hover:not(:disabled) {
+  border-color: #f85149;
+  color: #f85149;
+}
+
+.frm-report {
+  margin-top: 6px;
+}
+.frm-report-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.frm-edit {
+  margin: 6px 0;
+}
+.frm-edit .frm-composer-actions {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.frm-tools {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+.frm-tools h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.frm-tools h2 em {
+  font-style: normal;
+  font-size: 10px;
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.45);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.frm-queue-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.frm-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.frm-queue-head strong {
+  font-size: 12px;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.frm-queue-body {
+  margin: 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.frm-queue-reasons,
+.frm-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.frm-queue-actions {
+  margin-top: 6px;
+}
+
+.frm-blocked-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.frm-blocked-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Hisse sayfasındaki bölüm ───────────────────────────────────────────── */
 .frm-section-head {
   display: flex;
