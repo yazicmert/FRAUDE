@@ -1,6 +1,15 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
-import { activateLicense, normalizeKey, type LicenseError, type LicenseStatus } from './license';
+import {
+  activateLicense,
+  checkLicense,
+  licenseOverview,
+  normalizeKey,
+  releaseDevice,
+  type LicenseDevice,
+  type LicenseError,
+  type LicenseStatus,
+} from './license';
 import { signOut, type AuthUser } from './session';
 import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import './auth.css';
@@ -22,11 +31,26 @@ function formatKeyInput(raw: string): string {
   return clean.match(/.{1,4}/g)?.join('-') ?? '';
 }
 
+/** Kart altındaki "hesap · çıkış" satırı; iki ekranda da aynı. */
+function AccountFooter({ user }: { user: AuthUser }) {
+  const { t } = useTranslation();
+  return (
+    <p className="auth-switch">
+      {user.email}
+      {' · '}
+      <button type="button" onClick={signOut}>
+        {t('authSignOut')}
+      </button>
+    </p>
+  );
+}
+
 /**
- * Oturum açıldıktan sonra erişim kapısı: lisans anahtarı girilip Supabase
- * RPC ile hesaba ve cihaza bağlanır. Başarıda onActivated çağrılır.
+ * Lisans hesapta etkin ama cihaz sınırı dolu: anahtar sormak anlamsızdır,
+ * bunun yerine bağlı cihazlar listelenir ve biri bırakılarak bu bilgisayara
+ * yer açılır.
  */
-export default function LicenseView({
+function DeviceLimitView({
   user,
   onActivated,
 }: {
@@ -34,8 +58,114 @@ export default function LicenseView({
   onActivated: (status: LicenseStatus) => void;
 }) {
   const { t } = useTranslation();
-  const [value, setValue] = useState('');
+  const [devices, setDevices] = useState<LicenseDevice[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const overview = await licenseOverview();
+    setDevices(overview?.devices ?? []);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Lisansı yeniden dener; geçtiyse kapı açılır, geçmediyse liste tazelenir. */
+  const retry = async (label: string) => {
+    setBusy(label);
+    setError(null);
+    try {
+      const status = await checkLicense(user.id);
+      if (status.ok) return onActivated(status);
+      setError(t(ERROR_KEYS[status.error]));
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const release = async (device: LicenseDevice) => {
+    if (!device.device_id) return;
+    setBusy(device.device_id);
+    setError(null);
+    try {
+      if (!(await releaseDevice(device.device_id))) {
+        setError(t('authErrUnknown'));
+        return;
+      }
+    } finally {
+      setBusy(null);
+    }
+    await retry('retry');
+  };
+
+  return (
+    <div className="auth-screen">
+      <AuthBackdrop />
+      <div className="auth-card">
+        <div className="auth-logo">
+          <BrandMark />
+        </div>
+        <h1 className="auth-title">{t('authDeviceLimitTitle')}</h1>
+        <p className="auth-tagline">{t('authDeviceLimitSub')}</p>
+        {devices === null ? (
+          <p className="auth-note">{t('authLicenseChecking')}</p>
+        ) : (
+          <ul className="auth-devices">
+            {devices.map((device, index) => (
+              <li key={device.device_id ?? index}>
+                <span className="dev-name">{device.device_name ?? t('authUnknownDevice')}</span>
+                <span className="dev-seen">{new Date(device.last_seen_at).toLocaleString()}</span>
+                <button
+                  type="button"
+                  disabled={!device.device_id || busy !== null}
+                  onClick={() => release(device)}
+                >
+                  {busy === device.device_id ? t('authWorking') : t('authReleaseDevice')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="auth-error">{error ?? ''}</p>
+        <button
+          className="auth-submit"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => retry('retry')}
+        >
+          <span>{busy === 'retry' ? t('authWorking') : t('authRetry')}</span>
+        </button>
+        <AccountFooter user={user} />
+        <p className="auth-note">{t('authLicenseContact')}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Oturum açıldıktan sonra erişim kapısı: lisans anahtarı girilip Supabase
+ * RPC ile hesaba ve cihaza bağlanır. Başarıda onActivated çağrılır.
+ *
+ * Anahtar yalnızca hesabında hiç etkin lisans olmayan üyeye sorulur; lisansı
+ * olan üye yeni bir bilgisayarda da anahtarsız girer (bkz. check_license).
+ */
+export default function LicenseView({
+  user,
+  reason,
+  onActivated,
+}: {
+  user: AuthUser;
+  reason?: LicenseError | null;
+  onActivated: (status: LicenseStatus) => void;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState('');
+  // Denetimden gelen neden (süresi dolmuş, ağ yok…) ilk mesaj olarak durur.
+  const [error, setError] = useState<string | null>(
+    reason && reason !== 'no-license' ? t(ERROR_KEYS[reason]) : null,
+  );
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: FormEvent) => {
@@ -52,6 +182,8 @@ export default function LicenseView({
       setBusy(false);
     }
   };
+
+  if (reason === 'device-limit') return <DeviceLimitView user={user} onActivated={onActivated} />;
 
   return (
     <div className="auth-screen">
@@ -83,13 +215,7 @@ export default function LicenseView({
             <span>{busy ? t('authWorking') : t('authActivate')}</span>
           </button>
         </form>
-        <p className="auth-switch">
-          {user.email}
-          {' · '}
-          <button type="button" onClick={signOut}>
-            {t('authSignOut')}
-          </button>
-        </p>
+        <AccountFooter user={user} />
         <p className="auth-note">
           {t('authNoLicense')} {t('authLicenseContact')}
         </p>

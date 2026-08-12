@@ -3,7 +3,7 @@
 // (2) masaüstü köprüsüne (127.0.0.1) araştırma görevi gönderir. Vanilla JS.
 
 const $ = (id) => document.getElementById(id);
-const SUPABASE_URL = 'https://frfbmutvkekctpacktlz.supabase.co';
+const SUPABASE_URL = 'https://emrusyelfekcfyisfzzl.supabase.co';
 const SRC_ICON = { kap: '📄', spk: '⚖️', news: '📰' };
 let imageDataUrl = null;
 

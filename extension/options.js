@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const SUPABASE_URL = 'https://frfbmutvkekctpacktlz.supabase.co';
+const SUPABASE_URL = 'https://emrusyelfekcfyisfzzl.supabase.co';
 
 async function load() {
   const { port, token, feedToken } = await chrome.storage.local.get(['port', 'token', 'feedToken']);

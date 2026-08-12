@@ -69,6 +69,11 @@ export function getDeviceId(): string {
   return id;
 }
 
+/** Ayarlar → Hesap'taki cihaz listesinde görünen ad. */
+function getDeviceName(): string {
+  return navigator.platform || 'unknown';
+}
+
 interface LicenseCache {
   userId: string;
   plan: string;
@@ -103,7 +108,7 @@ export async function activateLicense(canonicalKey: string, userId: string): Pro
     const { data, error } = await supabase.rpc('activate_license', {
       p_key_hash: keyHash,
       p_device_id: getDeviceId(),
-      p_device_name: navigator.platform || 'unknown',
+      p_device_name: getDeviceName(),
     });
     if (error) return { ok: false, error: 'network' };
     const result = data as RpcResult;
@@ -117,6 +122,8 @@ export async function activateLicense(canonicalKey: string, userId: string): Pro
 }
 
 export interface LicenseDevice {
+  /** Eski şemalarda dönmez; cihaz çıkarma düğmesi yalnız dolu olduğunda çıkar. */
+  device_id?: string | null;
   device_name: string | null;
   last_seen_at: string;
   current: boolean;
@@ -156,9 +163,35 @@ export async function licenseOverview(): Promise<LicenseOverview | null> {
   }
 }
 
+/**
+ * Bu cihazı hesabın lisansına bağlayarak denetler. Cihaz adını da yazan iki
+ * argümanlı biçim yenidir; şeması güncellenmemiş kurulumlarda (PGRST202: işlev
+ * bulunamadı) tek argümanlı eski biçime düşülür — böylece güncelleme sırası
+ * kullanıcıyı kapıda bırakmaz.
+ */
+async function callCheckLicense() {
+  const first = await supabase.rpc('check_license', {
+    p_device_id: getDeviceId(),
+    p_device_name: getDeviceName(),
+  });
+  if (first.error?.code !== 'PGRST202') return first;
+  return supabase.rpc('check_license', { p_device_id: getDeviceId() });
+}
+
+/** Lisansa bağlı bir cihazı bırakır; sınır dolduğunda yeni cihaza yer açar. */
+export async function releaseDevice(deviceId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('release_device', { p_device_id: deviceId });
+    if (error) return false;
+    return (data as RpcResult).ok === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function checkLicense(userId: string): Promise<LicenseStatus> {
   try {
-    const { data, error } = await supabase.rpc('check_license', { p_device_id: getDeviceId() });
+    const { data, error } = await callCheckLicense();
     if (error) throw error;
     const result = data as RpcResult;
     if (!result.ok) {
