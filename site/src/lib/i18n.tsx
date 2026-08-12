@@ -112,8 +112,13 @@ const STRINGS = {
     handoffSub:
       'FRAUDE masaüstü uygulamasına dönmek için aşağıdaki düğmeye dokunun. Tarayıcı uygulamayı yalnızca sizin onayınızla açabildiği için bu adım gerekli.',
     handoffOpenBtn: "FRAUDE'yi Aç",
+    handoffOpenAgainBtn: 'Yeniden Dene',
     handoffOpened:
-      'FRAUDE açılıyor. Uygulama öne gelmezse düğmeye yeniden dokunun; sonra bu sekmeyi kapatabilirsiniz.',
+      'FRAUDE açılıyor. Tarayıcı izin sorarsa onaylayın; uygulama öne gelince bu sekmeyi kapatabilirsiniz.',
+    handoffStalled:
+      'FRAUDE öne geldiyse bu sekmeyi kapatabilirsiniz. Gelmediyse: tarayıcınız izin penceresi gösterdiyse onaylayın, uygulamayı açıp “Yeniden Dene” deyin.',
+    handoffDesktopOnly:
+      'FRAUDE bir masaüstü uygulamasıdır (macOS ve Windows). Bu sayfayı telefonda açtıysanız girişi bilgisayarınızdan sürdürün.',
     handoffFailTitle: 'Giriş tamamlanamadı',
     handoffError: 'GitHub girişi tamamlanamadı: ',
     handoffIdleTitle: 'Uygulama girişi',
@@ -378,8 +383,13 @@ const STRINGS = {
     handoffSub:
       'Tap the button below to return to the FRAUDE desktop app. This step is needed because the browser can only open the app with your confirmation.',
     handoffOpenBtn: 'Open FRAUDE',
+    handoffOpenAgainBtn: 'Try Again',
     handoffOpened:
-      'Opening FRAUDE. If the app does not come to the front, tap the button again; then you can close this tab.',
+      'Opening FRAUDE. Approve the prompt if your browser asks; once the app is in front you can close this tab.',
+    handoffStalled:
+      'If FRAUDE came to the front you can close this tab. If it did not: approve the prompt if your browser showed one, then launch the app and hit “Try Again”.',
+    handoffDesktopOnly:
+      'FRAUDE is a desktop app (macOS and Windows). If you opened this page on a phone, continue the sign-in from your computer.',
     handoffFailTitle: 'Sign-in could not be completed',
     handoffError: 'GitHub sign-in could not be completed: ',
     handoffIdleTitle: 'App sign-in',

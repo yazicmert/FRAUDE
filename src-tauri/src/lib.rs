@@ -70,6 +70,8 @@ pub fn run() {
     let builder = tauri::Builder::default();
     // Windows/Linux'ta derin bağlantı ikinci örnek açar; single-instance
     // (deep-link özelliği) adresi çalışan örneğe iletir. İlk eklenti olmalı.
+    // single_instance::init callback'i sarmalar: deep-link özelliği açıkken
+    // adresi çağırmadan ÖNCE deep-link eklentisine iletir, bu yüzden gövde boş.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
 
@@ -81,6 +83,23 @@ pub fn run() {
         .manage(research_worker::ResearchSignal::default())
         .manage(bridge::BridgeHandle::load())
         .setup(|app| {
+            // fraude:// şemasını her açılışta kaydet. Windows/Linux'ta kaydı
+            // normalde kurulum yapar; kurulum atlanmışsa (taşınabilir kopya,
+            // geliştirme derlemesi) ya da başka bir kurulum kaydı ezmişse
+            // GitHub girişinin dönüşü hiç ulaşmaz. Windows'ta HKCU'ya yazar,
+            // yönetici hakkı istemez. macOS'ta şema paketin Info.plist'inden
+            // gelir; orada çağrı UnsupportedPlatform döner, bu beklenen
+            // durumdur ve sessiz geçilir. Diğer hatalar girişi engellemesin
+            // diye yalnız günlüğe düşer.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::{DeepLinkExt, Error as DeepLinkError};
+                match app.deep_link().register_all() {
+                    Ok(()) | Err(DeepLinkError::UnsupportedPlatform) => {}
+                    Err(error) => eprintln!("deep-link şeması kaydedilemedi: {error}"),
+                }
+            }
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {

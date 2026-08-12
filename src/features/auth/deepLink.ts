@@ -10,16 +10,20 @@ import { isDesktopRuntime } from '../../api/platformClient';
 /** Kayıt/kurtarma e-postalarının masaüstünde döneceği adres. */
 export const DESKTOP_AUTH_REDIRECT = 'fraude://auth-callback';
 
+/** Tanıtım sitesinin kökü; dağıtım adresi değişirse .env ile ezilir. */
+const SITE_ORIGIN =
+  import.meta.env.VITE_FRAUDE_SITE_URL?.trim().replace(/\/$/, '')
+  || 'https://fraude.intelligentverseconnection.com';
+
 /**
  * GitHub girişinin masaüstünde döneceği adres. Doğrudan fraude:// DEĞİL:
- * Chrome özel şemayı yalnız kullanıcı hareketiyle açar, GitHub'ı daha önce
- * yetkilendirmiş kullanıcıda zincir tek bir tıklama olmadan aktığı için devir
- * sessizce engellenir. Bu sayfa jetonu alıp uygulamayı kullanıcının dokunduğu
- * düğmeden açar (site: pages/AppHandoff.tsx). E-posta bağlantıları bu köprüye
- * ihtiyaç duymaz; orada tıklamayı kullanıcı zaten yapar.
+ * tarayıcılar özel şemayı yalnız kullanıcı hareketiyle açar ve GitHub'ı daha
+ * önce yetkilendirmiş kullanıcıda zincir tek bir tıklama olmadan aktığı için
+ * devir sessizce engellenir. Bu sayfa jetonu alıp uygulamayı kullanıcının
+ * dokunduğu bağlantıdan açar (site: pages/AppHandoff.tsx). E-posta
+ * bağlantıları bu köprüye ihtiyaç duymaz; orada tıklamayı kullanıcı yapar.
  */
-export const DESKTOP_OAUTH_REDIRECT =
-  'https://fraude.intelligentverseconnection.com/uygulamaya-giris';
+export const DESKTOP_OAUTH_REDIRECT = `${SITE_ORIGIN}/uygulamaya-giris`;
 
 /** Derin bağlantı bir oturum üretemediğinde LoginView'ın gösterdiği olay. */
 export const AUTH_DEEPLINK_ERROR = 'fraude:auth-deeplink-error';
@@ -27,6 +31,12 @@ export const AUTH_DEEPLINK_ERROR = 'fraude:auth-deeplink-error';
 function reportFailure(message: string): void {
   window.dispatchEvent(new CustomEvent(AUTH_DEEPLINK_ERROR, { detail: message }));
 }
+
+// getCurrent() (açılıştaki adres) ile onOpenUrl (çalışırken gelen adres) aynı
+// bağlantıyı iki kez verebilir; jeton bir kez tüketilsin diye görülenler
+// işaretlenir. Windows/Linux'ta adres komut satırından geldiği için bu çakışma
+// macOS'takinden daha olasıdır.
+const handledUrls = new Set<string>();
 
 async function handleAuthUrl(url: string): Promise<void> {
   let parsed: URL;
@@ -36,6 +46,8 @@ async function handleAuthUrl(url: string): Promise<void> {
     return;
   }
   if (parsed.protocol !== 'fraude:') return;
+  if (handledUrls.has(url)) return;
+  handledUrls.add(url);
 
   // Jetonlar hash'te gelir (#access_token=…&refresh_token=…); PKCE
   // yapılandırılırsa ?code=… gelebilir — ikisi de desteklenir.
