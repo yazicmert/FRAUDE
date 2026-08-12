@@ -461,7 +461,14 @@ button { font-family: inherit; }
   gap: 26px 34px;
 }
 
-.lp-mod { display: flex; gap: 14px; }
+/* Kart artık modül sayfasına giden bağlantı; renk/alt çizgi devralınmasın. */
+.lp-mod {
+  display: flex;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
 
 .lp-mod-code {
   flex: none;
@@ -490,6 +497,25 @@ button { font-family: inherit; }
 }
 
 .lp-mod p { font-size: 13.5px; line-height: 1.6; color: var(--dim); }
+
+.lp-mod-go {
+  display: inline-block;
+  margin-top: 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--dimmer);
+  transition: color 0.15s ease;
+}
+
+.lp-mod:hover .lp-mod-go,
+.lp-mod:focus-visible .lp-mod-go { color: var(--up); }
+
+.lp-mod:focus-visible {
+  outline: 2px solid var(--up);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
 
 .lp-alwayson {
   display: flex;
@@ -799,6 +825,233 @@ table.data td {
 .muted { color: var(--dim); }
 .small { font-size: 12.5px; }
 
+/* ── Modül ayrıntı sayfası (/modul/<slug>) ── */
+/* Sayfa geniş; okuma sütunu dar. Ekran görüntüsü tek başına tam genişliği
+   kullanır, yoksa uygulamanın arayüzü küçülüp okunmaz hâle geliyor. */
+.md {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 112px 26px 96px;
+}
+
+.md-back,
+.md-head,
+.md-noshot,
+.md-section,
+.md-nav,
+.md-cta {
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.md-back {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--dimmer);
+  margin-bottom: 34px;
+}
+.md-back:hover { color: var(--up); }
+
+.md-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 34px;
+}
+
+/* Modül kodu sayfanın künyesi: kartlardaki rozetin büyütülmüş hâli. */
+.md-code {
+  flex: none;
+  width: 58px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(25, 194, 116, 0.45);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--up);
+}
+
+.md-title {
+  font-family: var(--mono);
+  font-size: clamp(26px, 4.2vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.md-lead {
+  margin-top: 10px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.md-shot {
+  margin-bottom: 44px;
+  border: 1px solid var(--rule-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+
+.md-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.md-shot figcaption {
+  padding: 11px 14px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dimmer);
+}
+
+.md-noshot {
+  margin-bottom: 44px;
+  padding: 20px 22px;
+  border: 1px dashed var(--rule-2);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+
+.md-section { margin-bottom: 44px; }
+
+.md-h2 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+  padding-bottom: 11px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.md-does { list-style: none; display: grid; gap: 16px; }
+
+.md-does li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+/* İşaret yerine terminal istem oku — sayfanın dilinde kalır. */
+.md-does li::before {
+  content: '>';
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font-family: var(--mono);
+  color: var(--up);
+}
+
+.md-feeds {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.md-feeds li {
+  border: 1px solid var(--rule-2);
+  border-radius: 4px;
+  padding: 5px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.md-flow { list-style: none; display: grid; gap: 14px; }
+
+.md-flow li {
+  display: grid;
+  grid-template-columns: 2.4em minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+.md-flow-n {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--up);
+}
+
+.md-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+  margin-bottom: 56px;
+}
+
+.md-nav-link {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+.md-nav-link:hover { border-color: var(--rule-2); }
+
+/* İleri bağlantı sağa yaslanır; okuma yönüyle tutarlı olsun. */
+.md-nav-next { text-align: right; }
+
+.md-nav-dir {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+}
+
+.md-nav-name {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.md-nav-link:hover .md-nav-name { color: var(--up); }
+
+.md-cta {
+  text-align: center;
+  padding: 40px 26px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--ink-1);
+}
+/* Kapanış çağrısının başlığı bölüm etiketi değil, gerçek bir başlık. */
+.md-cta .md-h2 {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 10px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--paper);
+}
+.md-cta .lp-sub { margin-bottom: 22px; }
+
 /* ── Erişilebilirlik & duyarlılık ── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -841,4 +1094,12 @@ table.data td {
   .term-rsi, .term-rsi-h { display: none; }
   .term-kap-txt { display: none; }
   .page { padding: 96px 18px 48px; }
+
+  .md { padding: 96px 18px 64px; }
+  .md-head { gap: 14px; }
+  .md-code { width: 46px; height: 40px; font-size: 15px; }
+  /* Dar ekranda önceki/sonraki alt alta; ikisi de sola yaslı okunur. */
+  .md-nav { grid-template-columns: minmax(0, 1fr); }
+  .md-nav-next { text-align: left; }
+  .md-cta { padding: 32px 20px; }
 }

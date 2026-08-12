@@ -66,14 +66,24 @@ export default function Landing() {
             <h3 className="lp-group-label">{group.label[lang]}</h3>
             <ul className="lp-mods">
               {group.modules.map((mod) => (
-                <li className="lp-mod" key={mod.code}>
-                  <span className="lp-mod-code" aria-hidden="true">
-                    {mod.code}
-                  </span>
-                  <div>
-                    <h4>{mod.name[lang]}</h4>
-                    <p>{mod.desc[lang]}</p>
-                  </div>
+                <li key={mod.code}>
+                  <a
+                    className="lp-mod"
+                    href={`/modul/${mod.slug}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(`/modul/${mod.slug}`);
+                    }}
+                  >
+                    <span className="lp-mod-code" aria-hidden="true">
+                      {mod.code}
+                    </span>
+                    <div>
+                      <h4>{mod.name[lang]}</h4>
+                      <p>{mod.desc[lang]}</p>
+                      <span className="lp-mod-go">{t('modOpen')} →</span>
+                    </div>
+                  </a>
                 </li>
               ))}
             </ul>
