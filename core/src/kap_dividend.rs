@@ -34,6 +34,16 @@ const COL_PAY_DATE: &str = "Ödeme Tarihi (3)";
 
 const FIELD_CASH_MODE: &str = "Nakit Kar Payı Ödeme Şekli";
 
+/// Taksitli dağıtımda tutar tablosunun **özet satırı**.
+///
+/// Taksitler ayrı satırlarda verilir ("1. Taksit", "2. Taksit", …) ve altlarına
+/// toplamlarını taşıyan bir satır daha eklenir. Bu satır bir ödeme değil,
+/// taksitlerin toplamıdır; tarih tablosunda karşılığı olmadığı için ilk
+/// taksidin tarihine düşer ve `(kod, tarih)` anahtarıyla birleşince **ilk
+/// taksidin tutarını toplamla ezerdi** — BEGYO'da 0,0307 TL'lik ilk taksit
+/// 0,1227 TL görünüyordu.
+const PAYMENT_KIND_TOTAL: &str = "TOPLAM";
+
 /// Bir bildirimden çıkan, tek bir pay grubuna ait temettü ödemesi.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KapDividend {
@@ -89,6 +99,9 @@ pub fn parse_dividend_form(form: &KapForm, disclosure_index: &str) -> Vec<KapDiv
         }
         let net = number(amounts.cell(row, COL_NET)).unwrap_or(gross);
         let kind = amounts.cell(row, COL_PAYMENT_KIND).unwrap_or("Peşin").to_string();
+        if kind.trim().eq_ignore_ascii_case(PAYMENT_KIND_TOTAL) {
+            continue;
+        }
 
         // Tarihler ayrı tabloda ve ödeme türüyle ("Peşin", "1. Taksit")
         // eşleşiyor; taksitli dağıtımda her taksidin kendi tarihi var.
@@ -178,51 +191,205 @@ pub async fn list_dividend_disclosures(
     crate::kap_capital::list_disclosures(client, from, to, is_dividend_disclosure).await
 }
 
+/// [`list_dividend_disclosures`] ile aynı, ek olarak taramanın eksiksiz
+/// olduğunu bildirir; bkz. [`crate::kap_capital::list_disclosures_checked`].
+async fn list_dividend_disclosures_checked(
+    client: &Client,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> (Vec<crate::kap::RawDisclosure>, bool) {
+    crate::kap_capital::list_disclosures_checked(client, from, to, is_dividend_disclosure).await
+}
+
 /// Temettü taramasının kaç gün geriye bakacağı. Akış son 24 ayı gösteriyor;
 /// pencere onu karşılar.
 const BACKFILL_DAYS: i64 = 760;
 
+/// Keşfin her turda ne kadar geriye ineceği.
+///
+/// 760 günün tamamını her turda taramak ~109 liste isteği demek ve okunabilen
+/// gövde sayısının yanında bu israf; dilim dilim inilir, ulaşılan sınır
+/// arşivde saklanır.
+const DISCOVERY_CHUNK_DAYS: i64 = 120;
+
+/// Her turda yeniden taranan yakın geçmiş.
+///
+/// Kuyruk geriye doğru derinleşirken yeni bildirimlerin de yakalanması gerek;
+/// düzeltme bildirimleri birkaç gün sonra geldiği için pencere iki haftadır.
+const FRESH_WINDOW_DAYS: i64 = 14;
+
+/// Bir turda okunacak en fazla bildirim gövdesi.
+///
+/// Ölçüm (curl, ardışık istek): bildirim sayfası ucu 1 sn aralıkla **68
+/// istek** taşıdıktan sonra 429 veriyor ve ceza penceresi ~20 saniyede
+/// kapanıyor. Bütçe o tavanın yarısında tutulur: tur sınıra dayanmadan biter,
+/// arka arkaya çalışan diğer KAP turları da pay bulur.
+const ROUND_BUDGET: usize = 30;
+
+/// Gövde istekleri arasındaki bekleme.
+///
+/// Ölçülen tavan ~1 istek/saniye; 2,5 saniye onun epey altında kalır ve tur
+/// arka planda çalıştığı için yavaşlığın kullanıcıya maliyeti yok.
+const PAGE_SPACING: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// İki tur arasındaki bekleme.
+///
+/// Turun kendisi bütçesi kadar (~30 istek × 2,5 sn ≈ 75 sn) sürüyor; araya
+/// konan pencere hem hız sınırını serbest bırakır hem gövde ucunu paylaşan
+/// diğer turlara (sermaye artırımı, halka arz izleme) yer açar. Bu ritimle
+/// tarayıcı saatte ~700 bildirim okur: ~3.000 bildirimlik geçmiş bir günde
+/// kapanır, sonrasında günde ~6 yeni bildirimi izlemek zaten bedava.
+const ROUND_INTERVAL: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Kuyruk boşken beklenecek süre.
+///
+/// Arşiv yakaladıktan sonra iş yalnız yeni bildirim; sık sormanın anlamı yok.
+const IDLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Aynı anda ikinci bir tarayıcı çalışmasını engeller.
+static CRAWLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Temettü arşivini sürekli ilerleten arka plan döngüsü.
+///
+/// Ayrı bir döngü olmasının sebebi ölçüm: KAP haftada ~43 temettü bildirimi
+/// yayımlıyor, haftalık backfill'e bağlı tarama ise tur başına 10 bildirim
+/// okuyabiliyordu. Tarama akışın gerisine düşüyor, arşiv hiç kapanmıyordu.
+///
+/// Döngü hiç bitmez: kuyruk boşaldığında seyrek turlarla yeni bildirimleri
+/// izlemeye devam eder.
+pub async fn crawl(client: &Client) {
+    if CRAWLING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+
+    loop {
+        // Tur her koşulda çalışır: kuyruk boşken de yeni bildirimleri arayan
+        // keşif adımı onun içinde. Yakalanmış arşivde değişen tek şey ritim —
+        // erken dönüp yalnız uyumak, akışı izlemeyi tümden durdururdu.
+        backfill_round(client).await;
+
+        let archive = crate::capital_store::load();
+        let reached_floor = archive
+            .dividend_scanned_from
+            .as_deref()
+            .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            .is_some_and(|from| {
+                from <= crate::kap::istanbul_today() - chrono::Duration::days(BACKFILL_DAYS)
+            });
+        let caught_up = archive.dividend_queue.is_empty() && reached_floor;
+
+        tokio::time::sleep(if caught_up { IDLE_INTERVAL } else { ROUND_INTERVAL }).await;
+    }
+}
+
 /// Arşivi KAP temettü bildirimleriyle bir tur ilerletir; eklenen kayıt
 /// sayısını döner.
 ///
-/// Gövde ucunun tur başına ~10 belgelik kotası yüzünden tarama bütçelidir;
-/// ilerleme diske yazıldığı için turlar boyunca yakınsar. En yeni bildirim
-/// önce okunur: güncel akışın doğruluğu geçmişten önce gelir.
+/// Tur iki işi ayrı ayrı yapar:
+///
+/// 1. **Keşif** — yakın geçmiş her turda, uzak geçmiş dilim dilim taranır ve
+///    bulunan bildirimler kalıcı kuyruğa yazılır (ucuz: liste isteği gövde
+///    getirmez).
+/// 2. **Okuma** — kuyruktan bütçe kadar gövde, en yeni önce okunur.
+///
+/// Ayrım şart: aday listesini her turda baştan çıkarmak turun tamamını liste
+/// isteğine harcıyordu. Kuyruk diske yazıldığı için keşif bir kez yapılır,
+/// okuma turlar boyunca yakınsar.
 pub async fn backfill_round(client: &Client) -> usize {
     let mut archive = crate::capital_store::load();
     let today = crate::kap::istanbul_today();
-    let candidates =
-        list_dividend_disclosures(client, today - chrono::Duration::days(BACKFILL_DAYS), today).await;
 
-    let mut pending: Vec<crate::kap::RawDisclosure> = candidates
-        .into_iter()
-        .filter(|row| {
-            !archive
-                .processed_disclosures
-                .contains(&row.disclosure_index_str())
-        })
-        .collect();
+    let discovered = discover(client, &mut archive, today).await;
+
+    let pending = crate::capital_store::dividend_queue_newest_first(&archive);
     if pending.is_empty() {
+        if discovered > 0 {
+            crate::capital_store::save(&archive);
+        }
         return 0;
     }
-    pending.sort_by(|a, b| b.disclosure_index.cmp(&a.disclosure_index));
 
-    let round = crate::kap_capital::fetch_forms(client, &pending).await;
     let mut dividends = Vec::new();
-    for (index, form) in &round.forms {
-        dividends.extend(parse_dividend_form(form, index));
-        archive.processed_disclosures.insert(index.clone());
+    let mut done = Vec::new();
+    let mut rate_limited = false;
+
+    for index in pending.iter().take(ROUND_BUDGET) {
+        match crate::kap::fetch_disclosure_page(client, index).await {
+            Ok(form) => {
+                dividends.extend(parse_dividend_form(&form, index));
+                // Kayıt çıkmasa da işlenmiş sayılır: bildirimlerin çoğu
+                // "Ödenmeyecek" kararını duyuruyor ve yeniden indirilmeleri
+                // kuyruğu asla boşaltmazdı.
+                done.push(index.clone());
+            }
+            // Hız sınırına takılan tur **hemen biter**: ısrar etmek cezayı
+            // uzatıyor ve kuyruk kalıcı olduğu için kaybedilen bir şey yok.
+            Err(error) if crate::retry::is_rate_limited(&error) => {
+                rate_limited = true;
+                break;
+            }
+            // Diğer hatalarda bildirim kuyrukta kalır ve sonraki turda
+            // yeniden denenir; sessiz atlama eksikliği görünmez yapardı.
+            Err(error) => eprintln!("[kap] temettü {index}: gövde alınamadı: {error}"),
+        }
+        tokio::time::sleep(PAGE_SPACING).await;
     }
 
-    let read = round.forms.len();
+    let read = done.len();
+    crate::capital_store::drain_dividend_queue(&mut archive, &done);
     let added = crate::capital_store::merge_kap_dividends(&mut archive, dividends);
     crate::capital_store::save(&archive);
 
     eprintln!(
-        "[kap] temettü: {} bekleyen bildirimin {read} tanesi okundu, {added} kayıt eklendi{}",
+        "[kap] temettü: {} keşfedildi, kuyrukta {} vardı, {read} okundu, {added} kayıt işlendi{}",
+        discovered,
         pending.len(),
-        if round.exhausted { " (kota doldu)" } else { "" }
+        if rate_limited { " (hız sınırı)" } else { "" }
     );
+    added
+}
+
+/// Yeni ve geçmiş temettü bildirimlerini kuyruğa ekler; eklenen sayıyı döner.
+///
+/// Yakın geçmiş her turda yeniden taranır (yeni bildirim ve düzeltmeler),
+/// uzak geçmişe her turda bir dilim daha inilir. İkisi de yalnız liste ucunu
+/// kullanır; gövde indirilmez.
+async fn discover(
+    client: &Client,
+    archive: &mut crate::capital_store::CapitalArchive,
+    today: chrono::NaiveDate,
+) -> usize {
+    let fresh = list_dividend_disclosures(
+        client,
+        today - chrono::Duration::days(FRESH_WINDOW_DAYS),
+        today,
+    )
+    .await;
+    let mut added = crate::capital_store::enqueue_dividends(archive, &fresh);
+
+    let floor = today - chrono::Duration::days(BACKFILL_DAYS);
+    let scanned_from = archive
+        .dividend_scanned_from
+        .as_deref()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        // İlk turda yakın pencerenin başından devam edilir; orası zaten tarandı.
+        .unwrap_or(today - chrono::Duration::days(FRESH_WINDOW_DAYS));
+
+    if scanned_from > floor {
+        let chunk_start = (scanned_from - chrono::Duration::days(DISCOVERY_CHUNK_DAYS)).max(floor);
+        let (older, complete) =
+            list_dividend_disclosures_checked(client, chunk_start, scanned_from).await;
+        added += crate::capital_store::enqueue_dividends(archive, &older);
+
+        // İmleç **yalnız eksiksiz taranan** dilimden sonra ilerler. Düşen bir
+        // pencereye rağmen ilerlemek o günleri kalıcı olarak atlatırdı: keşif
+        // bir daha oraya bakmıyor ve eksik sessiz kalıyor. Dilim bir sonraki
+        // turda baştan taranır; kuyruk zaten yinelenenleri süzüyor.
+        if complete {
+            archive.dividend_scanned_from = Some(chunk_start.format("%Y-%m-%d").to_string());
+        }
+    }
+
     added
 }
 
@@ -341,6 +508,44 @@ mod tests {
         assert_eq!(rows[1].gross_per_share, 0.5);
     }
 
+    /// Taksitlerin altındaki **toplam satırı** ödeme değildir.
+    ///
+    /// BEGYO 1639434'ten alındı: beş taksidin ardından "TOPLAM" satırı geliyor
+    /// ve tarih tablosunda karşılığı olmadığı için ilk taksidin tarihine
+    /// düşüyor. Kayda dönüşürse `(kod, tarih)` anahtarıyla birleşirken ilk
+    /// taksidin 0,0307 TL'lik tutarını 0,1227 TL'lik toplamla ezer.
+    #[test]
+    fn the_total_row_is_not_a_payment() {
+        let rows = parse_dividend_form(
+            &form(&[
+                &["Nakit Kar Payı Ödeme Şekli", "Taksitli"],
+                &[
+                    "Pay Grup Bilgileri", "Ödeme",
+                    "1 TL Nominal Değerli Paya Ödenecek Nakit Kar Payı - Brüt(TL)",
+                    "1 TL Nominal Değerli Paya Ödenecek Nakit Kar Payı - Net(TL)",
+                ],
+                &["A Grubu, BEGYO, TREBEGY00016", "1. Taksit", "0,0306748", "0,0260736"],
+                &["A Grubu, BEGYO, TREBEGY00016", "2. Taksit", "0,0122699", "0,0104294"],
+                &["A Grubu, BEGYO, TREBEGY00016", "TOPLAM", "0,1226992", "0,1042943"],
+                &["Kar Payı Ödeme Tarihleri"],
+                &[
+                    "Ödeme",
+                    "Teklif Edilen Nakit Kar Payı Hak Kullanım Tarihi (1)",
+                    "Kesinleşen Nakit Kar Payı Hak Kullanım Tarihi (2)",
+                    "Ödeme Tarihi (3)",
+                ],
+                &["1. Taksit", "20.08.2026", "20.08.2026", "24.08.2026"],
+                &["2. Taksit", "20.10.2026", "20.10.2026", "22.10.2026"],
+            ]),
+            "1639434",
+        );
+
+        assert_eq!(rows.len(), 2, "toplam satırı kayda dönmemeli: {rows:#?}");
+        assert_eq!(rows[0].ex_date, "2026-08-20");
+        assert_eq!(rows[0].gross_per_share, 0.0306748);
+        assert_eq!(rows[1].ex_date, "2026-10-20");
+    }
+
     /// Genel kurul öncesi bildirimlerde yalnız teklif edilen tarih bulunuyor.
     #[test]
     fn falls_back_to_the_proposed_ex_date() {
@@ -378,6 +583,25 @@ mod tests {
 
         assert_eq!(rows.len(), 1, "{rows:#?}");
         assert_eq!(rows[0], parse_dividend_form(&arase_form(), "1617428")[0]);
+    }
+
+    /// Yeni gövde kapısı — bildirimin **görüntüleme sayfası** — excel ucunun
+    /// verdiği formun aynısını veriyor mu?
+    ///
+    /// Tarama tümüyle bu kapıya taşındı; sayfa düzeni değişirse ayrıştırıcı
+    /// sessizce boş döner ve arşiv büyümeyi bırakırdı. Aynı bildirim (ARASE
+    /// 1617428) fixture ile karşılaştırılıyor: iki kapı aynı kaydı vermeli.
+    #[tokio::test]
+    #[ignore = "canlı KAP erişimi gerektirir"]
+    async fn live_disclosure_page_matches_the_fixture() {
+        let client = crate::http_client();
+        let form = crate::kap::fetch_disclosure_page(&client, "1617428")
+            .await
+            .expect("bildirim sayfası okunmalı");
+        assert_eq!(
+            parse_dividend_form(&form, "1617428"),
+            parse_dividend_form(&arase_form(), "1617428")
+        );
     }
 
     /// Bütçeli tur temettü arşivini gerçekten ilerletiyor mu?

@@ -296,9 +296,20 @@ fn upcoming_from_official(
             // KAP yıllık oran vermez, o ödemenin tutarını verir; alan Yahoo'nun
             // tahmini yıllık oranı için var, uydurma değer yazılmaz.
             annual_rate: None,
-            installment: 0,
+            installment: installment_of(&row.payment_kind),
+            gross_per_share: Some(row.gross_per_share),
+            official: true,
         })
         .collect()
+}
+
+/// `"2. Taksit"` → `2`. Peşin ödemede taksit numarası yoktur, `0` döner.
+fn installment_of(payment_kind: &str) -> u32 {
+    payment_kind
+        .split('.')
+        .next()
+        .and_then(|n| n.trim().parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 /// KAP temettü kaydını arayüzün beklediği biçime çevirir.
@@ -670,12 +681,10 @@ pub async fn backfill_ipo_history(client: &reqwest::Client) -> bool {
     // yüzünden tur bütçeli; her hafta boşluk biraz daha kapanır.
     crate::kap_capital::backfill_round(client).await;
 
-    crate::kap_capital::body_cooldown().await;
-
-    // Temettünün resmî kaynağı da KAP: "Kar Payı Dağıtım İşlemlerine İlişkin
-    // Bildirim" pay grubu bazında brüt/net tutarı ve kesinleşen hak kullanım
-    // tarihini veriyor. Yahoo yalnız henüz okunmamış ödemelerde kalır.
-    crate::kap_dividend::backfill_round(client).await;
+    // Temettü taraması buradan **çağrılmaz**: haftalık backfill'e bağlıyken
+    // tur başına 10 bildirim okuyabiliyordu ve KAP haftada ~43 temettü
+    // bildirimi yayımlıyor — arşiv kapanmak şöyle dursun akışın gerisine
+    // düşüyordu. Kendi döngüsüne taşındı: bkz. [`crate::kap_dividend::crawl`].
 
     changed |= refresh_split_factors(client, &mut archive).await;
 
@@ -1049,24 +1058,37 @@ pub async fn refresh_market_events(client: &reqwest::Client) {
     splits.sort_by(|a, b| b.date.cmp(&a.date));
     assign_installments(&mut dividends);
 
-    // Gelecek temettü takvimi: tarama başarısızsa önceki liste korunur
-    let mut upcoming = match fetch_upcoming_dividends(&tickers_snapshot).await {
-        Some(list) => list,
-        None => load_market_events().upcoming,
-    };
-
-    // Resmî takvim Yahoo'nunkini ezer: aynı hissenin KAP'tan gelen kesinleşmiş
-    // tarihi varsa Yahoo'nun tahmini satırı düşer.
+    // Yaklaşan temettü takviminin kaynağı KAP'tır: hak kullanım tarihini
+    // **kesinleşmiş** olarak veriyor. Yahoo yalnız KAP'ın henüz okumadığı
+    // hisseler için devrede kalır ve erişilemediğinde takvim bundan etkilenmez.
     let official_upcoming = upcoming_from_official(&archive, &today_iso);
-    if !official_upcoming.is_empty() {
-        let covered: std::collections::HashSet<&str> =
-            official_upcoming.iter().map(|u| u.ticker.as_str()).collect();
-        upcoming.retain(|u| !covered.contains(u.ticker.as_str()));
-        upcoming.extend(official_upcoming);
-    }
+    let covered: std::collections::HashSet<&str> =
+        official_upcoming.iter().map(|u| u.ticker.as_str()).collect();
+
+    let mut upcoming: Vec<crate::domain::UpcomingDividend> =
+        match fetch_upcoming_dividends(&tickers_snapshot).await {
+            Some(list) => list,
+            // Yahoo düştüğünde önceki turun **Yahoo kaynaklı** satırları
+            // korunur; KAP'tan gelenler zaten aşağıda yeniden üretiliyor ve
+            // tümünü geri yüklemek silinmiş bir ödemeyi diriltirdi.
+            None => load_market_events()
+                .upcoming
+                .into_iter()
+                .filter(|u| u.ex_date.as_str() > today_iso.as_str())
+                .collect(),
+        };
+    upcoming.retain(|u| !covered.contains(u.ticker.as_str()));
+    upcoming.extend(official_upcoming);
+    upcoming.sort_by(|a, b| a.ex_date.cmp(&b.ex_date));
 
     // Yaklaşan ödeme, aynı yıl içinde ödenenlerin devamı: kaçıncı taksit?
     for u in upcoming.iter_mut() {
+        // KAP taksitli dağıtımda numarayı kendisi veriyor ("2. Taksit").
+        // Sayımla bulunamaz: taksitlerin tamamı gelecekte olduğunda geçmiş
+        // ödeme yok ve beşi birden "1. taksit" görünürdü.
+        if u.installment > 0 {
+            continue;
+        }
         let year = u.ex_date.get(..4).unwrap_or("?");
         let paid_this_year = dividends
             .iter()
@@ -1117,7 +1139,16 @@ async fn fetch_upcoming_dividends(
         .text()
         .await
         .ok()?;
-    if crumb.is_empty() || crumb.contains('<') || crumb.len() > 40 {
+    // Crumb, noktalama içerebilen kısa bir jetondur; **boşluk içermez**.
+    // Uç sınıra takıldığında gövdede düz metin "Too Many Requests" dönüyor:
+    // 18 karakter, '<' yok, uzunluk sınırının altında — eski denetim bunu
+    // geçerli jeton sanıp her sorguya ekliyordu ve tüm istekler sessizce
+    // başarısız oluyordu.
+    let crumb = crumb.trim().to_string();
+    let plausible = !crumb.is_empty()
+        && crumb.len() <= 40
+        && !crumb.chars().any(|c| c.is_whitespace() || c == '<');
+    if !plausible {
         return None;
     }
 
@@ -1145,18 +1176,25 @@ async fn fetch_upcoming_dividends(
                 .await
                 .ok()?;
             let v: serde_json::Value = serde_json::from_str(&body).ok()?;
-            let result = v.get("quoteSummary")?.get("result")?.get(0)?;
-            let ex_ts = result
-                .get("calendarEvents")?
-                .get("exDividendDate")?
-                .get("raw")?
-                .as_i64()?;
-            let annual_rate = result
-                .get("summaryDetail")
-                .and_then(|s| s.get("dividendRate"))
-                .and_then(|r| r.get("raw"))
-                .and_then(|r| r.as_f64());
-            Some((ticker, timestamp_to_date(ex_ts), annual_rate))
+            // Buraya kadar gelen istek **yanıtlanmıştır**; temettü tarihi
+            // bulunmaması ayrı bir sonuçtur. İkisi aynı `None` ile temsil
+            // edilince bloklanan uç "hiçbir hisse temettü vermiyor" gibi
+            // görünüyordu.
+            let result = v.get("quoteSummary")?.get("result")?.get(0)?.clone();
+            let found = result
+                .get("calendarEvents")
+                .and_then(|c| c.get("exDividendDate"))
+                .and_then(|d| d.get("raw"))
+                .and_then(serde_json::Value::as_i64)
+                .map(|ex_ts| {
+                    let annual_rate = result
+                        .get("summaryDetail")
+                        .and_then(|s| s.get("dividendRate"))
+                        .and_then(|r| r.get("raw"))
+                        .and_then(serde_json::Value::as_f64);
+                    (ticker, timestamp_to_date(ex_ts), annual_rate)
+                });
+            Some(found)
         }));
     }
 
@@ -1164,18 +1202,25 @@ async fn fetch_upcoming_dividends(
     let mut responded = 0usize;
     let total = tasks.len();
     for res in join_all(tasks).await {
-        if let Ok(item) = res {
-            responded += 1;
-            if let Some((ticker, ex_date, annual_rate)) = item {
-                if ex_date.as_str() >= today.as_str() {
-                    upcoming.push(crate::domain::UpcomingDividend { ticker, ex_date, annual_rate, installment: 0 });
-                }
+        // `Ok(None)`: istek ya da çözümleme düştü — yanıt sayılmaz.
+        let Ok(Some(item)) = res else { continue };
+        responded += 1;
+        if let Some((ticker, ex_date, annual_rate)) = item {
+            if ex_date.as_str() >= today.as_str() {
+                upcoming.push(crate::domain::UpcomingDividend {
+                    ticker,
+                    ex_date,
+                    annual_rate,
+                    installment: 0,
+                    gross_per_share: None,
+                    official: false,
+                });
             }
         }
     }
-    // join hataları dışında hepsi yanıtlandı sayılır; crumb bloklandıysa
-    // sonuç boş kalır — bunu başarısızlık kabul et
-    if upcoming.is_empty() && responded < total / 2 {
+    // Uç bloklandığında hiçbir sorgu yanıtlanmaz; bunu "temettü yok" diye
+    // kaydetmek mevcut takvimi siliyordu.
+    if responded < total / 2 {
         return None;
     }
 
@@ -1355,6 +1400,32 @@ mod tests {
         assert_eq!(upcoming[0].ex_date, "2026-09-15");
         // KAP yıllık oran vermiyor; uydurulmaz.
         assert_eq!(upcoming[0].annual_rate, None);
+        // Ama o ödemenin brüt tutarını veriyor — takvimde "—" görünmemeli.
+        assert_eq!(upcoming[0].gross_per_share, Some(2.0));
+        assert!(upcoming[0].official);
+    }
+
+    /// Taksit numarası bildirimin kendisinde yazıyor; sayımla bulunamaz çünkü
+    /// taksitlerin tamamı gelecekte olduğunda geçmiş ödeme kaydı yok.
+    #[test]
+    fn installment_numbers_come_from_the_disclosure() {
+        let mut archive = crate::capital_store::CapitalArchive::default();
+        for (ex_date, kind) in [("2026-08-20", "1. Taksit"), ("2026-10-20", "2. Taksit")] {
+            let mut row = kap_dividend("BEGYO", ex_date, 0.03);
+            row.payment_kind = kind.into();
+            archive.dividends.push(row);
+        }
+        archive.dividends.push(kap_dividend("ARASE", "2026-09-15", 2.0));
+
+        let upcoming = super::upcoming_from_official(&archive, "2026-08-08");
+        let numbered: Vec<u32> = upcoming
+            .iter()
+            .filter(|u| u.ticker == "BEGYO")
+            .map(|u| u.installment)
+            .collect();
+        assert_eq!(numbered, vec![1, 2]);
+        // Peşin ödemede taksit yok; numara akış tarafında sayımla veriliyor.
+        assert_eq!(upcoming.iter().find(|u| u.ticker == "ARASE").unwrap().installment, 0);
     }
 
     /// Pencere dışındaki resmî kayıt listeye girmemeli.
