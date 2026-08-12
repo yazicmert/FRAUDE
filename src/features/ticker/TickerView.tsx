@@ -5,6 +5,7 @@ import { getTickerSnapshot, getPriceHistory, getNewsFeed, getKapForTicker, getDi
 import { useTranslation } from '../../api/i18n';
 import type { TickerSnapshot, HistoricalQuote, NewsItem, KapAnnouncement, DividendRecord, CapitalIncrease, AnalystReport, AnalystConsensus, ShareholderSnapshot, SubsidiarySnapshot, FinancialStatement } from '../../types';
 import PriceChart from './PriceChart';
+import ReportDocumentModal, { documentFromReport } from '../reports/ReportDocumentModal';
 import { NewsList } from '../news/NewsFeedView';
 import { useWatchlist } from '../../hooks/useWatchlist';
 import { dispatchAiAsk, dispatchOpenAlerts, dispatchResearchTicker } from '../../lib/actions';
@@ -110,6 +111,8 @@ export default function TickerView({ ticker }: { ticker: string }) {
   const [analystReports, setAnalystReports] = useState<AnalystReport[]>([]);
   const [analystConsensus, setAnalystConsensus] = useState<AnalystConsensus | null>(null);
   const [analystLoading, setAnalystLoading] = useState(true);
+  /** Gömülü okuyucuda açık olan analiz raporu. */
+  const [openReport, setOpenReport] = useState<AnalystReport | null>(null);
   const [shareholders, setShareholders] = useState<ShareholderSnapshot | null>(null);
   const [shareholdersLoading, setShareholdersLoading] = useState(true);
   const [shareholdersError, setShareholdersError] = useState<string | null>(null);
@@ -1122,7 +1125,7 @@ export default function TickerView({ ticker }: { ticker: string }) {
               <button
                 key={report.id}
                 type="button"
-                onClick={() => openUrl(report.pdf_url || report.url)}
+                onClick={() => setOpenReport(report)}
                 style={{
                   display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left',
                   background: 'var(--bg-panel)', border: '1px solid var(--border-color)',
@@ -1254,6 +1257,11 @@ export default function TickerView({ ticker }: { ticker: string }) {
         announcement={selectedKapDoc}
         onClose={() => setSelectedKapDoc(null)}
         onAskAi={(prompt) => dispatchAiAsk(prompt)}
+      />
+
+      <ReportDocumentModal
+        document={openReport ? documentFromReport(openReport, t('analystReports')) : null}
+        onClose={() => setOpenReport(null)}
       />
     </div>
   );

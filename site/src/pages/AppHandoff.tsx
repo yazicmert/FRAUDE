@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '../components/Brand';
-import { useI18n } from '../lib/i18n';
+import { useI18n, type StringKey } from '../lib/i18n';
 import { DOWNLOAD_MAC, DOWNLOAD_WIN } from '../lib/download';
 
 /** Masaüstü uygulamasının derin bağlantı şeması (app: features/auth/deepLink.ts). */
@@ -45,6 +45,37 @@ function captureCallback(): string {
 
 const CALLBACK_PAYLOAD = captureCallback();
 
+/**
+ * Kalan yüzde kodlamasını çözer. GoTrue açıklamayı bir kez kodlar, hata
+ * yönlendirmesinde adrese İKİ kez kodlanmış düşebiliyor: URLSearchParams bir
+ * katmanı açar, geriye "detected%3A default" gibi metin kalır. Çözülemezse ham
+ * metin korunur — hata ekranı asla boş kalmasın.
+ */
+function decodeLeftover(text: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(text)) return text;
+  try {
+    // Yalnız yüzde kodlaması çözülür: boşluklar dış katmanda '+' ile taşınır ve
+    // URLSearchParams onları zaten açtı. Burada '+' gerçek artı işaretidir.
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Sağlayıcı hatasını çeviri anahtarına eşler. Ham metin İngilizce ve teknik:
+ * "Multiple accounts with the same email address in the same linking domain
+ * detected" aslında "bu e-posta birden fazla hesapta kayıtlı, GitHub hangisine
+ * bağlanacağı seçilemiyor" demek ve çözümü kullanıcı tarafındadır. Eşleşme
+ * yoksa null döner, ham metin gösterilir.
+ */
+function failureKey(text: string): StringKey | null {
+  const lower = text.toLowerCase();
+  if (lower.includes('multiple accounts with the same email')) return 'handoffErrDuplicateEmail';
+  if (lower.includes('email from external provider')) return 'handoffErrProviderEmail';
+  return null;
+}
+
 /** İndirme bağlantılarında öne çıkarılacak paket; bilinmiyorsa null. */
 function guessPlatform(): 'mac' | 'win' | null {
   const ua = navigator.userAgent;
@@ -61,7 +92,11 @@ export default function AppHandoff() {
   const timer = useRef<number | null>(null);
 
   const params = new URLSearchParams(CALLBACK_PAYLOAD.replace(/^[#?]/, ''));
-  const failure = params.get('error_description') ?? params.get('error');
+  const rawFailure = params.get('error_description') ?? params.get('error');
+  const failure = rawFailure ? decodeLeftover(rawFailure) : null;
+  // Hesap kaynaklı hatalarda uygulamayı açmanın faydası yok; yardım metni de
+  // "uygulama açılmıyor mu" değil, hesabın nasıl düzeltileceği olmalı.
+  const failureHint = failure ? failureKey(failure) : null;
   const hasTokens = Boolean(params.get('access_token') || params.get('code'));
   // Hash'i olduğu gibi taşı: uygulama hem #access_token hem ?code biçimini okur.
   const deepLink = APP_CALLBACK + CALLBACK_PAYLOAD;
@@ -111,8 +146,16 @@ export default function AppHandoff() {
         {failure ? (
           <>
             <h1 style={{ marginTop: 12 }}>{t('handoffFailTitle')}</h1>
-            <p className="form-error">{t('handoffError') + failure}</p>
-            {help}
+            {failureHint ? (
+              <>
+                <p className="form-error">{t(failureHint)}</p>
+                {/* Ham sunucu metni destek için kalır, ama küçük ve ikincil */}
+                <p className="muted small">{t('handoffError') + failure}</p>
+              </>
+            ) : (
+              <p className="form-error">{t('handoffError') + failure}</p>
+            )}
+            {failureHint ? null : help}
           </>
         ) : !hasTokens ? (
           <>

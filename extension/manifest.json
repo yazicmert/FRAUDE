@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "Fraude AI ajanlarına araştırma görevi gönderin; KAP/SPK/haber bildirimlerinizi masaüstü kapalıyken bile Chrome'da alın.",
   "permissions": ["notifications", "storage", "alarms", "activeTab"],
-  "host_permissions": ["http://127.0.0.1/*", "https://frfbmutvkekctpacktlz.supabase.co/*"],
+  "host_permissions": ["http://127.0.0.1/*", "https://emrusyelfekcfyisfzzl.supabase.co/*"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": { "128": "icons/icon128.png" }

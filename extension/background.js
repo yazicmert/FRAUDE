@@ -8,7 +8,7 @@
 // Yeni öğe için Chrome bildirimi gösterir ve aksiyon rozetini artırır.
 
 const ALARM = 'fraude-poll';
-const SUPABASE_URL = 'https://frfbmutvkekctpacktlz.supabase.co';
+const SUPABASE_URL = 'https://emrusyelfekcfyisfzzl.supabase.co';
 
 function ensureAlarm() {
   chrome.alarms.create(ALARM, { periodInMinutes: 0.75 });

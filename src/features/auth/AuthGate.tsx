@@ -4,7 +4,7 @@ import LoginView from './LoginView';
 import LicenseView from './LicenseView';
 import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import { AUTH_EVENT, getSession, initSession, type AuthUser } from './session';
-import { checkLicense } from './license';
+import { checkLicense, type LicenseError } from './license';
 import { useTranslation } from '../../api/i18n';
 import { isDesktopRuntime } from '../../api/platformClient';
 import { setBridgeIdentity } from '../../api/tauriClient';
@@ -40,6 +40,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [booted, setBooted] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [license, setLicense] = useState<LicenseState>('unknown');
+  // Lisans neden geçmedi: anahtar ekranı buna göre metin/akış seçer.
+  const [licenseError, setLicenseError] = useState<LicenseError | null>(null);
 
   useEffect(() => {
     const onAuthChanged = () => setUser(getSession());
@@ -73,7 +75,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     setLicense('checking');
     checkLicense(user.id).then((status) => {
-      if (!cancelled) setLicense(status.ok ? 'ok' : 'missing');
+      if (cancelled) return;
+      setLicense(status.ok ? 'ok' : 'missing');
+      setLicenseError(status.ok ? null : status.error);
     });
     return () => {
       cancelled = true;
@@ -96,7 +100,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <GateLoading label={t('authLicenseChecking')} />;
   }
   if (license === 'missing') {
-    return <LicenseView user={user} onActivated={() => setLicense('ok')} />;
+    return (
+      <LicenseView
+        user={user}
+        reason={licenseError}
+        onActivated={() => {
+          setLicenseError(null);
+          setLicense('ok');
+        }}
+      />
+    );
   }
   return <>{children}</>;
 }

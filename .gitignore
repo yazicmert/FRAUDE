@@ -17,10 +17,16 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+.env.migration
 !.env.example
+!.env.migration.example
 
 # Üretilen lisans anahtarı listeleri asla repoya girmez
 scripts/licenses-*.csv
+
+# run-migration.mjs'in ürettiği geçici SQL — gizli anahtar ve kullanıcı verisi içerir
+scripts/.cron.sql
+scripts/.auth-dump.sql
 
 # Rust build output (workspace + crates)
 target/

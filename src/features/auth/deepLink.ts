@@ -44,8 +44,39 @@ export interface AuthCallbackDetail {
   status: 'signed-in' | 'error';
   /** Sunucudan gelen ham hata metni (varsa). */
   message?: string;
-  /** Çeviriye bırakılan bilinen durum: tarayıcıdan dönüş hiç gelmedi. */
-  reason?: 'no-callback';
+  /**
+   * Çeviriye bırakılan bilinen durumlar. Ham sunucu metni İngilizce ve teknik
+   * olduğu için tanınan hatalar burada sınıflanır; LoginView bunlara Türkçe
+   * ve eyleme dönük bir açıklama gösterir.
+   *   • no-callback     → tarayıcıdan dönüş hiç gelmedi
+   *   • duplicate-email → e-posta birden fazla hesapta kayıtlı (GoTrue linking)
+   *   • provider-email  → GitHub e-postayı paylaşmadı
+   */
+  reason?: 'no-callback' | 'duplicate-email' | 'provider-email';
+}
+
+/**
+ * Kalan yüzde kodlamasını çözer: GoTrue hata açıklamasını adrese çift
+ * kodlanmış bırakabiliyor, URLSearchParams yalnız bir katmanı açar ve kullanıcı
+ * "detected%3A default" görür. Çözülemezse ham metin korunur.
+ */
+function decodeLeftover(text: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(text)) return text;
+  try {
+    // Yalnız yüzde kodlaması çözülür: boşluklar dış katmanda '+' ile taşınır ve
+    // URLSearchParams onları zaten açtı. Burada '+' gerçek artı işaretidir.
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/** Tanınan sağlayıcı hatalarını sınıflar; bilinmiyorsa undefined. */
+function classifyProviderError(text: string): AuthCallbackDetail['reason'] {
+  const lower = text.toLowerCase();
+  if (lower.includes('multiple accounts with the same email')) return 'duplicate-email';
+  if (lower.includes('email from external provider')) return 'provider-email';
+  return undefined;
 }
 
 /** Teşhis izinin localStorage anahtarı (son 12 kayıt). */
@@ -90,7 +121,9 @@ function clearOAuthPending(): void {
 /**
  * Teşhis izi. Uygulamada devtools yok; "geri döndü ama giriş olmadı"
  * şikâyetinde tek kanıt budur — diskteki localStorage'dan okunabilir.
- * Yalnız parametre ADLARI ve sonuç yazılır; jeton DEĞERLERİ asla.
+ * Yalnız parametre ADLARI, sonuç ve sunucunun hata metni yazılır; jeton
+ * DEĞERLERİ asla. Hata metni şart: yalnız HTTP durumu tutulduğunda "400" hangi
+ * uçtan geldiği ayırt edilemiyordu (jeton tazeleme mi, eksik jeton mu).
  */
 function trace(stage: string, extra: Record<string, unknown> = {}): void {
   try {
@@ -139,8 +172,12 @@ async function handleAuthUrl(url: string): Promise<void> {
     // hiçbir şey olmuyordu.
     const errorCode = params.get('error') ?? params.get('error_code');
     if (errorCode) {
-      trace('provider-error', { code: errorCode });
-      announce({ status: 'error', message: params.get('error_description') ?? errorCode });
+      const description = decodeLeftover(params.get('error_description') ?? errorCode);
+      const reason = classifyProviderError(description);
+      // Ham metin de ize yazılır: sınıflanamayan bir hata çıktığında tek kanıt
+      // budur (yalnız sunucunun hata açıklaması, jeton değil).
+      trace('provider-error', { code: errorCode, reason, description });
+      announce({ status: 'error', reason, message: description });
       return;
     }
 
@@ -152,7 +189,7 @@ async function handleAuthUrl(url: string): Promise<void> {
         refresh_token: refreshToken,
       });
       if (error) {
-        trace('set-session-failed', { status: error.status });
+        trace('set-session-failed', { status: error.status, code: error.code, message: error.message });
         announce({ status: 'error', message: error.message });
         return;
       }
@@ -165,7 +202,7 @@ async function handleAuthUrl(url: string): Promise<void> {
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) {
-        trace('exchange-failed', { status: error.status });
+        trace('exchange-failed', { status: error.status, code: error.code, message: error.message });
         announce({ status: 'error', message: error.message });
         return;
       }

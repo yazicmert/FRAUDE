@@ -197,6 +197,13 @@ body.kap-docked-open .topbar-icon-btn {
   color: #04140d;
 }
 
+/* Seçilemeyen mod (ör. sayfadan sade metin çıkarılamadıysa) tıklanabilir
+   görünmemeli; gerekçe düğmenin ipucunda yazıyor. */
+.mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Zoom Controls */
 .kap-pdf-zoom-ctrl {
   display: flex;
@@ -397,6 +404,22 @@ body.kap-docked-open .topbar-icon-btn {
   border: none;
   border-radius: 6px;
   background: #111;
+}
+
+/* Haber okuyucusunun sade metin sütunu: KAP belgesiyle aynı kâğıt hissi,
+   ama sabit genişlik yerine okunabilir bir satır uzunluğu. */
+.kap-article-reader {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  background: #0b0f14;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  padding: 36px 40px;
+  color: #c9d1d9;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.7;
 }
 
 /* Paper Document Styling */

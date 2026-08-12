@@ -25,6 +25,10 @@ import { useResearch } from './hooks/useResearch';
 import { useAlerts } from './features/alerts/useAlerts';
 import AlertsModal from './features/alerts/AlertsModal';
 import ShareModal from './features/share/ShareModal';
+import ReportDocumentModal, {
+  ARTICLE_READER_EVENT,
+  type ViewerDocument,
+} from './features/reports/ReportDocumentModal';
 import ToastHost from './components/Toast';
 import CommandPalette, { type PaletteCommand } from './components/CommandPalette';
 import MorningBriefModal from './components/MorningBriefModal';
@@ -96,6 +100,8 @@ export default function App() {
   const [marketStatus, setMarketStatus] = useState<MarketStatus>(() => getMarketStatus());
   const [aiQuickPrompt, setAiQuickPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** Uygulama içi haber okuyucusunda açık olan haber. */
+  const [articleDocument, setArticleDocument] = useState<ViewerDocument | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -464,6 +470,13 @@ export default function App() {
         })
         .catch((err) => console.error('Araştırma başlatılamadı:', err));
     };
+    // Haber okuyucusu: istek listeden gelir, okuyucu burada tek örnek olarak
+    // yaşar — liste yenilenip satır sökülse de okuma yarıda kalmaz.
+    const onOpenArticle = (e: Event) => {
+      const target = (e as CustomEvent<ViewerDocument>).detail;
+      if (target) setArticleDocument(target);
+    };
+    window.addEventListener(ARTICLE_READER_EVENT, onOpenArticle);
     window.addEventListener('fraude-open-alerts', onOpenAlerts);
     window.addEventListener('fraude-ai-ask', onAiAsk);
     window.addEventListener('fraude-open-palette', onOpenPalette);
@@ -481,6 +494,7 @@ export default function App() {
       .catch(() => { /* çevrimdışı: gömülü yedek takvim kullanılır */ });
     const statusTimer = setInterval(() => setMarketStatus(getMarketStatus()), 30_000);
     return () => {
+      window.removeEventListener(ARTICLE_READER_EVENT, onOpenArticle);
       window.removeEventListener('fraude-open-alerts', onOpenAlerts);
       window.removeEventListener('fraude-ai-ask', onAiAsk);
       window.removeEventListener('fraude-open-palette', onOpenPalette);
@@ -924,6 +938,11 @@ export default function App() {
         onOpenTicker={upsertTickerTab}
         onRunFql={(c) => void handleCommand(c)}
         recentTickers={recentTickers}
+      />
+      <ReportDocumentModal
+        document={articleDocument}
+        onClose={() => setArticleDocument(null)}
+        onSelectTicker={upsertTickerTab}
       />
       <ToastHost />
       <GlobalAiCopilot />

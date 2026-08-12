@@ -1,0 +1,56 @@
+# FRAUDE — Supabase proje yapılandırması
+# ─────────────────────────────────────────────────────────────────────────────
+# `supabase config push` ile bağlı projeye uygulanır. Gizli değerler burada
+# DEĞİL, scripts/.env.migration içindedir; env(...) ile okunur.
+#
+# UYARI: config push burada YAZILI olan her ayarı uzak projeye dayatır.
+# Panodan elle değiştirdiğin bir ayar varsa buraya da yaz, yoksa geri alınır.
+
+project_id = "emrusyelfekcfyisfzzl"
+
+[auth]
+# Doğrulama/şifre e-postalarındaki bağlantıların kökü.
+site_url = "env(SITE_URL)"
+
+# Girişten sonra dönülmesine izin verilen adresler.
+#  • fraude://auth-callback — masaüstü derin bağlantısı (e-posta bağlantıları
+#    bunu kullanır; bkz. src/features/auth/deepLink.ts)
+#  • /uygulamaya-giris — GitHub OAuth devir köprüsü. Chrome özel şema devrini
+#    kullanıcı hareketi olmadan engellediği için dönüş önce bu sayfaya gelir
+#    (worktree-github-giris-koprusu dalı). Dal birleşmeden önce de listede
+#    durması zararsızdır.
+#  • /sifre-yenile — şifre yenileme akışı
+additional_redirect_urls = [
+  "fraude://auth-callback",
+  "https://fraude.intelligentverseconnection.com",
+  "https://fraude.intelligentverseconnection.com/uygulamaya-giris",
+  "https://fraude.intelligentverseconnection.com/sifre-yenile",
+]
+
+enable_signup = true
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+[auth.email]
+enable_signup = true
+# E-posta doğrulaması açık: kayıt sonrası onay bağlantısı gider.
+enable_confirmations = true
+double_confirm_changes = true
+
+[auth.email.smtp]
+enabled = true
+host = "env(SMTP_HOST)"
+port = 587
+user = "env(SMTP_USER)"
+pass = "env(SMTP_PASS)"
+admin_email = "env(ADMIN_EMAIL)"
+# Panoda girilen değerle aynı tutulur (2026-08-13: "FRAUDE TEAM").
+sender_name = "FRAUDE TEAM"
+
+# GitHub OAuth — kullanıcı ihtiyarb21@itu.edu.tr bu yolla giriyor.
+# GitHub tarafındaki Authorization callback URL şu olmalı:
+#   https://emrusyelfekcfyisfzzl.supabase.co/auth/v1/callback
+[auth.external.github]
+enabled = true
+client_id = "env(GITHUB_CLIENT_ID)"
+secret = "env(GITHUB_SECRET)"
