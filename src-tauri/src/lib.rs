@@ -1,5 +1,6 @@
 mod bridge;
 mod commands;
+mod device;
 mod module_updater;
 mod publisher;
 mod research_worker;
@@ -225,6 +226,7 @@ pub fn run() {
             commands::get_capital_increases,
             commands::get_analyst_reports,
             commands::get_report_document,
+            device::device_identity,
             commands::get_ipo_calendar,
             commands::get_kap_for_ticker,
             commands::get_shareholders,

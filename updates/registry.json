@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-cihaz-kimligi-makineye-bagli",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Cihaz listesi gerçek makineyi gösteriyor: “MacIntel” yerine model, kota artık makine başına",
+        "en": "The device list now shows the real machine: the model instead of “MacIntel”, and one slot per computer"
+      },
+      "summary": {
+        "tr": "Ayarlar → Hesap'taki cihaz listesi her satırda “MacIntel” (Windows'ta “Win32”) yazıyordu. Bu değer tarayıcıların dondurduğu eski bir alandan geliyor: Apple Silicon Mac'lerde bile “MacIntel” döner, yani hiçbir cihazı diğerinden ayırmaz. Artık uygulama bilgisayarın modelini okuyor — “MacBook Pro · Apple M4 Pro”, “XPS 15 9520 · Windows x64” gibi.\n\nAsıl sorun adın altındaydı: lisansın saydığı cihaz kimliği, uygulamanın kendi tarayıcı deposunda üretilen rastgele bir numaraydı. Her deponun kendi numarası olduğu için aynı bilgisayardaki iki kurulum (geliştirme sürümü ile kurulu uygulama) iki ayrı cihaz sayılıyor, iki cihazlık kotayı tek başına tüketiyordu; depo silindiğinde de makine “yeni cihaz” gibi görünüyordu. Kimlik artık işletim sisteminin makine kimliğinden türetiliyor: aynı bilgisayardaki her kurulum aynı değeri verir, farklı bilgisayar farklısını. Böylece kota gerçekten makine başına işler.\n\nHam donanım kimliği hiçbir yere gönderilmez; özeti alınır. Sunucuda duran değer makineyi tanımaya yetmeyen opak bir dizedir — cevaplanan tek soru “bu aynı makine mi”.\n\nGüncellemeden sonra ilk açılışta eski rastgele kayıt kendiliğinden bırakılır, yeni kimlik onun yerine geçer; kullanıcının elle cihaz çıkarması gerekmez. Kimlik okunamazsa (desteklenmeyen ortam) eski davranış aynen sürer, lisans akışı durmaz.",
+        "en": "Every row in Settings → Account showed “MacIntel” (or “Win32” on Windows). That value comes from a legacy browser field that is frozen: even Apple Silicon Macs report “MacIntel”, so it told one device from another not at all. The app now reads the machine's model — “MacBook Pro · Apple M4 Pro”, “XPS 15 9520 · Windows x64”.\n\nThe real problem sat underneath the name: the device id the license counts was a random number generated in the app's own browser storage. Each storage has its own, so two installs on the same computer (a development build and the installed app) counted as two devices and used up a two-device quota on their own; clearing the storage made the machine look brand new. The id is now derived from the operating system's machine identifier: every install on the same computer yields the same value, a different computer a different one. The quota finally works per machine.\n\nThe raw hardware identifier is never sent anywhere — only a hash of it. What the server stores is an opaque string that cannot identify the machine; the only question it answers is “is this the same computer”.\n\nOn the first launch after updating, the old random registration is released automatically and the new identity takes its place — no manual device removal. If the identity cannot be read (unsupported environment) the previous behaviour continues unchanged and the license flow never stops."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-eposta-dil-secimi",
       "date": "2026-08-13",
       "author": "yazicmert",
