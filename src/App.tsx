@@ -459,6 +459,12 @@ export default function App() {
     const onOpenPalette = () => setPaletteOpen(true);
     const onOpenShare = () => setShareOpen(true);
     const onOpenResearch = () => openModuleTab('research');
+    // Hisse sayfasındaki forum bölümünden "Forumda aç": sekme açılır ve akış
+    // o hisseye filtrelenir.
+    const onOpenForum = (e: Event) => {
+      const ticker = (e as CustomEvent<{ ticker?: string }>).detail?.ticker;
+      openModuleTab('forum', { ticker: ticker ?? null });
+    };
     // Bir hisse için takım araştırması başlat: işi kuyruğa al, modülü aç, listeyi tazele.
     const onResearchTicker = (e: Event) => {
       const ticker = (e as CustomEvent<{ ticker?: string }>).detail?.ticker;
@@ -482,6 +488,7 @@ export default function App() {
     window.addEventListener('fraude-open-palette', onOpenPalette);
     window.addEventListener('fraude-open-share', onOpenShare);
     window.addEventListener('fraude-open-research', onOpenResearch);
+    window.addEventListener('fraude-open-forum', onOpenForum);
     window.addEventListener('fraude-research-ticker', onResearchTicker);
     // Sağlam kaynaktan (Nager.Date, Rust get_market_holidays) resmi tatilleri
     // çek; yerleştir ve rozeti hemen güncelle. Çevrimdışıysa gömülü yedek takvim
@@ -500,6 +507,7 @@ export default function App() {
       window.removeEventListener('fraude-open-palette', onOpenPalette);
       window.removeEventListener('fraude-open-share', onOpenShare);
       window.removeEventListener('fraude-open-research', onOpenResearch);
+      window.removeEventListener('fraude-open-forum', onOpenForum);
       window.removeEventListener('fraude-research-ticker', onResearchTicker);
       clearInterval(statusTimer);
     };

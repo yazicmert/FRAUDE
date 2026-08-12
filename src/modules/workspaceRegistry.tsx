@@ -25,6 +25,7 @@ const NewsFeedView = lazy(() => import('../features/news/NewsFeedView'));
 const FundsView = lazy(() => import('../features/funds/FundsView'));
 const ModuleCenterView = lazy(() => import('../features/modules/ModuleCenterView'));
 const TeamView = lazy(() => import('../features/team/TeamView'));
+const ForumView = lazy(() => import('../features/forum/ForumView'));
 const CorporateActionsView = lazy(() => import('../features/corporate/CorporateActionsView'));
 const MonitorView = lazy(() => import('../features/monitor/MonitorView'));
 const NotificationsView = lazy(() => import('../features/notifications/NotificationsView'));
@@ -250,6 +251,27 @@ export const workspaceModules: WorkspaceModule[] = [
     render: (_tab, host) => <AiPanel mode="workspace" activeContext={host.activeContext} />,
   },
   {
+    kind: 'forum',
+    titleKey: 'forum',
+    manifest: manifest(
+      'fraude.forum',
+      { tr: 'Forum', en: 'Forum' },
+      {
+        tr: 'Kullanıcıların ortak forumu; etiketlenen hisse kendi sayfasında da konuyu gösterir.',
+        en: 'Shared community forum; a tagged ticker also shows the thread on its own page.',
+      },
+      ['storage:workspace'],
+      'forum',
+      'forum',
+    ),
+    render: (tab, host) => (
+      <ForumView
+        initialTicker={(tab.data?.ticker as string | null | undefined) ?? null}
+        onSelectTicker={host.openTicker}
+      />
+    ),
+  },
+  {
     kind: 'team',
     titleKey: 'team',
     manifest: manifest(
@@ -431,7 +453,9 @@ export const workspaceModules: WorkspaceModule[] = [
   // Internal detail views, opened on demand (no manifest, no nav, no default tab).
   {
     kind: 'ticker',
-    render: (tab) => <TickerView ticker={String(tab.data?.ticker ?? tab.title ?? '')} />,
+    render: (tab, host) => (
+      <TickerView ticker={String(tab.data?.ticker ?? tab.title ?? '')} onSelectTicker={host.openTicker} />
+    ),
   },
   {
     kind: 'index',
@@ -576,6 +600,7 @@ export const NAV_TREE: NavSection[] = [
     menu: 'group',
     entries: [
       { type: 'module', kind: 'news' },
+      { type: 'module', kind: 'forum' },
       { type: 'module', kind: 'ai' },
       { type: 'module', kind: 'research' },
       { type: 'module', kind: 'team' },

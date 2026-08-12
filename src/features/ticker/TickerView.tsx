@@ -17,6 +17,7 @@ import { hasCorporateData } from '../../lib/instrumentKind';
 import { BellIcon, SparklesIcon, StarIcon } from '../../components/icons';
 import FundDetail from '../funds/FundDetail';
 import KapDocumentViewerModal from '../kap/KapDocumentViewerModal';
+import TickerForumSection from '../forum/TickerForumSection';
 
 const OWNER_COLORS = ['#58a6ff', '#3fb950', '#d29922', '#a371f7', '#ff7b72', '#00ced1', '#f0883e', '#7ee787'];
 
@@ -92,7 +93,7 @@ const linkedInSearchUrl = (name: string, kind: 'company' | 'person') =>
 const googleSearchUrl = (name: string) =>
   `https://www.google.com/search?q=${encodeURIComponent(`"${name}"`)}`;
 
-export default function TickerView({ ticker }: { ticker: string }) {
+export default function TickerView({ ticker, onSelectTicker }: { ticker: string; onSelectTicker?: (ticker: string) => void }) {
   const { t } = useTranslation();
   const { isInWatchlist, toggleWatchlist } = useWatchlist();
   // Fiyat, ağır anlık görüntüden bağımsız olarak gecikmeli canlı uçtan tazelenir;
@@ -1185,6 +1186,10 @@ export default function TickerView({ ticker }: { ticker: string }) {
       </section>
       </>
       )}
+
+      {/* TOPLULUK FORUMU — kurumsal veri koşuluna bağlı DEĞİLDİR: emtia, döviz
+          ve kripto sayfalarında da kullanıcılar aynı akışa yazabilir. */}
+      <TickerForumSection ticker={equity.ticker} onSelectTicker={onSelectTicker} />
 
       {/* ORTAK / PATRON ARAŞTIRMA MODALI */}
       {research && (
