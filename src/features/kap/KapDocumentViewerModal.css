@@ -197,6 +197,13 @@ body.kap-docked-open .topbar-icon-btn {
   color: #04140d;
 }
 
+/* Seçilemeyen mod (ör. sayfadan sade metin çıkarılamadıysa) tıklanabilir
+   görünmemeli; gerekçe düğmenin ipucunda yazıyor. */
+.mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Zoom Controls */
 .kap-pdf-zoom-ctrl {
   display: flex;

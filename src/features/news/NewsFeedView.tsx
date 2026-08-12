@@ -5,10 +5,7 @@ import type { NewsItem } from '../../types';
 import { useTranslation } from '../../api/i18n';
 // Haber, analiz raporu ve SPK bülteni aynı okuyucuda açılır: araç çubuğu,
 // yakınlaştırma, sağa sabitleme ve yapay zekâ bağlamı tek yerde yaşar.
-import ReportDocumentModal, {
-  documentFromNews,
-  type ViewerDocument,
-} from '../reports/ReportDocumentModal';
+import { documentFromNews, requestArticleReader } from '../reports/ReportDocumentModal';
 // Modül düzeyi yardımcılar bileşen dışı çalıştığından hook yerine i18next
 // örneği kullanılır.
 import i18n from '../../i18n';
@@ -36,19 +33,11 @@ function fallbackSummary(item: NewsItem) {
   return i18n.t('newsFallbackSummary', { publisher, headline: `${headline}${/[.!?]$/.test(headline) ? '' : '.'}` });
 }
 
-export function NewsList({
-  news,
-  onSelectTicker,
-}: {
-  news: NewsItem[];
-  /** Okuyucudaki ilgili pay rozetine basılınca çağrılır. */
-  onSelectTicker?: (ticker: string) => void;
-}) {
+export function NewsList({ news }: { news: NewsItem[] }) {
   const { t } = useTranslation();
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
-  const [openArticle, setOpenArticle] = useState<ViewerDocument | null>(null);
 
   const toggleArticle = async (item: NewsItem) => {
     if (expandedLink === item.link) {
@@ -177,8 +166,11 @@ export function NewsList({
                     onClick={(event) => {
                       event.stopPropagation();
                       // Sayfayı okuyucu kendisi çeker; buton yalnızca hangi
-                      // haberin açılacağını söyler.
-                      setOpenArticle(documentFromNews(item, t('knowledgeTabNews'), formatDate(item.pub_date)));
+                      // haberin açılacağını söyler. Okuyucu uygulama kökünde
+                      // yaşadığından liste yenilense de okuma bölünmez.
+                      requestArticleReader(
+                        documentFromNews(item, t('knowledgeTabNews'), formatDate(item.pub_date)),
+                      );
                     }}
                   >
                     {t('readInFraude')}
@@ -190,11 +182,6 @@ export function NewsList({
         </article>
       ))}
 
-      <ReportDocumentModal
-        document={openArticle}
-        onClose={() => setOpenArticle(null)}
-        onSelectTicker={onSelectTicker}
-      />
     </div>
   );
 }
@@ -293,14 +280,7 @@ export default function NewsFeedView() {
             <span>·</span>
             <SourceBreakdown news={news} />
           </div>
-          <NewsList
-            news={news}
-            onSelectTicker={(ticker) => {
-              setTickerInput(ticker);
-              setActiveTicker(ticker);
-              void loadNews(ticker);
-            }}
-          />
+          <NewsList news={news} />
         </>
       )}
     </div>

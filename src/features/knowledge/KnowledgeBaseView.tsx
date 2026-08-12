@@ -613,7 +613,7 @@ export default function KnowledgeBaseView({
               entry.payload.kind === 'news' ? (
                 // Haber satırı kendi bileşeniyle çizilir; okuyucusu ve önizleme
                 // getirmesi orada yaşıyor, burada kopyalanmaz.
-                <NewsList key={entry.key} news={[entry.payload.item]} onSelectTicker={onSelectTicker} />
+                <NewsList key={entry.key} news={[entry.payload.item]} />
               ) : (
                 <article
                   key={entry.key}
