@@ -4,6 +4,22 @@ export const translations = {
     dashboard: 'Pano',
     technicalScreener: 'Teknik Tarayıcı',
     kapFeed: 'KAP Akışı',
+    knowledgeBase: 'Bilgi Deposu',
+    knowledgeBaseSubtitle: 'KAP bildirimleri, SPK bültenleri, aracı kurum analizleri ve haberler tek zaman çizgisinde',
+    knowledgeSearchPlaceholder: 'Başlık, hisse kodu veya kaynak ara...',
+    knowledgeEmpty: 'Bu filtrelerle kayıt bulunamadı.',
+    knowledgeSummarize: 'Özetle',
+    knowledgeTabAll: 'Tümü',
+    knowledgeTabKap: 'KAP',
+    knowledgeTabSpk: 'SPK',
+    knowledgeTabReports: 'Analiz',
+    knowledgeTabNews: 'Haber',
+    knowledgeCompanyLabel: 'Şirket odağı',
+    knowledgeCompanyPlaceholder: 'THYAO',
+    knowledgeCompanyApply: 'Odakla',
+    knowledgeCompanyClear: 'Odağı kaldır',
+    knowledgeCompanyOpen: 'Hisse sayfasını aç',
+    knowledgeCompanyFocusHint: 'Bu şirkete odaklan',
     aiResearch: 'Yapay Zeka Araştırma',
     settings: 'Ayarlar',
     guide: 'Rehber',
@@ -397,12 +413,14 @@ export const translations = {
     noDate: 'Tarih yok',
     newsFallbackSummary: '{{publisher}} kaynağındaki habere göre: {{headline}}',
     newsReadAtSource: 'Kaynakta oku ↗',
-    readerUnreadableTitle: 'İçerik okunamadı',
-    readerUnreadableBody: '<p>Bu haber sayfası FRAUDE içinde okumak için uygun formatta değil. "Orijinal Habere Git" ile kaynakta açabilirsiniz.</p>',
-    readerFailedTitle: 'İçerik alınamadı',
-    readerFailedFallback: 'Haber içeriği çekilemedi veya korumalı bir kaynak.',
     readInFraude: 'Fraude\'da Oku',
-    openOriginal: 'Orijinal Habere Git ↗',
+    readerFetchingArticle: 'Haber sayfası getiriliyor…',
+    readerArticleFailed: 'Haber uygulama içinde açılamadı.',
+    readerModeReader: 'Okuyucu',
+    readerModeReaderHint: 'Yalnızca haber metnini gösterir; menü, reklam ve yorum bölümleri atılır.',
+    readerModeReaderUnavailable: 'Bu sayfadan sade metin çıkarılamadı; sayfa görünümünü kullanın.',
+    readerModePage: 'Sayfa',
+    readerModePageHint: 'Haberi kaynak sayfanın kendi düzeniyle gösterir; betikler ve reklam çerçeveleri sökülür.',
     newsEyebrow: 'Anahtarsız şirket haberleri',
     newsHeaderDesc: 'GDELT, Google News RSS ve KAP\'a yönlenen herkese açık sonuçlar.',
     tickerCodeLabel: 'Hisse kodu',
@@ -583,9 +601,21 @@ export const translations = {
     reportsConsensusEmpty: 'Analist kapsamı olan pay bulunamadı.',
     reportsPartialSources: 'Bazı kurumlar çekilemedi',
     reportsSourcesNote:
-      'Kaynaklar: İş Yatırım · Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
-      'Raporlar kurumların kendi yayınlarıdır; tıklayınca özgün PDF açılır. ' +
+      'Kaynaklar: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
+      'Ahlatcı Yatırım · PhillipCapital · Integral Yatırım · Şeker Yatırım · Vakıf Yatırım · ' +
+      'Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Raporlar kurumların kendi yayınlarıdır; tıklayınca özgün PDF uygulama içinde açılır. ' +
       'Hedef fiyat ve tavsiye, rapor metninden çıkarılır ve kurumun resmi beyanı yerine geçmez.',
+    reportsViewerLoading: 'Rapor indiriliyor…',
+    reportsViewerFailed: 'Rapor uygulama içinde açılamadı.',
+    reportsViewerOpenExternal: 'Tarayıcıda Aç',
+    reportsViewerDock: 'Sağ Panele Sabitle',
+    reportsViewerUndock: 'Tam Ekran Moduna Dön',
+    reportsViewerRelated: 'İlgili paylar:',
+    reportsViewerEngineNative: 'Yerel PDF',
+    reportsViewerEngineNativeHint: 'İndirilen belgeyi uygulamanın kendi motoruyla çizer; dışarıya istek gitmez.',
+    reportsViewerEngineCloud: 'Google Viewer',
+    reportsViewerEngineCloudHint: 'Yerel motor belgeyi çizemezse: raporu Google görüntüleyicisi üzerinden açar.',
     consensusSourcesNote:
       'Konsensüs, payı izleyen yurt içi ve yurt dışı kurumların toplu tavsiyesidir. ' +
       'Yurt dışı bankaların BIST raporları aboneliğe kapalı olduğundan rapor metnine değil, ' +
@@ -1012,6 +1042,22 @@ export const translations = {
     dashboard: 'Dashboard',
     technicalScreener: 'Technical Screener',
     kapFeed: 'KAP Feed',
+    knowledgeBase: 'Knowledge Base',
+    knowledgeBaseSubtitle: 'KAP disclosures, SPK bulletins, broker research and news on one timeline',
+    knowledgeSearchPlaceholder: 'Search title, ticker or source...',
+    knowledgeEmpty: 'No record matches these filters.',
+    knowledgeSummarize: 'Summarize',
+    knowledgeTabAll: 'All',
+    knowledgeTabKap: 'KAP',
+    knowledgeTabSpk: 'SPK',
+    knowledgeTabReports: 'Research',
+    knowledgeTabNews: 'News',
+    knowledgeCompanyLabel: 'Company focus',
+    knowledgeCompanyPlaceholder: 'THYAO',
+    knowledgeCompanyApply: 'Focus',
+    knowledgeCompanyClear: 'Clear focus',
+    knowledgeCompanyOpen: 'Open ticker page',
+    knowledgeCompanyFocusHint: 'Focus on this company',
     aiResearch: 'AI Research',
     settings: 'Settings',
     guide: 'Guide',
@@ -1405,12 +1451,14 @@ export const translations = {
     noDate: 'No date',
     newsFallbackSummary: 'According to {{publisher}}: {{headline}}',
     newsReadAtSource: 'Read at source ↗',
-    readerUnreadableTitle: 'Content could not be parsed',
-    readerUnreadableBody: '<p>This article page is not in a readable format inside FRAUDE. Use "Open Original" to read it at the source.</p>',
-    readerFailedTitle: 'Content could not be fetched',
-    readerFailedFallback: 'The article could not be fetched, or the source is protected.',
     readInFraude: 'Read in Fraude',
-    openOriginal: 'Open Original ↗',
+    readerFetchingArticle: 'Fetching the article page…',
+    readerArticleFailed: 'The article could not be opened in the app.',
+    readerModeReader: 'Reader',
+    readerModeReaderHint: 'Shows the article text only; menus, ads and comment sections are dropped.',
+    readerModeReaderUnavailable: 'No clean text could be extracted from this page; use the page view.',
+    readerModePage: 'Page',
+    readerModePageHint: 'Shows the article with the source page’s own layout; scripts and ad frames are stripped.',
     newsEyebrow: 'Keyless company news',
     newsHeaderDesc: 'Public results from GDELT, Google News RSS and KAP-indexed pages.',
     tickerCodeLabel: 'Ticker code',
@@ -1591,9 +1639,21 @@ export const translations = {
     reportsConsensusEmpty: 'No stock with analyst coverage found.',
     reportsPartialSources: 'Some brokers could not be fetched',
     reportsSourcesNote:
-      'Sources: İş Yatırım · Vakıf Yatırım · Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
-      'Reports are the brokers’ own publications; clicking opens the original PDF. ' +
+      'Sources: İş Yatırım · Garanti BBVA Yatırım · Ziraat Yatırım · Gedik Yatırım · ' +
+      'Ahlatcı Yatırım · PhillipCapital · Integral Yatırım · Şeker Yatırım · Vakıf Yatırım · ' +
+      'Halk Yatırım · Marbaş Menkul · A1 Capital. ' +
+      'Reports are the brokers’ own publications; clicking opens the original PDF inside the app. ' +
       'Target price and rating are extracted from the report text and do not replace the broker’s official statement.',
+    reportsViewerLoading: 'Downloading report…',
+    reportsViewerFailed: 'The report could not be opened in the app.',
+    reportsViewerOpenExternal: 'Open in Browser',
+    reportsViewerDock: 'Dock to Right Panel',
+    reportsViewerUndock: 'Back to Full Screen',
+    reportsViewerRelated: 'Related tickers:',
+    reportsViewerEngineNative: 'Local PDF',
+    reportsViewerEngineNativeHint: 'Renders the downloaded document with the app’s own engine; nothing leaves the machine.',
+    reportsViewerEngineCloud: 'Google Viewer',
+    reportsViewerEngineCloudHint: 'If the local engine cannot render the document: opens the report through Google’s viewer.',
     consensusSourcesNote:
       'Consensus is the aggregate view of domestic and foreign institutions covering the stock. ' +
       'Foreign banks’ BIST reports are subscription-gated, so only these aggregates are ' +

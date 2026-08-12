@@ -359,6 +359,24 @@ export function getAnalystReports(ticker?: string, forceRefresh?: boolean) {
   return invoke<import('../types').AnalystReportPayload>('get_analyst_reports', { ticker, forceRefresh });
 }
 
+/** Uygulama içinde açılan bir analiz raporunun indirilmiş gövdesi. */
+export interface ReportDocument {
+  content_type: string;
+  base64: string;
+  bytes: number;
+}
+
+/**
+ * Rapor belgesini uygulama üzerinden indirir.
+ *
+ * Aracı kurumların PDF'leri `X-Frame-Options` ile korunduğundan adres doğrudan
+ * bir çerçeveye verilemiyor; belge burada indirilip görüntüleyiciye veri
+ * olarak geçirilir.
+ */
+export function getReportDocument(url: string) {
+  return invoke<ReportDocument>('get_report_document', { url });
+}
+
 export function getCorporateEvents() {
   return invoke<import('../types').CorporateEventsPayload>('get_corporate_events');
 }

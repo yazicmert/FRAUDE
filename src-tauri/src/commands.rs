@@ -271,6 +271,19 @@ pub async fn get_analyst_reports(
     api::get_analyst_reports(&state, ticker, force_refresh).await
 }
 
+/// Bir analiz raporunun belgesini indirir.
+///
+/// Kurumların çoğu PDF'lerini çerçevelenmeye kapalı sunduğu için adres
+/// doğrudan görüntüleyiciye verilemiyor; belge burada indirilip ekrana
+/// veri-URL'i olarak gömülür.
+#[tauri::command]
+pub async fn get_report_document(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<fraude_core::research_reports::ReportDocument, String> {
+    fraude_core::research_reports::fetch_document(&state.http, &url).await
+}
+
 #[tauri::command]
 pub async fn get_ipo_calendar(
     state: State<'_, AppState>,

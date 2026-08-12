@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getCorporateEvents, getIpoCalendar, getPriceHistory } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import type { CorporateEventsPayload, HistoricalQuote, IpoCalendarPayload, IpoRecord } from '../../types';
@@ -1218,9 +1218,11 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
    */
   const [ipoViewportWidth, setIpoViewportWidth] = useState(0);
   const ipoViewportObserver = useRef<ResizeObserver | null>(null);
+  const ipoScrollerRef = useRef<HTMLDivElement | null>(null);
   const measureIpoViewport = useCallback((node: HTMLDivElement | null) => {
     ipoViewportObserver.current?.disconnect();
     ipoViewportObserver.current = null;
+    ipoScrollerRef.current = node;
     if (!node) return;
     setIpoViewportWidth(node.clientWidth);
     // Sekme değişimi, pencere boyutu ve yan panel açılışı aynı kapıya çıkıyor:
@@ -1230,6 +1232,22 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     ipoViewportObserver.current = observer;
   }, []);
   useEffect(() => () => ipoViewportObserver.current?.disconnect(), []);
+
+  /**
+   * Kart açılırken ölçüyü kesinleştirir.
+   *
+   * Ölçüm gözlemciye bırakıldığında sıfır kalabiliyor: tablo, sekme gizliyken
+   * (`display: none`) bağlanmışsa kaydırıcının kutusu yoktur ve `clientWidth`
+   * 0 döner. O durumda kart `%100` yedeğine düşüyor, yani **tablo kadar**
+   * geniş çiziliyor — tablo görünen alandan geniş olduğu için kartın sağ
+   * kolonu kırpılıyordu. Boyama öncesi çalışan bu ölçüm, kart her açıldığında
+   * doğru genişliği garanti eder.
+   */
+  useLayoutEffect(() => {
+    if (expandedIpoIndex === null) return;
+    const width = ipoScrollerRef.current?.clientWidth ?? 0;
+    if (width > 0) setIpoViewportWidth(width);
+  }, [expandedIpoIndex]);
 
   // Halka Arz Filtreleme State'leri
   const [ipoSearchQuery, setIpoSearchQuery] = useState('');
