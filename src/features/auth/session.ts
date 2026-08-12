@@ -9,7 +9,7 @@ import { supabase } from './supabaseClient';
 import type { User } from '@supabase/supabase-js';
 import { isDesktopRuntime } from '../../api/platformClient';
 import { openUrl } from '../../lib/openExternal';
-import { DESKTOP_AUTH_REDIRECT, initAuthDeepLink } from './deepLink';
+import { DESKTOP_AUTH_REDIRECT, DESKTOP_OAUTH_REDIRECT, initAuthDeepLink } from './deepLink';
 
 export interface AuthUser {
   id: string;
@@ -31,14 +31,17 @@ export type AuthError =
   | 'unknown';
 
 function toUser(user: User | null | undefined): AuthUser | null {
-  if (!user || !user.email) return null;
+  if (!user) return null;
   const metadata = user.user_metadata ?? {};
   // E-posta kaydı `name`, GitHub ise çoğunlukla `full_name` / `user_name`
   // gönderir. İlk dolu değeri kullanarak iki giriş yöntemini aynı profile çevir.
+  // GitHub hesabı adresini gizliyorsa e-posta boş gelebilir; oturum yine
+  // geçerlidir — burada null dönmek kullanıcıyı giriş ekranına kilitlerdi.
+  const email = user.email ?? '';
   const name = ([metadata.name, metadata.full_name, metadata.user_name] as unknown[])
     .map((value) => typeof value === 'string' ? value.trim() : '')
-    .find(Boolean) || user.email.split('@')[0];
-  return { id: user.id, name, email: user.email, createdAt: user.created_at };
+    .find(Boolean) || email.split('@')[0] || user.id.slice(0, 8);
+  return { id: user.id, name, email, createdAt: user.created_at };
 }
 
 // Senkron getSession() çağrıları için modül içi önbellek; Supabase oturumu
@@ -117,12 +120,13 @@ export async function signIn(email: string, password: string): Promise<AuthUser 
 }
 
 /**
- * GitHub OAuth'u sistem tarayıcısında başlatır.
+ * GitHub OAuth'u sistem tarayıcısında başlatır. Masaüstünde dönüş doğrudan
+ * fraude:// değil, sitedeki devir sayfasıdır — gerekçesi DESKTOP_OAUTH_REDIRECT.
  */
 export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network' | null> {
   try {
     const redirectTo = isDesktopRuntime()
-      ? DESKTOP_AUTH_REDIRECT
+      ? DESKTOP_OAUTH_REDIRECT
       : `${window.location.origin}${window.location.pathname}`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
@@ -147,7 +151,7 @@ export async function signInWithGitHub(): Promise<'oauth-unavailable' | 'network
 export async function linkGitHubIdentity(): Promise<'oauth-unavailable' | 'network' | null> {
   try {
     const redirectTo = isDesktopRuntime()
-      ? DESKTOP_AUTH_REDIRECT
+      ? DESKTOP_OAUTH_REDIRECT
       : `${window.location.origin}${window.location.pathname}`;
     const { data, error } = await supabase.auth.linkIdentity({
       provider: 'github',

@@ -1,6 +1,7 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { EyeIcon, EyeOffIcon, LockIcon, MailIcon, UserIcon } from '../../components/icons';
+import { AUTH_DEEPLINK_ERROR } from './deepLink';
 import { signIn, signInWithGitHub, signUp, type AuthError } from './session';
 import AuthBackdrop, { BrandMark } from './AuthBackdrop';
 import './auth.css';
@@ -96,6 +97,17 @@ export default function LoginView() {
 
   const emailInvalid = emailTouched && email.trim() !== '' && !EMAIL_RE.test(email.trim());
   const mismatch = matchTouched && passwordAgain !== '' && password !== passwordAgain;
+
+  // Tarayıcıdan dönen derin bağlantı oturum üretemezse (Supabase hatası ya da
+  // geçersiz jeton) kullanıcı boş ekranda beklemesin; sebebi burada gösterilir.
+  useEffect(() => {
+    const onDeepLinkError = (event: Event) => {
+      setInfo(null);
+      setError((event as CustomEvent<string>).detail || t('authErrOAuthUnavailable'));
+    };
+    window.addEventListener(AUTH_DEEPLINK_ERROR, onDeepLinkError);
+    return () => window.removeEventListener(AUTH_DEEPLINK_ERROR, onDeepLinkError);
+  }, [t]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

@@ -9,6 +9,7 @@ import Admin from './pages/Admin';
 import ResetPassword from './pages/ResetPassword';
 import Updates from './pages/Updates';
 import LicenseAbuse from './pages/LicenseAbuse';
+import AppHandoff, { HANDOFF_PATH } from './pages/AppHandoff';
 import './styles.css';
 
 export default function App() {
@@ -17,7 +18,11 @@ export default function App() {
   const { t, lang, setLang } = useI18n();
 
   let content: JSX.Element;
-  if (path === '/sifre-yenile') {
+  // Masaüstü GitHub girişinin dönüş durağı; oturum gerektirmez, jetonu
+  // uygulamaya devreder (bkz. pages/AppHandoff.tsx).
+  if (path === HANDOFF_PATH) {
+    content = <AppHandoff />;
+  } else if (path === '/sifre-yenile') {
     content = <ResetPassword />;
   } else if (path === '/lisans-iptal') {
     content = <LicenseAbuse />;

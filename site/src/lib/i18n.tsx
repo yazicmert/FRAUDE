@@ -107,6 +107,24 @@ const STRINGS = {
     resetLinkInvalid:
       'Bağlantı geçersiz veya süresi dolmuş. Giriş sayfasından yeni bir yenileme bağlantısı isteyin.',
 
+    // Masaüstü GitHub girişinin dönüş durağı
+    handoffTitle: 'Girişiniz doğrulandı',
+    handoffSub:
+      'FRAUDE masaüstü uygulamasına dönmek için aşağıdaki düğmeye dokunun. Tarayıcı uygulamayı yalnızca sizin onayınızla açabildiği için bu adım gerekli.',
+    handoffOpenBtn: "FRAUDE'yi Aç",
+    handoffOpened:
+      'FRAUDE açılıyor. Uygulama öne gelmezse düğmeye yeniden dokunun; sonra bu sekmeyi kapatabilirsiniz.',
+    handoffFailTitle: 'Giriş tamamlanamadı',
+    handoffError: 'GitHub girişi tamamlanamadı: ',
+    handoffIdleTitle: 'Uygulama girişi',
+    handoffInvalid:
+      'Bu sayfa GitHub girişinden sonra uygulamaya dönmek içindir. Girişi FRAUDE uygulamasındaki “GitHub ile devam et” düğmesinden başlatın.',
+    handoffTrouble: 'Uygulama açılmıyor mu?',
+    handoffTroubleHelp:
+      'FRAUDE’nin kurulu ve açık olduğundan emin olun. macOS’ta uygulamayı DMG penceresinden değil, Uygulamalar klasörüne taşıdıktan sonra çalıştırın; tarayıcı yalnızca kurulu uygulamayı tanır.',
+    handoffDownloadMac: 'macOS için indir',
+    handoffDownloadWin: 'Windows için indir',
+
     // Hesap
     myAccount: 'Hesabım',
     yourKeyTitle: 'Lisans anahtarınız',
@@ -355,6 +373,23 @@ const STRINGS = {
     resetDone: 'Password updated; taking you to your account…',
     resetLinkInvalid:
       'This link is invalid or has expired. Request a new reset link from the sign-in page.',
+
+    handoffTitle: 'You are signed in',
+    handoffSub:
+      'Tap the button below to return to the FRAUDE desktop app. This step is needed because the browser can only open the app with your confirmation.',
+    handoffOpenBtn: 'Open FRAUDE',
+    handoffOpened:
+      'Opening FRAUDE. If the app does not come to the front, tap the button again; then you can close this tab.',
+    handoffFailTitle: 'Sign-in could not be completed',
+    handoffError: 'GitHub sign-in could not be completed: ',
+    handoffIdleTitle: 'App sign-in',
+    handoffInvalid:
+      'This page returns you to the app after a GitHub sign-in. Start the sign-in from the “Continue with GitHub” button inside the FRAUDE app.',
+    handoffTrouble: 'App not opening?',
+    handoffTroubleHelp:
+      'Make sure FRAUDE is installed and running. On macOS, move the app to your Applications folder before launching it — the browser only recognises an installed app, not one running from the DMG window.',
+    handoffDownloadMac: 'Download for macOS',
+    handoffDownloadWin: 'Download for Windows',
 
     myAccount: 'My Account',
     yourKeyTitle: 'Your license key',
