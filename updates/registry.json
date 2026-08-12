@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-12-github-girisi-uygulamaya-donmuyordu",
+      "date": "2026-08-12",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "GitHub girişi tarayıcıdan uygulamaya dönerken kopuyordu",
+        "en": "GitHub sign-in broke on the way back from the browser to the app"
+      },
+      "summary": {
+        "tr": "GitHub ile giriş bazı kullanıcılarda çalışıyor, bazılarında sistem tarayıcısında boş bir sekmeyle bitiyor ve uygulama giriş yapılmamış halde bekliyordu. Ayrım kullanıcının hesabında değil, GitHub'ı daha önce yetkilendirip yetkilendirmediğindeydi. Masaüstünde dönüş adresi doğrudan uygulamanın derin bağlantısıydı (fraude://auth-callback); Chrome ise özel şemayı yalnız kullanıcı hareketiyle açar. GitHub'ı ilk kez yetkilendiren kullanıcı onay ekranındaki düğmeye bastığı için bu hareket yönlendirme zincirine taşınıyor ve uygulama açılıyordu. GitHub'ı daha önce yetkilendirmiş kullanıcıda ise GitHub hiçbir ekran göstermeden geri döndürüyor, zincir tek bir tıklama olmadan akıyor ve tarayıcı uygulamaya devri sessizce engelliyordu. Hata elle yapılan testlerde üretilemiyordu, çünkü test eden kişi zaten bir yere tıklamış oluyordu.\n\nDönüş artık doğrudan uygulamaya değil, sitedeki bir devir sayfasına (/uygulamaya-giris) geliyor. Sayfa oturum jetonunu adresten alıp adres çubuğunu temizliyor ve uygulamayı kullanıcının dokunduğu bir düğmeden açıyor; böylece tarayıcının aradığı kullanıcı hareketi her koşulda oluyor. Jeton sitede bir oturuma çevrilmiyor, yalnız uygulamaya aktarılıyor. Supabase yönlendirme listesinde bu adres tanımlı değilse jetonlar sitenin kök sayfasına düşer; o durumda devri kök sayfa üstleniyor, yani pano ayarı yapılmadan da akış çalışıyor.\n\nAynı turda iki sessiz hata daha giderildi: derin bağlantı bir oturum üretemediğinde (Supabase hatası ya da süresi geçmiş jeton) sebep yutuluyor ve kullanıcı giriş ekranında hiçbir açıklama görmeden bekliyordu — artık hata mesajı ekranda gösteriliyor. Ayrıca GitHub hesabı e-posta adresini gizleyen kullanıcı, oturumu geçerli olmasına rağmen giriş ekranına kilitleniyordu; profil adı artık GitHub kullanıcı adından türetiliyor.",
+        "en": "Signing in with GitHub worked for some users while for others it ended with a blank tab in the system browser, leaving the app sitting at the sign-in screen. The dividing line was not the user's account but whether they had authorised GitHub before. On desktop the return address was the app's deep link itself (fraude://auth-callback), and Chrome only opens a custom scheme in response to a user gesture. A user authorising GitHub for the first time presses the button on its consent screen, so that gesture carries through the redirect chain and the app opens. For a user who had authorised GitHub earlier, GitHub returns without showing any screen, the chain runs without a single click, and the browser silently refuses the handover to the app. The bug could not be reproduced by hand, because whoever tested it had already clicked something.\n\nThe return now lands on a handoff page on the site (/uygulamaya-giris) instead of the app directly. The page takes the session token out of the address, clears the address bar, and opens the app from a button the user taps — so the gesture the browser insists on always happens. The token is never turned into a session on the site, only passed to the app. If that address is missing from the Supabase redirect list the tokens land on the site's root page instead; the root page then performs the handover, so the flow works without any dashboard change.\n\nTwo silent failures were fixed alongside it: when the deep link could not produce a session (a Supabase error or an expired token) the reason was swallowed and the user waited at the sign-in screen with no explanation — the error is now shown on screen. And a user whose GitHub account hides its email address was locked out at the sign-in screen despite holding a valid session; the profile name is now derived from the GitHub username instead."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-09-analiz-raporlari-modulu-ve-analist-konsensusu",
       "date": "2026-08-09",
       "author": "yazicmert",
