@@ -19,6 +19,13 @@
 --   Not: e-posta adresleri auth.users'ta büyük/küçük harf duyarlı tutulabilir;
 --   mükerrerlik çoğu zaman lower(email) düzeyinde ortaya çıkar.
 --
+-- HANGİ PROJEDE?
+--   Mükerrer satırlar proje taşımasında olduğu gibi kopyalandığı için hem eski
+--   (frfbmutvkekctpacktlz) hem yeni (emrusyelfekcfyisfzzl) projede bulunabilir.
+--   Betiği, istemcilerin O AN baktığı projede çalıştırın — bkz.
+--   src/features/auth/supabaseClient.ts. Supabase CLI bağlantısı (supabase/.temp)
+--   başka bir projeyi gösterebilir; SQL Editor'da proje adını doğrulayın.
+--
 -- KULLANIM
 --   Supabase Studio → SQL Editor. Önce 1. adımı çalıştırın (yalnız okur),
 --   hangi satırın korunacağına karar verin, sonra 3. adımı doldurup çalıştırın.
