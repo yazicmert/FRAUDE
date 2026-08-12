@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-eposta-dil-secimi",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "site",
+      "title": {
+        "tr": "E-postalar kullanıcının dilinde: kayıt doğrulama, şifre yenileme ve lisans anahtarı",
+        "en": "Emails now follow the user's language: sign-up confirmation, password reset and license key"
+      },
+      "summary": {
+        "tr": "FRAUDE'yi İngilizce kullanan biri Türkçe e-posta alıyordu. Artık üç e-posta da arayüz diline uyuyor: kayıt doğrulama, şifre yenileme ve lisans anahtarı teslimi.\n\nDil sinyali her akışta farklı yerden gelir, çünkü e-postanın gönderildiği anda elde olan bilgi farklıdır. Kayıtta arayüz dili hesabın künyesine yazılır ve şablon oradan okur. Şifre yenilemede kullanıcı oturum açmamıştır — güvenilir tek işaret isteğin geldiği adrestir, bu yüzden site dönüş adresine dili ekler ve şablon onu okur; adres tanınmazsa kayıtta yazılan tercihe düşülür. Lisans anahtarında ise talep satırına yazılan dil kullanılır, e-postayı gönderen Edge Function ona bakar. Hiçbiri yoksa Türkçe gösterilir.\n\nTasarım tek kaynakta kaldı: şablonlar iki dili birlikte taşır, yalnız metinler dallanır — düzen, renkler ve buton ortaktır. Kullanıcı arayüz dilini değiştirdiğinde tercih hesabına da yazılır, sonraki e-postalar yeni dilde gelir.\n\nŞablonlar artık panoya elle yapıştırılmıyor: `scripts/apply-email-templates.mjs` depodaki dosyaları uygular, konu satırlarını da yazar ve yazdıktan sonra geri okuyup doğrular. Elle kopyalama depo ile canlı yapılandırmanın sessizce ayrışmasına yol açıyordu.",
+        "en": "Someone using FRAUDE in English still received Turkish emails. All three now follow the interface language: sign-up confirmation, password reset and license key delivery.\n\nThe language signal comes from a different place in each flow, because what is known at send time differs. At sign-up the interface language is stored on the account and the template reads it there. For password reset the user is not signed in — the only reliable signal is the address the request came from, so the site puts the language in the return URL and the template reads that, falling back to the stored preference when the address is unfamiliar. The license key uses the language recorded on the request row, which the sending Edge Function reads. With no signal at all, Turkish is used.\n\nThe design stays single-sourced: each template carries both languages and only the text branches — layout, colors and button are shared. Changing the interface language also updates the stored preference, so later emails arrive in the new language.\n\nTemplates are no longer pasted into the dashboard by hand: `scripts/apply-email-templates.mjs` applies the files from the repo, writes the subject lines too, and reads them back to verify. Manual copying had let the repo and the live configuration drift apart silently."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-12-github-girisi-mukerrer-hesap",
       "date": "2026-08-12",
       "author": "yazicmert",

@@ -25,6 +25,11 @@ additional_redirect_urls = [
   "https://fraude.intelligentverseconnection.com",
   "https://fraude.intelligentverseconnection.com/uygulamaya-giris",
   "https://fraude.intelligentverseconnection.com/sifre-yenile",
+  # Dil taşıyan yenileme dönüşleri: e-posta şablonu dili `.RedirectTo`'dan
+  # okur (kullanıcı oturum açmamıştır, başka sinyal yoktur). Joker yerine iki
+  # tam adres — liste dar kalsın.
+  "https://fraude.intelligentverseconnection.com/sifre-yenile?lang=tr",
+  "https://fraude.intelligentverseconnection.com/sifre-yenile?lang=en",
 ]
 
 enable_signup = true

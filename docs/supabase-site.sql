@@ -52,6 +52,10 @@ alter table public.license_requests add column if not exists emailed_at timestam
 -- (report-license-abuse Edge Function kullanır)
 alter table public.license_requests add column if not exists revoke_token text;
 alter table public.license_requests add column if not exists abuse_reported_at timestamptz;
+-- Talebin yapıldığı arayüz dili; lisans anahtarı e-postası bu dilde gönderilir
+-- (send-license-email). Eski satırlar ve dilsiz istemciler için varsayılan 'tr'.
+alter table public.license_requests add column if not exists lang text not null default 'tr'
+  check (lang in ('tr', 'en'));
 -- İptal sonrası memnuniyet anketi (/lisans-iptal sayfası doldurur)
 alter table public.license_requests add column if not exists feedback_rating smallint
   check (feedback_rating between 1 and 5);

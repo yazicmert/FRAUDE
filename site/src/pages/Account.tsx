@@ -74,6 +74,9 @@ export default function Account({ user }: { user: User }) {
         email: user.email,
         name: displayName(user),
         note: note.trim() || null,
+        // Talep hangi dilde yapıldıysa lisans anahtarı e-postası da o dilde
+        // gider (send-license-email fonksiyonu bu sütunu okur).
+        lang,
       });
       if (insertError) {
         setError(t('requestFailed') + insertError.message);

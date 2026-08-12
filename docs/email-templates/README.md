@@ -8,17 +8,45 @@ açıp önizleyebilirsin.
 | --- | --- | --- |
 | `confirm-signup.html` | Kayıt sonrası doğrulama | Supabase panosu → Authentication → Emails → **Confirm sign up** |
 | `reset-password.html` | Şifre yenileme talebi | Supabase panosu → Authentication → Emails → **Reset password** |
-| `license-key.html` | Lisans talebi onaylanınca | `send-license-email` Edge Function otomatik gönderir (aşağıda); bu dosya elle gönderim için yedek |
+| `license-key.html` | Lisans talebi onaylanınca | `send-license-email` Edge Function otomatik gönderir (aşağıda); bu dosya elle gönderim için yedek — **yalnız Türkçe**, canlı gönderim iki dillidir |
+
+## Dil: kullanıcı hangi dilde kullanıyorsa o dilde gider
+
+Şablonlar TR ve EN'i **tek dosyada** taşır; tasarım ortaktır, yalnız metinler
+Go template koşullarıyla dallanır. Dil sinyali her akışta farklıdır:
+
+| E-posta | Dil nereden gelir | Kim yazar |
+| --- | --- | --- |
+| Kayıt doğrulama | `user_metadata.lang` → şablonda `.Data.lang` | Kayıt anında site (`pages/SignIn.tsx`) ve uygulama (`features/auth/session.ts`) |
+| Şifre yenileme | `redirect_to` adresindeki `?lang=` → şablonda `.RedirectTo` | Site (`pages/SignIn.tsx`); kullanıcı oturum açmadığı için istek anındaki tek sinyal budur. Adres tanınmazsa `.Data.lang`'e düşer |
+| Lisans anahtarı | `license_requests.lang` sütunu | Talep anında site (`pages/Account.tsx`); e-postayı Edge Function render eder |
+
+Değer yoksa **Türkçe** gösterilir. Kullanıcı arayüz dilini değiştirdiğinde
+tercih hesaba da yazılır (site `lib/i18n.tsx` → `updateUser`), böylece sonraki
+e-postalar yeni dilde gelir.
+
+Şifre yenilemenin `?lang=tr` ve `?lang=en` adresleri **Redirect URLs
+allowlist'inde bulunmalıdır** (joker yok, iki tam adres) — yoksa GoTrue adresi
+düşürür ve akış kırılır. Karşılığı `supabase/config.toml` içinde de yazılıdır.
 
 ## Supabase şablonları (kayıt + şifre)
 
-1. Panoda (proje `emrusyelfekcfyisfzzl`) Authentication → Emails bölümünü aç.
-2. İlgili şablonun **Message body** alanına HTML dosyasının tamamını yapıştır.
-3. Konu satırları:
-   - Confirm sign up: `FRAUDE Terminal — hesabını doğrula`
-   - Reset password: `FRAUDE Terminal — şifreni yenile`
-4. `{{ .ConfirmationURL }}` ve `{{ .Email }}` değişkenlerini Supabase doldurur —
-   Go template sözdizimidir, aynen kalmalı.
+Uygulanışı elle DEĞİL betikle yapılır — depo ile pano ayrışmasın:
+
+```
+node scripts/apply-email-templates.mjs            # uygular ve geri okuyup doğrular
+node scripts/apply-email-templates.mjs --dry-run  # yalnız ne yazılacağını gösterir
+```
+
+Betik gövdeleri bu dizinden okur, konu satırlarını da (dile göre dallanan)
+kendisi yazar ve yazdıktan sonra karşılaştırıp doğrular. Erişim jetonunu
+`SUPABASE_ACCESS_TOKEN`'dan ya da macOS anahtar zincirindeki `supabase login`
+kaydından alır. Elle yapmak gerekirse: Authentication → Emails → ilgili
+şablonun **Message body** alanına dosyanın tamamı yapıştırılır.
+
+`{{ .ConfirmationURL }}` ve `{{ .Email }}` değişkenlerini Supabase doldurur —
+Go template sözdizimidir, aynen kalmalı. Konu satırları da templatelenir
+(GoTrue'nun kendi varsayılanı `{{ .Token }} is your verification code`).
 
 Yönlendirme zinciri şablona gömülü değildir, `ConfirmationURL` içindeki
 `redirect_to`'dan gelir:

@@ -4,6 +4,23 @@ export type Lang = 'tr' | 'en';
 
 const STORAGE_KEY = 'fraude-site-lang';
 
+/**
+ * Dil tercihini hesaba yazar (oturum açıksa). E-posta şablonları bu değeri
+ * `.Data.lang` ile okur; böylece kullanıcı arayüz dilini değiştirdiğinde
+ * sonraki doğrulama/yenileme e-postaları da o dilde gelir. supabase istemcisi
+ * gecikmeli yüklenir: dil değiştirmek açılış paketini büyütmemeli.
+ */
+async function syncLangToAccount(next: Lang): Promise<void> {
+  try {
+    const { supabase } = await import('./supabase');
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) return;
+    await supabase.auth.updateUser({ data: { lang: next } });
+  } catch {
+    // Ağ/oturum hatası dil değişimini engellemez
+  }
+}
+
 const STRINGS = {
   tr: {
     // Nav & genel
@@ -617,6 +634,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLang = (next: Lang) => {
     localStorage.setItem(STORAGE_KEY, next);
     setLangState(next);
+    // Tercih hesapta da saklanır: kayıt doğrulama ve şifre yenileme
+    // e-postaları bu değere bakar (bkz. docs/email-templates/*.html). Oturum
+    // yoksa ya da yazılamazsa akış etkilenmez — dil arayüzde zaten değişti.
+    void syncLangToAccount(next);
   };
 
   useEffect(() => {

@@ -22,7 +22,7 @@ function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
 
 /** Giriş/kayıt — uygulamadaki akışla aynı Supabase projesi ve kurallar. */
 export default function SignIn() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -63,9 +63,13 @@ export default function SignIn() {
       // gönderilir; bağlantı /sifre-yenile sayfasına döner.
       setBusy(true);
       try {
+        // Dil adreste taşınır: yenileme isteyen kullanıcı oturum açmamıştır, bu
+        // yüzden e-posta şablonunun elindeki tek istek-anı sinyali budur
+        // (şablon `.RedirectTo` ile okur). İki adres de Supabase'in Redirect
+        // URLs listesinde tanımlıdır; oradaki kayıtla birebir aynı olmalı.
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(
           email.trim().toLowerCase(),
-          { redirectTo: `${window.location.origin}/sifre-yenile` },
+          { redirectTo: `${window.location.origin}/sifre-yenile?lang=${lang}` },
         );
         if (resetError) {
           setError(t('resetFailed') + resetError.message);
@@ -87,7 +91,9 @@ export default function SignIn() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
-          options: { data: { name: name.trim() } },
+          // `lang` doğrulama e-postasının dilini belirler (şablon `.Data.lang`
+          // okur) ve sonraki e-postalar için tercih olarak kalır.
+          options: { data: { name: name.trim(), lang } },
         });
         if (signUpError) {
           const raw = signUpError.message?.trim() ?? '';
