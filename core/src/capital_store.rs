@@ -71,11 +71,38 @@ pub struct CapitalArchive {
     /// tur aynı ilk on bildirimi indirir ve arşiv hiç ilerlemez.
     #[serde(default)]
     pub processed_disclosures: HashSet<String>,
+    /// Gövdesi henüz okunmamış temettü bildirimleri, kalıcı kuyruk olarak.
+    ///
+    /// Keşif ve okuma **ayrılmıştır**: aday listesini her turda 760 günlük
+    /// pencereyi baştan tarayarak çıkarmak tur başına ~109 liste isteği
+    /// demekti ve okunabilecek gövde sayısının yanında bu tamamen israftı.
+    /// Kuyruk diske yazıldığı için keşif bir kez yapılır, okuma turlar boyunca
+    /// bütçesi kadar ilerler.
+    #[serde(default)]
+    pub dividend_queue: Vec<QueuedDividend>,
+    /// Geriye dönük keşfin ulaştığı en eski tarih (ISO).
+    ///
+    /// Tarama her turda bir dilim daha geriye iner; bu damga olmadan tur
+    /// yeniden en baştan başlar ve arşiv hiç derinleşmez.
+    #[serde(default)]
+    pub dividend_scanned_from: Option<String>,
     /// Arşivi üreten ayrıştırıcının sürümü; bkz. [`crate::spk::BULLETIN_PARSER_VERSION`].
     #[serde(default)]
     pub parser_version: u32,
     #[serde(default)]
     pub last_updated: Option<String>,
+}
+
+/// Kuyrukta bekleyen, gövdesi henüz okunmamış temettü bildirimi.
+///
+/// Yayım tarihi kuyrukta taşınır: bildirim numarası artan sırada olsa da
+/// okuma önceliği tarihe göre verilir ("en yeni önce") ve numara ile tarih
+/// arasındaki eşleşme yalnız liste ucunda bulunuyor.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct QueuedDividend {
+    pub disclosure_index: String,
+    /// KAP'ın yayım damgası, "07.08.2026 18:40" biçiminde.
+    pub publish_date: String,
 }
 
 /// Tek bir bültenden çıkan her şey.
@@ -233,6 +260,11 @@ fn same_event(a: &SpkCapitalIncrease, b: &SpkCapitalIncrease) -> bool {
 /// arda bildirim yapıyor (yönetim kurulu teklifi, genel kurul kararı,
 /// güncelleme) ve hepsi aynı tarihi taşıyor. Sonradan gelen bildirim tutarı
 /// **günceller**: kesinleşen tutar teklif edilenden farklı olabilir.
+///
+/// Tarih değiştiğinde eşleşme kurulamaz ve eski kayıt arşivde kalırdı: genel
+/// kurul teklif edilen günü öteleyince takvimde **hem eski hem yeni** tarih
+/// görünürdü. Bu yüzden aynı `(kod, yıl, taksit)` için **daha eski bir
+/// bildirimden** gelmiş kayıt, yeni bildirim işlenirken düşürülür.
 pub fn merge_kap_dividends(
     archive: &mut CapitalArchive,
     rows: Vec<crate::kap_dividend::KapDividend>,
@@ -240,6 +272,8 @@ pub fn merge_kap_dividends(
     let mut added = 0;
 
     for row in rows {
+        supersede_older(archive, &row);
+
         match archive
             .dividends
             .iter_mut()
@@ -254,6 +288,88 @@ pub fn merge_kap_dividends(
     }
 
     added
+}
+
+/// Aynı ödemenin **eski bildirimden** gelmiş, tarihi değişmiş kaydını siler.
+///
+/// Ölçüt üçlüdür ve üçü de gerekli:
+///
+/// * **Yıl** — bir şirket aynı yıl içinde hem geçmiş yılın kârını hem avans
+///   temettü dağıtabilir; yıl ayrımı olmadan biri diğerini silerdi.
+/// * **Taksit** — taksitli dağıtımın beş satırı tek bildirimden gelir ve
+///   birbirinin yerini almamalı.
+/// * **Bildirim numarası** — yalnız *daha eski* bildirimin kaydı düşer. KAP
+///   numarayı yayım sırasıyla veriyor; eşit numara aynı bildirimin başka bir
+///   taksidi demektir ve ona dokunulmaz.
+fn supersede_older(archive: &mut CapitalArchive, row: &crate::kap_dividend::KapDividend) {
+    let Ok(incoming) = row.disclosure_index.parse::<u64>() else { return };
+    let year = row.ex_date.get(..4).unwrap_or_default().to_string();
+
+    archive.dividends.retain(|existing| {
+        let older = existing
+            .disclosure_index
+            .parse::<u64>()
+            .is_ok_and(|index| index < incoming);
+
+        !(older
+            && existing.ticker == row.ticker
+            && existing.payment_kind == row.payment_kind
+            && existing.ex_date.get(..4) == Some(year.as_str())
+            && existing.ex_date != row.ex_date)
+    });
+}
+
+/// Yeni bulunan temettü bildirimlerini kuyruğa ekler; eklenen sayıyı döner.
+///
+/// Gövdesi okunmuş olanlar **kuyruğa girmez**: keşif penceresi her turda aynı
+/// yakın geçmişi yeniden tarıyor ve süzülmezse kuyruk okunmuş bildirimlerle
+/// şişerdi.
+pub fn enqueue_dividends(
+    archive: &mut CapitalArchive,
+    rows: &[crate::kap::RawDisclosure],
+) -> usize {
+    let known: HashSet<String> = archive
+        .dividend_queue
+        .iter()
+        .map(|q| q.disclosure_index.clone())
+        .collect();
+
+    let mut added = 0;
+    for row in rows {
+        let index = row.disclosure_index_str();
+        if known.contains(&index) || archive.processed_disclosures.contains(&index) {
+            continue;
+        }
+        archive.dividend_queue.push(QueuedDividend {
+            disclosure_index: index,
+            publish_date: row.publish_date.clone(),
+        });
+        added += 1;
+    }
+    added
+}
+
+/// Kuyruktan, en yeni bildirim önce gelecek biçimde sıralı numaralar.
+///
+/// Sıralama bildirim numarasına göre: KAP numarayı yayım sırasıyla veriyor ve
+/// sayısal karşılaştırma tarih metnini ayrıştırmaktan hem ucuz hem güvenilir.
+/// Güncel akışın doğruluğu geçmişten önce gelir — kullanıcı önce yaklaşan
+/// temettüye bakıyor.
+pub fn dividend_queue_newest_first(archive: &CapitalArchive) -> Vec<String> {
+    let mut queue: Vec<&QueuedDividend> = archive.dividend_queue.iter().collect();
+    queue.sort_by_key(|q| std::cmp::Reverse(q.disclosure_index.parse::<u64>().unwrap_or(0)));
+    queue.iter().map(|q| q.disclosure_index.clone()).collect()
+}
+
+/// Gövdesi okunmuş bildirimleri kuyruktan düşürür ve işlenmiş sayar.
+pub fn drain_dividend_queue(archive: &mut CapitalArchive, done: &[String]) {
+    let done: HashSet<&str> = done.iter().map(String::as_str).collect();
+    archive
+        .dividend_queue
+        .retain(|q| !done.contains(q.disclosure_index.as_str()));
+    for index in done {
+        archive.processed_disclosures.insert(index.to_string());
+    }
 }
 
 /// Bir hissenin resmî temettü kayıtları, yeniden eskiye.
@@ -541,5 +657,100 @@ mod tests {
     fn unknown_ticker_has_no_factor() {
         let archive = CapitalArchive::default();
         assert_eq!(bonus_factor_since(&archive, "YOKKK", "2020-01-01"), 1.0);
+    }
+
+    fn dividend(
+        ticker: &str,
+        ex_date: &str,
+        kind: &str,
+        gross: f64,
+        index: u64,
+    ) -> crate::kap_dividend::KapDividend {
+        crate::kap_dividend::KapDividend {
+            ticker: ticker.into(),
+            ex_date: ex_date.into(),
+            gross_per_share: gross,
+            net_per_share: gross * 0.85,
+            payment_date: Some(ex_date.into()),
+            payment_kind: kind.into(),
+            disclosure_index: index.to_string(),
+        }
+    }
+
+    fn queued(index: u64, publish_date: &str) -> crate::kap::RawDisclosure {
+        crate::kap::RawDisclosure {
+            publish_date: publish_date.into(),
+            subject: "Kar Payı Dağıtım İşlemlerine İlişkin Bildirim".into(),
+            disclosure_index: index,
+            kap_title: "Test AŞ".into(),
+            stock_codes: Vec::new(),
+            related_stocks: Vec::new(),
+        }
+    }
+
+    /// Teklif edilen tarih genel kurulda kayar; eski kayıt kalırsa takvimde
+    /// aynı ödeme iki tarihte birden görünür.
+    #[test]
+    fn a_newer_disclosure_supersedes_the_proposed_date() {
+        let mut archive = CapitalArchive::default();
+        merge_kap_dividends(&mut archive, vec![dividend("TRALT", "2026-10-06", "Peşin", 0.5, 1_635_844)]);
+        merge_kap_dividends(&mut archive, vec![dividend("TRALT", "2026-10-20", "Peşin", 0.5, 1_639_873)]);
+
+        assert_eq!(archive.dividends.len(), 1, "eski teklif kaydı düşmeli");
+        assert_eq!(archive.dividends[0].ex_date, "2026-10-20");
+        assert_eq!(archive.dividends[0].disclosure_index, "1639873");
+    }
+
+    /// Aynı bildirimin taksitleri birbirini silmez: ölçüt ödeme türünü de
+    /// içeriyor ve numaraları eşit olduğu için "daha eski" koşulu tutmuyor.
+    #[test]
+    fn installments_of_one_disclosure_survive_together() {
+        let mut archive = CapitalArchive::default();
+        merge_kap_dividends(&mut archive, vec![
+            dividend("BEGYO", "2026-08-20", "1. Taksit", 0.0306748, 1_639_434),
+            dividend("BEGYO", "2026-10-20", "2. Taksit", 0.0122699, 1_639_434),
+            dividend("BEGYO", "2026-12-21", "3. Taksit", 0.0184049, 1_639_434),
+        ]);
+        assert_eq!(archive.dividends.len(), 3);
+    }
+
+    /// Avans temettü ile geçmiş yıl kârı aynı yıl içinde ayrı ödemelerdir;
+    /// farklı yıla düşen kayıt üstü örtülmemeli.
+    #[test]
+    fn a_payment_in_another_year_is_left_alone() {
+        let mut archive = CapitalArchive::default();
+        merge_kap_dividends(&mut archive, vec![dividend("ASTOR", "2025-10-15", "Peşin", 1.2, 1_500_000)]);
+        merge_kap_dividends(&mut archive, vec![dividend("ASTOR", "2026-10-15", "Peşin", 2.19, 1_645_625)]);
+
+        assert_eq!(archive.dividends.len(), 2);
+    }
+
+    /// Kuyruk yalnız gövdesi okunmamış bildirimleri taşır: keşif penceresi her
+    /// turda aynı yakın geçmişi yeniden tarıyor.
+    #[test]
+    fn the_queue_skips_what_was_already_read() {
+        let mut archive = CapitalArchive::default();
+        archive.processed_disclosures.insert("1639434".into());
+
+        let rows = vec![
+            queued(1_645_625, "07.08.2026 18:40"),
+            queued(1_639_434, "01.08.2026 09:10"),
+            queued(1_643_778, "05.08.2026 12:00"),
+        ];
+        assert_eq!(enqueue_dividends(&mut archive, &rows), 2);
+        // İkinci tur aynı listeyi görse de kuyruk büyümemeli.
+        assert_eq!(enqueue_dividends(&mut archive, &rows), 0);
+
+        assert_eq!(
+            dividend_queue_newest_first(&archive),
+            vec!["1645625".to_string(), "1643778".to_string()],
+            "en yeni bildirim önce okunmalı"
+        );
+
+        drain_dividend_queue(&mut archive, &["1645625".to_string()]);
+        assert_eq!(dividend_queue_newest_first(&archive), vec!["1643778".to_string()]);
+        assert!(archive.processed_disclosures.contains("1645625"));
+        // İşlenmiş bildirim kuyruğa geri dönmemeli.
+        assert_eq!(enqueue_dividends(&mut archive, &rows), 0);
     }
 }
