@@ -138,7 +138,7 @@ const STRINGS = {
     handoffFailTitle: 'Giriş tamamlanamadı',
     handoffError: 'GitHub girişi tamamlanamadı: ',
     handoffErrDuplicateEmail:
-      'GitHub hesabınızın e-posta adresi FRAUDE’de birden fazla hesapta kayıtlı; GitHub’ın hangisine bağlanacağı seçilemediği için giriş durdu. Şimdilik e-posta ve şifrenizle girin — fazla hesap kaldırıldıktan sonra GitHub girişi çalışır.',
+      'GitHub hesabınızdaki doğrulanmış e-posta adresleri FRAUDE’de birden fazla hesapla eşleşiyor; GitHub kimliğinin hangisine bağlanacağı seçilemediği için giriş durdu. Şimdilik e-posta ve şifrenizle girin — hesaplarınız tek hesapta birleştirildiğinde GitHub girişi çalışır.',
     handoffErrProviderEmail:
       'GitHub e-posta adresinizi paylaşmadı, bu yüzden hesap eşleştirilemedi. GitHub → Settings → Emails bölümünde adresinizi doğrulayıp erişime açın ya da e-posta ve şifrenizle girin.',
     handoffIdleTitle: 'Uygulama girişi',
@@ -426,7 +426,7 @@ const STRINGS = {
     handoffFailTitle: 'Sign-in could not be completed',
     handoffError: 'GitHub sign-in could not be completed: ',
     handoffErrDuplicateEmail:
-      'Your GitHub email address is registered on more than one FRAUDE account, so GitHub cannot tell which one to sign you into. Use your email and password for now — GitHub sign-in works again once the extra account is removed.',
+      'The verified email addresses on your GitHub account match more than one FRAUDE account, so GitHub cannot tell which one to link to. Use your email and password for now — GitHub sign-in works once your accounts are merged into one.',
     handoffErrProviderEmail:
       'GitHub did not share your email address, so the account could not be matched. Verify and expose your address under GitHub → Settings → Emails, or sign in with your email and password.',
     handoffIdleTitle: 'App sign-in',
