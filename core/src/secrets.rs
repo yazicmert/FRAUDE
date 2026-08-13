@@ -82,7 +82,10 @@ pub fn set_default(store: &mut AppStore, id: &str) -> Result<Vec<AiKeyRecord>, S
     Ok(list(store))
 }
 
-pub fn test(store: &AppStore, id: &str) -> Result<String, String> {
+/// Testi çalıştırmadan önceki yerel kontroller; sırrı anahtarlıktan çözerek
+/// anahtarın bir kopyasını verir. Ağ çağrısı kilidi tutmadan yapılabilsin diye
+/// bağlantı denemesinden ayrıldı.
+pub fn prepare_test(store: &AppStore, id: &str) -> Result<StoredAiKey, String> {
     let key = store
         .ai_keys
         .iter()
@@ -92,13 +95,30 @@ pub fn test(store: &AppStore, id: &str) -> Result<String, String> {
     if !key.enabled {
         return Err("AI key is disabled".into());
     }
-    if key.secret.len() < 12 {
-        return Err("AI key looks too short".into());
-    }
 
+    let mut resolved = key.clone();
+    resolved.secret = crate::keychain::resolve_secret(&key.id, &key.secret);
+    if resolved.secret.trim().len() < 8 {
+        return Err("Anahtarın sırrı okunamadı ya da çok kısa.".into());
+    }
+    Ok(resolved)
+}
+
+/// Anahtarı sağlayıcıya karşı gerçekten dener. Önceki sürüm yalnız sırrın
+/// uzunluğuna bakıp "bağlantı doğrulandı" diyordu; yanlış uç nokta, geçersiz
+/// anahtar ve tanınmayan model bu yüzden ancak ilk gerçek soruda ortaya
+/// çıkıyordu.
+pub async fn test_connection(
+    client: &reqwest::Client,
+    key: &StoredAiKey,
+) -> Result<String, String> {
+    let started = std::time::Instant::now();
+    crate::services::probe_ai_key(client, key).await?;
     Ok(format!(
-        "{} / {} connection check passed locally. Network calls are isolated behind the provider layer.",
-        key.provider, key.default_model
+        "{} / {} bağlantısı doğrulandı ({} ms).",
+        key.provider,
+        key.default_model,
+        started.elapsed().as_millis()
     ))
 }
 
@@ -114,6 +134,20 @@ fn validate(request: &SaveAiKeyRequest) -> Result<(), String> {
     }
     if request.default_model.trim().is_empty() {
         return Err("Default model is required".into());
+    }
+    // Bilinmeyen bir sağlayıcı adı için URL zorunlu: boş bırakılırsa istek
+    // varsayılan uç noktaya, yani kullanıcının anahtarı yanlış sağlayıcıya gider.
+    let has_url = request
+        .api_url
+        .as_ref()
+        .map(|url| !url.trim().is_empty())
+        .unwrap_or(false);
+    if !has_url && !crate::services::has_known_endpoint(&request.provider) {
+        return Err(format!(
+            "'{}' için Base API URL zorunlu (ör. https://api.example.com/v1). \
+             Boş bırakılan adres anahtarınızı yanlış sağlayıcıya gönderir.",
+            request.provider.trim()
+        ));
     }
     Ok(())
 }
@@ -145,5 +179,41 @@ mod tests {
 
         // Test artığı bırakma: anahtarlık kaydını ve dosya girişini temizle.
         let _ = super::delete(&mut store, &record.id);
+    }
+
+    #[test]
+    fn custom_provider_without_url_is_rejected() {
+        // Adres boşsa istek varsayılan uca, yani kullanıcının anahtarı yanlış
+        // sağlayıcıya giderdi; kayıt aşamasında durduruluyor.
+        let mut store = AppStore::seeded();
+        let result = super::save(
+            &mut store,
+            SaveAiKeyRequest {
+                id: None,
+                provider: "custom".into(),
+                label: "Gateway".into(),
+                api_key: "sk-test-secret-value".into(),
+                default_model: "meta-llama/Llama-3-70b-chat-hf".into(),
+                enabled: true,
+                api_url: Some("   ".into()),
+            },
+        );
+        assert!(result.is_err());
+
+        // Aynı kayıt açık adresle kabul edilmeli.
+        let accepted = super::save(
+            &mut store,
+            SaveAiKeyRequest {
+                id: None,
+                provider: "custom".into(),
+                label: "Gateway".into(),
+                api_key: "sk-test-secret-value".into(),
+                default_model: "meta-llama/Llama-3-70b-chat-hf".into(),
+                enabled: true,
+                api_url: Some("https://openrouter.ai/api/v1".into()),
+            },
+        )
+        .expect("açık adresle kayıt kabul edilmeli");
+        let _ = super::delete(&mut store, &accepted.id);
     }
 }

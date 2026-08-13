@@ -169,7 +169,8 @@ export default function GlobalAiCopilot() {
     listAiKeys()
       .then((keys) => {
         setAiKeys(keys);
-        const activeKey = keys.find((k) => k.is_default) || keys.find((k) => k.enabled) || keys[0];
+        // Arka uçtaki sırayla aynı: etkin varsayılan, yoksa herhangi bir etkin anahtar.
+        const activeKey = keys.find((k) => k.is_default && k.enabled) || keys.find((k) => k.enabled);
         if (activeKey) {
           setSelectedKeyId(activeKey.id);
           setSelectedModel(activeKey.default_model || activeKey.provider || 'gemini-1.5-flash');
@@ -385,16 +386,20 @@ Son Kullanıcı Hamleleri:
 ${actionsFormatted || '- Henüz hamle yapılmadı'}
 Aktif Sayfa Verisi:
 ${payloadFormatted}
-${currentImg ? `\n[EK GÖRSEL / EKRAN GÖRÜNTÜSÜ DETAYI]: Kullanıcı panodan görsel yapıştırdı (${currentImg.slice(0, 100)}...)` : ''}
+${currentImg ? '\n[EK GÖRSEL]: Kullanıcı panodan bir görsel yapıştırdı; görsel bu isteğe ek olarak gönderildi, doğrudan inceleyebilirsin.' : ''}
 
 Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları belirlenen AI Modeli (${selectedModel}) ve Persona (${selectedAgent}) çerçevesinde yanıtla.`;
 
+      // Seçilen anahtar arka uca geçirilir; aksi halde kapsüldeki seçim yalnız
+      // metinde görünür ve istek her zaman varsayılan anahtara giderdi.
       const res = await askAi(
         textToSend || 'Ekteki görseli ve mevcut ekranı analiz et.',
         fullContextStr,
         undefined,
         undefined,
         effortLevel,
+        selectedKeyId || undefined,
+        currentImg ? [currentImg] : undefined,
       );
 
       const aiReplyText = res && typeof res.summary === 'string' && res.summary.trim()
@@ -605,14 +610,18 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
               title="Bağlı Gerçek AI Anahtarı ve Modeli"
               className="capsule-select"
             >
-              {aiKeys.length === 0 ? (
+              {/* Yalnız etkin anahtarlar: devre dışı bir anahtar seçilseydi
+                  arka uç sessizce varsayılana düşer, seçim yine yanıltırdı. */}
+              {aiKeys.filter((k) => k.enabled).length === 0 ? (
                 <option value="">⚠️ AI Key Ekleyin</option>
               ) : (
-                aiKeys.map((k) => (
-                  <option key={k.id} value={k.id}>
-                    {k.is_default ? '⭐ ' : ''}{k.label || k.provider} ({k.default_model || 'Genel'})
-                  </option>
-                ))
+                aiKeys
+                  .filter((k) => k.enabled)
+                  .map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.is_default ? '⭐ ' : ''}{k.label || k.provider} ({k.default_model || 'Genel'})
+                    </option>
+                  ))
               )}
             </select>
 

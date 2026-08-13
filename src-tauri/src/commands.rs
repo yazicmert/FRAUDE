@@ -338,8 +338,12 @@ pub async fn set_default_ai_key(
 
 #[tauri::command]
 pub async fn test_ai_key(state: State<'_, AppState>, id: String) -> Result<String, String> {
-    let store = state.store.lock().await;
-    secrets::test(&store, &id)
+    // Ağ çağrısı süresince store kilidi tutulmasın diye anahtar önce kopyalanır.
+    let key = {
+        let store = state.store.lock().await;
+        secrets::prepare_test(&store, &id)?
+    };
+    secrets::test_connection(&state.http, &key).await
 }
 
 #[tauri::command]
