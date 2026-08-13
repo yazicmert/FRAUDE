@@ -130,7 +130,11 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
     if let Some(agent_id) = &request.agent_id {
         if let Some(agent) = store.agents.iter().find(|a| &a.id == agent_id && a.is_active) {
             let api_key_id = &agent.api_key_id;
-            selected_key_index = store.ai_keys.iter().position(|k| &k.id == api_key_id);
+            // Devre dışı anahtar seçilmez; sıradaki adım varsayılana düşer.
+            selected_key_index = store
+                .ai_keys
+                .iter()
+                .position(|k| &k.id == api_key_id && k.enabled);
             custom_system_prompt = Some(agent.system_prompt.clone());
             
             // Build linked artifacts context
@@ -142,7 +146,16 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
         }
     }
 
-    let target_index = selected_key_index.or_else(|| {
+    // Arayüzden açıkça bir anahtar seçildiyse o kazanır; aksi halde ajanın
+    // kendi anahtarı, sonra varsayılan, sonra herhangi bir etkin anahtar.
+    let explicit_key_index = request
+        .api_key_id
+        .as_ref()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .and_then(|id| store.ai_keys.iter().position(|key| key.id == id && key.enabled));
+
+    let target_index = explicit_key_index.or(selected_key_index).or_else(|| {
         store.ai_keys.iter().position(|key| key.is_default && key.enabled)
             .or_else(|| store.ai_keys.iter().position(|key| key.enabled))
     });
@@ -211,19 +224,7 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
 
         let system_prompt = format!("{}\n\nBağlam: {}{}", base_prompt, context, extra_context);
 
-        let raw_url = key.api_url.as_ref()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| default_url_for_provider(&provider));
-
-        let api_url = if raw_url.ends_with("/chat/completions") {
-            raw_url
-        } else if raw_url.ends_with('/') {
-            format!("{}chat/completions", raw_url)
-        } else {
-            format!("{}/chat/completions", raw_url)
-        };
+        let endpoint = resolve_endpoint(&provider, key.api_url.as_ref());
 
         let mut messages = vec![
             serde_json::json!({ "role": "system", "content": system_prompt })
@@ -251,83 +252,69 @@ pub async fn ask_ai(store: &mut AppStore, client: &reqwest::Client, request: AiR
             }
         }
 
-        messages.push(serde_json::json!({ "role": "user", "content": request.prompt }));
+        // Görsel eklendiyse son kullanıcı mesajı OpenAI-uyumlu parça dizisine
+        // dönüşür; metne gömülü veri-URL'i model tarafından görülmez.
+        let user_content = match request.images.as_ref().filter(|images| !images.is_empty()) {
+            Some(images) => {
+                let mut parts = vec![serde_json::json!({ "type": "text", "text": request.prompt })];
+                for url in images {
+                    parts.push(serde_json::json!({
+                        "type": "image_url",
+                        "image_url": { "url": url }
+                    }));
+                }
+                serde_json::Value::Array(parts)
+            }
+            None => serde_json::Value::String(request.prompt.clone()),
+        };
+        messages.push(serde_json::json!({ "role": "user", "content": user_content }));
 
         let effort = request.effort_level.as_deref().unwrap_or("medium").to_lowercase();
         let (temp, max_tok, reasoning_eff) = match effort.as_str() {
-            "low" => (0.3, 512, "low"),
-            "high" => (0.9, 4096, "high"),
-            _ => (0.7, 1536, "medium"),
+            "low" => (0.3, 512u32, "low"),
+            "high" => (0.9, 4096u32, "high"),
+            _ => (0.7, 1536u32, "medium"),
         };
 
-        let body = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "temperature": temp,
-            "max_tokens": max_tok,
-            "reasoning_effort": reasoning_eff
-        });
+        let body = build_chat_body(
+            &model,
+            serde_json::Value::Array(messages),
+            Some(temp),
+            Some(max_tok),
+            Some(reasoning_eff),
+            chat_tuning(&provider, &model),
+        );
 
-        let response = match client.post(&api_url)
-            .header("Authorization", format!("Bearer {}", secret))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send().await {
-            Ok(resp) => {
-                match resp.text().await {
-                    Ok(text) => {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
-                                AiResponse {
-                                    provider, model,
-                                    summary: content.to_string(),
-                                    tool_calls: Vec::new(),
-                                    disclaimer: "Bu çıktı yatırım tavsiyesi değildir.".into(),
-                                }
-                            } else if let Some(err_msg) = json["error"]["message"].as_str() {
-                                AiResponse {
-                                    provider, model,
-                                    summary: format!("API Hatası: {}", err_msg),
-                                    tool_calls: Vec::new(),
-                                    disclaimer: "".into(),
-                                }
-                            } else if let Some(err_msg) = json["message"].as_str() {
-                                AiResponse {
-                                    provider, model,
-                                    summary: format!("Sağlayıcı Hatası: {}", err_msg),
-                                    tool_calls: Vec::new(),
-                                    disclaimer: "".into(),
-                                }
-                            } else {
-                                AiResponse {
-                                    provider, model,
-                                    summary: format!("Beklenmeyen Yanıt Formatı: {}", &text[..text.len().min(200)]),
-                                    tool_calls: Vec::new(),
-                                    disclaimer: "".into(),
-                                }
-                            }
-                        } else {
-                            AiResponse {
-                                provider, model,
-                                summary: format!("API yanıtı ayrıştırılamadı: {}", &text[..text.len().min(200)]),
-                                tool_calls: Vec::new(),
-                                disclaimer: "".into(),
-                            }
-                        }
-                    }
-                    Err(e) => AiResponse {
-                        provider, model,
-                        summary: format!("Response read error: {}", e),
-                        tool_calls: Vec::new(),
-                        disclaimer: "Bu çıktı yatırım tavsiyesi değildir.".into(),
-                    },
-                }
+        // Uç nokta çözülemediyse ağa hiç çıkılmaz; hata kullanıcıya sohbet
+        // balonunda görünür (panel hata fırlatmak yerine yanıtı gösteriyor).
+        let outcome = match endpoint {
+            Ok(api_url) => {
+                post_chat_completion(
+                    client,
+                    &api_url,
+                    &secret,
+                    body,
+                    std::time::Duration::from_secs(120),
+                )
+                .await
             }
-            Err(e) => AiResponse {
-                provider, model,
-                summary: format!("Connection error: {}", e),
+            Err(error) => Err(error),
+        };
+
+        let response = match outcome {
+            Ok(content) => AiResponse {
+                provider,
+                model,
+                summary: content,
                 tool_calls: Vec::new(),
                 disclaimer: "Bu çıktı yatırım tavsiyesi değildir.".into(),
+            },
+            Err(error) => AiResponse {
+                provider,
+                model,
+                summary: error,
+                tool_calls: Vec::new(),
+                disclaimer: String::new(),
             },
         };
 
@@ -419,7 +406,20 @@ pub async fn execute(store: &mut AppStore, client: &reqwest::Client, command: &s
             })
         }
         FqlCommand::Ai { prompt } => {
-            let ai = ask_ai(store, client, AiRequest { prompt, active_context, agent_id: None, history: None, effort_level: None }).await;
+            let ai = ask_ai(
+                store,
+                client,
+                AiRequest {
+                    prompt,
+                    active_context,
+                    agent_id: None,
+                    api_key_id: None,
+                    images: None,
+                    history: None,
+                    effort_level: None,
+                },
+            )
+            .await;
             let preview: String = ai.summary.chars().take(80).collect();
             Ok(FqlResponse {
                 command_type: "ai".into(),
@@ -759,20 +759,9 @@ pub fn default_ai_access(store: &mut AppStore) -> Option<AiAccess> {
     if secret.is_empty() {
         return None;
     }
-    let raw_url = key
-        .api_url
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| default_url_for_provider(&key.provider));
-    let api_url = if raw_url.ends_with("/chat/completions") {
-        raw_url
-    } else if raw_url.ends_with('/') {
-        format!("{raw_url}chat/completions")
-    } else {
-        format!("{raw_url}/chat/completions")
-    };
+    // Uç nokta çözülemiyorsa (bilinmeyen sağlayıcı, URL girilmemiş) anahtar
+    // kullanılamaz sayılır; yanlış sağlayıcıya istek atmaktansa boş dönülür.
+    let api_url = resolve_endpoint(&key.provider, key.api_url.as_ref()).ok()?;
     Some(AiAccess {
         api_url,
         secret,
@@ -781,17 +770,285 @@ pub fn default_ai_access(store: &mut AppStore) -> Option<AiAccess> {
     })
 }
 
-fn default_url_for_provider(provider: &str) -> String {
-    let lower = provider.to_lowercase();
+// ---------------------------------------------------------------------------
+// Sağlayıcı uç noktası ve gövde uyumu
+// ---------------------------------------------------------------------------
+//
+// Her sağlayıcı OpenAI-uyumlu `/chat/completions` üzerinden konuşuyor, ama
+// "uyumlu" olmak aynı alanları kabul etmek demek değil: OpenAI tanımadığı alanı
+// yok saymaz, 400 döner. Bu yüzden gövde modele göre kurulur (bkz. `chat_tuning`)
+// ve yine de reddedilirse sorunlu alan düşürülüp bir kez daha denenir.
+
+/// Sağlayıcı adından bilinen uç nokta. Bilinmiyorsa `None`; çağıran açık URL
+/// ister. Sessizce OpenAI'a düşmek, kullanıcının anahtarını yanlış sağlayıcıya
+/// göndermek demektir.
+fn known_endpoint(provider: &str) -> Option<&'static str> {
+    let lower = provider.trim().to_lowercase();
     if lower.contains("deepseek") {
-        "https://api.deepseek.com/v1/chat/completions".to_string()
-    } else if lower.contains("qwen") {
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions".to_string()
-    } else if lower.contains("google") {
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".to_string()
+        Some("https://api.deepseek.com/v1")
+    } else if lower.contains("qwen") || lower.contains("dashscope") {
+        Some("https://dashscope.aliyuncs.com/compatible-mode/v1")
+    } else if lower.contains("google") || lower.contains("gemini") {
+        Some("https://generativelanguage.googleapis.com/v1beta/openai/")
+    } else if lower.contains("anthropic") || lower.contains("claude") {
+        // Anthropic'in OpenAI-SDK uyumluluk katmanı; aynı anahtarı Bearer alır.
+        Some("https://api.anthropic.com/v1")
+    } else if lower.contains("openai") {
+        Some("https://api.openai.com/v1")
     } else {
-        "https://api.openai.com/v1/chat/completions".to_string()
+        None
     }
+}
+
+/// Kayıt sırasında açık URL istenip istenmeyeceğini belirler.
+pub fn has_known_endpoint(provider: &str) -> bool {
+    known_endpoint(provider).is_some()
+}
+
+fn normalize_chat_url(base: &str) -> String {
+    let trimmed = base.trim();
+    if trimmed.ends_with("/chat/completions") {
+        trimmed.to_string()
+    } else if trimmed.ends_with('/') {
+        format!("{trimmed}chat/completions")
+    } else {
+        format!("{trimmed}/chat/completions")
+    }
+}
+
+/// Anahtarın çağrılacağı tam uç nokta. Kullanıcının girdiği URL her zaman kazanır.
+fn resolve_endpoint(provider: &str, api_url: Option<&String>) -> Result<String, String> {
+    let explicit = api_url
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
+    match explicit {
+        Some(url) => Ok(normalize_chat_url(url)),
+        None => known_endpoint(provider).map(normalize_chat_url).ok_or_else(|| {
+            format!(
+                "'{provider}' sağlayıcısının uç noktası bilinmiyor. \
+                 Ayarlar › AI Providers'ta Base API URL girin."
+            )
+        }),
+    }
+}
+
+/// Sohbet gövdesinin bu model için hangi alanları taşıyabileceği.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ChatTuning {
+    /// Akıl yürüten OpenAI modelleri `max_tokens` yerine bunu ister.
+    uses_max_completion_tokens: bool,
+    /// o-serisi yalnız varsayılan sıcaklıkla çalışır; alan gönderilirse hata döner.
+    supports_temperature: bool,
+    /// `reasoning_effort` yalnız düşünen modellerde geçerli.
+    supports_reasoning_effort: bool,
+}
+
+pub(crate) fn chat_tuning(provider: &str, model: &str) -> ChatTuning {
+    let provider_lower = provider.trim().to_lowercase();
+    let model_lower = model.trim().to_lowercase();
+
+    // OpenAI akıl yürütme aileleri: o1/o3/o4… ve gpt-5 ve sonrası.
+    if ["o1", "o3", "o4", "gpt-5"]
+        .iter()
+        .any(|prefix| model_lower.starts_with(prefix))
+    {
+        return ChatTuning {
+            uses_max_completion_tokens: true,
+            supports_temperature: false,
+            supports_reasoning_effort: true,
+        };
+    }
+
+    let is_gemini = model_lower.starts_with("gemini")
+        || provider_lower.contains("google")
+        || provider_lower.contains("gemini");
+    let supports_reasoning_effort = if is_gemini {
+        // Google'ın uyumluluk katmanı bu alanı düşünme bütçesine eşliyor;
+        // 1.5 ve 2.0 kuşağı düşünmediği için alanı tanımıyor.
+        !model_lower.contains("1.5") && !model_lower.contains("2.0")
+    } else if provider_lower.contains("deepseek") || model_lower.starts_with("deepseek") {
+        model_lower.contains("reasoner")
+    } else {
+        false
+    };
+
+    ChatTuning {
+        uses_max_completion_tokens: false,
+        supports_temperature: true,
+        supports_reasoning_effort,
+    }
+}
+
+/// Yalnız modelin kabul ettiği alanlardan oluşan sohbet gövdesi.
+pub(crate) fn build_chat_body(
+    model: &str,
+    messages: serde_json::Value,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    reasoning_effort: Option<&str>,
+    tuning: ChatTuning,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({ "model": model, "messages": messages });
+    let fields = body.as_object_mut().expect("json! nesne üretir");
+    if let Some(limit) = max_tokens {
+        let field = if tuning.uses_max_completion_tokens {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        fields.insert(field.into(), limit.into());
+    }
+    if let Some(value) = temperature.filter(|_| tuning.supports_temperature) {
+        fields.insert("temperature".into(), value.into());
+    }
+    if let Some(effort) = reasoning_effort.filter(|_| tuning.supports_reasoning_effort) {
+        fields.insert("reasoning_effort".into(), effort.into());
+    }
+    body
+}
+
+/// 400 yanıtında düşürülüp yeniden denenebilecek alanlar. Sağlayıcılar model
+/// listelerini bizden bağımsız değiştirdiği için statik tablo tek başına
+/// yetmiyor; bu ağ, yeni bir modelde isteğin tamamen ölmesini engelliyor.
+const ADAPTIVE_FIELDS: [&str; 4] = [
+    "reasoning_effort",
+    "max_tokens",
+    "temperature",
+    "max_completion_tokens",
+];
+
+fn snippet(text: &str) -> String {
+    text.chars().take(300).collect()
+}
+
+/// Sağlayıcının hata gövdesinden okunabilir mesajı çıkarır.
+fn provider_error_message(text: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|json| {
+            json["error"]["message"]
+                .as_str()
+                .or_else(|| json["message"].as_str())
+                .map(|message| message.to_string())
+        })
+        .unwrap_or_else(|| snippet(text))
+}
+
+/// Hata metni gövdedeki hangi alanı işaret ediyor?
+fn offending_field(error_text: &str, body: &serde_json::Value) -> Option<&'static str> {
+    let lower = error_text.to_lowercase();
+    ADAPTIVE_FIELDS
+        .iter()
+        .copied()
+        .find(|field| lower.contains(field) && body.get(*field).is_some())
+}
+
+/// Reddedilen alanı gövdeden çıkarır; sağlayıcı `max_completion_tokens`
+/// öneriyorsa değeri atmak yerine yeni ada taşır.
+fn adapt_body(body: &mut serde_json::Value, field: &str, error_text: &str) {
+    let Some(fields) = body.as_object_mut() else {
+        return;
+    };
+    let removed = fields.remove(field);
+    if field == "max_tokens" && error_text.to_lowercase().contains("max_completion_tokens") {
+        if let Some(value) = removed {
+            fields.insert("max_completion_tokens".into(), value);
+        }
+    }
+}
+
+/// OpenAI-uyumlu sohbet isteğini gönderir ve 200 gövdesini döndürür.
+/// Desteklenmeyen alan yüzünden 400 alınırsa o alanı düşürüp yeniden dener.
+pub(crate) async fn post_chat_completion_raw(
+    client: &reqwest::Client,
+    api_url: &str,
+    secret: &str,
+    mut body: serde_json::Value,
+    timeout: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    let mut adaptations = 0;
+    loop {
+        let response = client
+            .post(api_url)
+            .header("Authorization", format!("Bearer {secret}"))
+            .header("Content-Type", "application/json")
+            .timeout(timeout)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| format!("AI isteği başarısız: {error}"))?;
+
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .map_err(|error| format!("AI yanıtı okunamadı: {error}"))?;
+
+        if status.is_success() {
+            return serde_json::from_str(&text)
+                .map_err(|_| format!("AI yanıtı çözümlenemedi: {}", snippet(&text)));
+        }
+
+        if status == reqwest::StatusCode::BAD_REQUEST && adaptations < ADAPTIVE_FIELDS.len() {
+            if let Some(field) = offending_field(&text, &body) {
+                adapt_body(&mut body, field, &text);
+                adaptations += 1;
+                continue;
+            }
+        }
+
+        return Err(format!(
+            "AI sağlayıcı hatası (HTTP {}): {}",
+            status.as_u16(),
+            provider_error_message(&text)
+        ));
+    }
+}
+
+/// `post_chat_completion_raw` + yanıttan metin içeriğini çıkarma.
+pub(crate) async fn post_chat_completion(
+    client: &reqwest::Client,
+    api_url: &str,
+    secret: &str,
+    body: serde_json::Value,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let parsed = post_chat_completion_raw(client, api_url, secret, body, timeout).await?;
+    parsed["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+        .ok_or_else(|| format!("AI yanıtında içerik yok: {}", snippet(&parsed.to_string())))
+}
+
+/// Anahtarı sağlayıcıya karşı gerçekten dener: uç nokta, sır ve model üçü birden
+/// geçerli değilse hata döner. İçerik beklenmez, 200 yeterlidir.
+pub async fn probe_ai_key(
+    client: &reqwest::Client,
+    key: &crate::domain::StoredAiKey,
+) -> Result<(), String> {
+    let api_url = resolve_endpoint(&key.provider, key.api_url.as_ref())?;
+    let tuning = chat_tuning(&key.provider, &key.default_model);
+    // Akıl yürüten modelde küçük bütçe düşünmeye harcanıp yanıt boş kalabilir;
+    // sınırı yalnız düz modellerde koyuyoruz.
+    let max_tokens = if tuning.uses_max_completion_tokens { None } else { Some(16) };
+    let body = build_chat_body(
+        &key.default_model,
+        serde_json::json!([{ "role": "user", "content": "ping" }]),
+        Some(0.0),
+        max_tokens,
+        None,
+        tuning,
+    );
+    post_chat_completion_raw(
+        client,
+        &api_url,
+        &key.secret,
+        body,
+        std::time::Duration::from_secs(30),
+    )
+    .await
+    .map(|_| ())
 }
 
 pub async fn get_news_feed(
@@ -1173,53 +1430,29 @@ pub async fn run_completion(
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, String> {
-    let raw_url = key.api_url.as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| default_url_for_provider(&key.provider));
-    let api_url = if raw_url.ends_with("/chat/completions") {
-        raw_url
-    } else if raw_url.ends_with('/') {
-        format!("{}chat/completions", raw_url)
-    } else {
-        format!("{}/chat/completions", raw_url)
-    };
-
-    let body = serde_json::json!({
-        "model": key.default_model,
-        "messages": [
+    let api_url = resolve_endpoint(&key.provider, key.api_url.as_ref())?;
+    // Rapor uzunluğu modele bırakılır; buraya bir üst sınır koymak ajan
+    // çıktılarını ortasından keser.
+    let body = build_chat_body(
+        &key.default_model,
+        serde_json::json!([
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": user_prompt },
-        ],
-        "temperature": 0.4,
-    });
+        ]),
+        Some(0.4),
+        None,
+        None,
+        chat_tuning(&key.provider, &key.default_model),
+    );
 
-    let resp = client
-        .post(&api_url)
-        .header("Authorization", format!("Bearer {}", crate::keychain::resolve_secret(&key.id, &key.secret)))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(90))
-        .send()
-        .await
-        .map_err(|e| format!("AI isteği başarısız: {e}"))?;
-
-    let status = resp.status();
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        return Err(format!("AI sağlayıcı hatası (HTTP {status}): {}", text.chars().take(300).collect::<String>()));
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    parsed
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .map(|s| s.trim().to_string())
-        .ok_or_else(|| "AI yanıtı çözümlenemedi".to_string())
+    post_chat_completion(
+        client,
+        &api_url,
+        &crate::keychain::resolve_secret(&key.id, &key.secret),
+        body,
+        std::time::Duration::from_secs(90),
+    )
+    .await
 }
 
 /// OpenAI uyumlu görüntü + metin tamamlaması. `image_data_urls` her biri tam
@@ -1233,18 +1466,7 @@ pub async fn run_vision_completion(
     user_text: &str,
     image_data_urls: &[String],
 ) -> Result<String, String> {
-    let raw_url = key.api_url.as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| default_url_for_provider(&key.provider));
-    let api_url = if raw_url.ends_with("/chat/completions") {
-        raw_url
-    } else if raw_url.ends_with('/') {
-        format!("{}chat/completions", raw_url)
-    } else {
-        format!("{}/chat/completions", raw_url)
-    };
+    let api_url = resolve_endpoint(&key.provider, key.api_url.as_ref())?;
 
     let mut content = vec![serde_json::json!({ "type": "text", "text": user_text })];
     for url in image_data_urls {
@@ -1254,41 +1476,26 @@ pub async fn run_vision_completion(
         }));
     }
 
-    let body = serde_json::json!({
-        "model": key.default_model,
-        "messages": [
+    let body = build_chat_body(
+        &key.default_model,
+        serde_json::json!([
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": content },
-        ],
-        "temperature": 0.3,
-        "max_tokens": 2048,
-    });
+        ]),
+        Some(0.3),
+        Some(2048),
+        None,
+        chat_tuning(&key.provider, &key.default_model),
+    );
 
-    let resp = client
-        .post(&api_url)
-        .header("Authorization", format!("Bearer {}", crate::keychain::resolve_secret(&key.id, &key.secret)))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(120))
-        .send()
-        .await
-        .map_err(|e| format!("AI görüntü isteği başarısız: {e}"))?;
-
-    let status = resp.status();
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        return Err(format!("AI sağlayıcı hatası (HTTP {status}): {}", text.chars().take(300).collect::<String>()));
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    parsed
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .map(|s| s.trim().to_string())
-        .ok_or_else(|| "AI görüntü yanıtı çözümlenemedi".to_string())
+    post_chat_completion(
+        client,
+        &api_url,
+        &crate::keychain::resolve_secret(&key.id, &key.secret),
+        body,
+        std::time::Duration::from_secs(120),
+    )
+    .await
 }
 
 fn company_query(ticker: Option<&str>, company: Option<&str>) -> String {
@@ -1892,5 +2099,126 @@ mod sync_tests {
         assert!(!full_sync_is_acceptable(MIN_FULL_SYNC_COVERAGE - 0.001));
         assert!(full_sync_is_acceptable(MIN_FULL_SYNC_COVERAGE));
         assert!(full_sync_is_acceptable(1.0));
+    }
+}
+
+#[cfg(test)]
+mod provider_compat_tests {
+    use super::*;
+
+    #[test]
+    fn plain_openai_model_never_carries_reasoning_effort() {
+        // gpt-4o bu alanı 400 ile reddediyor ve varsayılan seçim buydu.
+        let body = build_chat_body(
+            "gpt-4o",
+            serde_json::json!([]),
+            Some(0.7),
+            Some(1536),
+            Some("medium"),
+            chat_tuning("openai", "gpt-4o"),
+        );
+        assert!(body.get("reasoning_effort").is_none());
+        assert_eq!(body["max_tokens"], 1536);
+        assert_eq!(body["temperature"], 0.7);
+    }
+
+    #[test]
+    fn openai_reasoning_model_swaps_token_field_and_drops_temperature() {
+        let body = build_chat_body(
+            "o3-mini",
+            serde_json::json!([]),
+            Some(0.7),
+            Some(1536),
+            Some("high"),
+            chat_tuning("openai", "o3-mini"),
+        );
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["max_completion_tokens"], 1536);
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn reasoning_effort_follows_gemini_generation() {
+        let thinking = build_chat_body(
+            "gemini-2.5-flash",
+            serde_json::json!([]),
+            Some(0.5),
+            Some(64),
+            Some("low"),
+            chat_tuning("google", "gemini-2.5-flash"),
+        );
+        assert_eq!(thinking["reasoning_effort"], "low");
+
+        let older = build_chat_body(
+            "gemini-1.5-pro",
+            serde_json::json!([]),
+            Some(0.5),
+            Some(64),
+            Some("low"),
+            chat_tuning("google", "gemini-1.5-pro"),
+        );
+        assert!(older.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn unknown_provider_without_url_is_refused_not_sent_to_openai() {
+        assert!(!has_known_endpoint("custom"));
+        assert!(resolve_endpoint("custom", None).is_err());
+
+        assert_eq!(
+            resolve_endpoint("openai", None).unwrap(),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            resolve_endpoint("Google Gemini", None).unwrap(),
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+        assert_eq!(
+            resolve_endpoint("anthropic", None).unwrap(),
+            "https://api.anthropic.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn explicit_url_wins_and_is_normalised_once() {
+        let base = Some("https://openrouter.ai/api/v1".to_string());
+        assert_eq!(
+            resolve_endpoint("custom", base.as_ref()).unwrap(),
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+        let complete = Some("https://proxy.local/v1/chat/completions".to_string());
+        assert_eq!(
+            resolve_endpoint("custom", complete.as_ref()).unwrap(),
+            "https://proxy.local/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn rejected_field_is_dropped_and_token_limit_is_renamed() {
+        let mut body = serde_json::json!({ "max_tokens": 512, "reasoning_effort": "high" });
+
+        let effort_error =
+            "Unsupported parameter: 'reasoning_effort' is not supported with this model.";
+        let field = offending_field(effort_error, &body).expect("alan bulunmalı");
+        assert_eq!(field, "reasoning_effort");
+        adapt_body(&mut body, field, effort_error);
+        assert!(body.get("reasoning_effort").is_none());
+
+        let token_error = "Unsupported parameter: 'max_tokens' is not supported with this model. \
+                           Use 'max_completion_tokens' instead.";
+        let field = offending_field(token_error, &body).expect("alan bulunmalı");
+        assert_eq!(field, "max_tokens");
+        adapt_body(&mut body, field, token_error);
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["max_completion_tokens"], 512);
+    }
+
+    #[test]
+    fn error_without_a_matching_field_stops_the_retry_loop() {
+        let body = serde_json::json!({ "model": "gpt-4o" });
+        assert!(offending_field("invalid api key", &body).is_none());
+        // Gövdede bulunmayan alan için de yeniden denenmemeli.
+        assert!(offending_field("reasoning_effort is not supported", &body).is_none());
     }
 }

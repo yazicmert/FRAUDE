@@ -58,10 +58,12 @@ const PROVIDER_MODELS: Record<string, string[]> = {
     'gemini-1.5-pro',
     'gemini-1.5-flash'
   ],
+  anthropic: [
+    'claude-opus-5',
+    'claude-sonnet-5',
+    'claude-haiku-4-5-20251001'
+  ],
   custom: [
-    'claude-3-7-sonnet-latest',
-    'claude-3-5-sonnet-latest',
-    'claude-3-5-haiku-latest',
     'meta-llama/Llama-3-70b-chat-hf',
     'mistralai/Mistral-7B-Instruct-v0.2'
   ]
@@ -295,6 +297,8 @@ export default function SettingsView() {
   const [keys, setKeys] = useState<AiKeyRecord[]>([]);
   const [form, setForm] = useState<SaveAiKeyRequest>(emptyForm);
   const [message, setMessage] = useState('');
+  /** Test artık gerçek bir sağlayıcı çağrısı; süren denemenin anahtar kimliği. */
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const [agents, setAgents] = useState<AiAgent[]>([]);
   const [agentForm, setAgentForm] = useState<SaveAiAgentRequest>(emptyAgentForm);
@@ -346,6 +350,10 @@ export default function SettingsView() {
       default_model = 'gemini-2.5-flash';
       api_url = 'https://generativelanguage.googleapis.com/v1beta/openai/';
       label = 'Google Gemini Analyst';
+    } else if (provider === 'anthropic') {
+      default_model = 'claude-sonnet-5';
+      api_url = 'https://api.anthropic.com/v1';
+      label = 'Claude Analyst';
     } else if (provider === 'custom') {
       default_model = '';
       api_url = '';
@@ -652,6 +660,7 @@ export default function SettingsView() {
               <option value="deepseek">DeepSeek</option>
               <option value="qwen">Qwen (Alibaba)</option>
               <option value="google">Google Gemini</option>
+              <option value="anthropic">Anthropic Claude</option>
               <option value="custom">Custom Provider</option>
             </select>
           </label>
@@ -669,7 +678,7 @@ export default function SettingsView() {
             <input
               value={form.api_key}
               onChange={(event) => setForm((current) => ({ ...current, api_key: event.target.value }))}
-              placeholder={form.provider === 'google' ? 'AIza...' : 'sk-...'}
+              placeholder={form.provider === 'google' ? 'AIza...' : form.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
               type="password"
               required
             />
@@ -690,12 +699,19 @@ export default function SettingsView() {
             </datalist>
           </label>
           <label>
-            Base API URL (Optional)
+            {form.provider === 'custom' ? 'Base API URL (Required)' : 'Base API URL (Optional)'}
             <input
               value={form.api_url || ''}
               onChange={(event) => setForm((current) => ({ ...current, api_url: event.target.value }))}
               placeholder="e.g. https://api.deepseek.com/v1"
+              required={form.provider === 'custom'}
             />
+            {form.provider === 'custom' && (
+              <small style={{ display: 'block', color: 'var(--text-muted)' }}>
+                Custom sağlayıcıda adres zorunludur; boş bırakılan adres anahtarınızı
+                yanlış sağlayıcıya gönderir.
+              </small>
+            )}
           </label>
           <label className="checkbox-row">
             <input
@@ -725,13 +741,17 @@ export default function SettingsView() {
               <button type="button" onClick={() => void setDefaultAiKey(key.id).then(setKeys)}>Default</button>
               <button
                 type="button"
-                onClick={() =>
+                disabled={testingId === key.id}
+                onClick={() => {
+                  setTestingId(key.id);
+                  setMessage(`${key.label}: sağlayıcıya bağlanılıyor…`);
                   void testAiKey(key.id)
                     .then(setMessage)
                     .catch((error: unknown) => setMessage(String(error)))
-                }
+                    .finally(() => setTestingId(null));
+                }}
               >
-                Test
+                {testingId === key.id ? 'Testing…' : 'Test'}
               </button>
               <button type="button" onClick={() => void deleteAiKey(key.id).then(setKeys)}>Delete</button>
             </article>

@@ -740,38 +740,29 @@ async fn analyze_holdings_images(
         }));
     }
 
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [
+    // Gövde ortak katmanda modele göre kurulur: akıl yürüten modeller
+    // `temperature`/`max_tokens` kabul etmiyor (bkz. services::chat_tuning).
+    let body = crate::services::build_chat_body(
+        model,
+        serde_json::json!([
             { "role": "system", "content": "Sen tablo görüntülerinden veri çıkaran hassas bir OCR asistanısın. Yalnızca istenen JSON'u döndürürsün." },
             { "role": "user", "content": content }
-        ],
-        "temperature": 0,
-        "max_tokens": 4096
-    });
+        ]),
+        Some(0.0),
+        Some(4096),
+        None,
+        crate::services::chat_tuning("", model),
+    );
 
-    let response = client
-        .post(api_url)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .timeout(Duration::from_secs(120))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| format!("AI isteği gönderilemedi: {error}"))?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|error| format!("AI yanıtı okunamadı: {error}"))?;
-    if !status.is_success() {
-        return Err(format!("AI sağlayıcısı hata döndürdü ({status}): {}", text.chars().take(200).collect::<String>()));
-    }
-    let json: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|_| "AI yanıtı çözümlenemedi.".to_string())?;
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or("AI yanıtında içerik yok.")?;
+    let reply = crate::services::post_chat_completion(
+        client,
+        api_url,
+        api_key,
+        body,
+        Duration::from_secs(120),
+    )
+    .await?;
+    let content = reply.as_str();
 
     // Model bazen ```json çiti ekler; ilk '[' ile son ']' arası alınır
     let start = content.find('[').ok_or("AI yanıtında JSON dizisi yok.")?;
