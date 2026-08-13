@@ -70,7 +70,8 @@ const STRINGS = {
 
     // Modül ayrıntı sayfası
     modBackAll: 'Tüm modüller',
-    modShotCaption: 'Uygulamadan alınmış ekran görüntüsü; veriler çekim anındaki canlı piyasadan.',
+    modShotCaption:
+      'Uygulamadan alınmış ekran görüntüsü. Veriler gecikmelidir; ekrandaki değerler çekim anına aittir.',
     modNoShot:
       'Bu modül kişisel hesabınıza bağlı çalıştığı için tanıtım ekran görüntüsü yayımlamıyoruz; uygulamayı kurduğunuzda kendi verinizle açılır.',
     modDoesTitle: 'Ne yapar',
@@ -100,7 +101,7 @@ const STRINGS = {
     shotKicker: 'Uygulama',
     shotTitle: 'Ekranın kendisi',
     shotSub: 'Aşağıdakiler tanıtım çizimi değil; uygulamadan alınmış ekran görüntüleri.',
-    shotCaption: 'Veriler çekim anındaki canlı piyasadan.',
+    shotCaption: 'Veriler gecikmelidir; ekrandaki değerler çekim anına aittir.',
     shotAll: 'Tüm modülleri gör',
 
     // Akış — ürünün nasıl kullanıldığı
@@ -137,6 +138,23 @@ const STRINGS = {
     accY3: 'Kaynak kodu açık, kendiniz derleyebilirsiniz',
     accY4: 'Yapay zeka için kendi sağlayıcı anahtarınız',
     accCta: 'Lisans talep et',
+
+    // Veri kaynakları sayfası
+    srcPageKicker: 'Şeffaflık',
+    srcPageTitle: 'Veri nereden geliyor',
+    srcPageLead:
+      'FRAUDE kendi verisini üretmez. Ekranda gördüğünüz her satır aşağıdaki kurumlardan birinin yayımladığı veridir ve kaynağına ekrandan gidebilirsiniz.',
+    srcDelayTitle: 'Veriler gecikmelidir',
+    srcDelayBody:
+      'FRAUDE gerçek zamanlı veri dağıtmaz. Fiyatlar ve bildirimler kaynakların herkese açık uçlarından belirli aralıklarla çekilir; ekranda gördüğünüz değer o çekimin anına aittir. Saniyelik karar gerektiren işlemler için uygun değildir.',
+    srcTakesLabel: 'Alınan veri',
+    srcThanksTitle: 'Teşekkür',
+    srcThanksBody:
+      'Bu uygulama, verisini herkese açık tutan kurumlar olmadan var olamazdı. KAP, SPK, TEFAS, Borsa İstanbul ve TCMB’ye şeffaflıkları için; analiz raporlarını yayımlayan aracı kurumlara emekleri için; açık indekslerini paylaşan haber kaynaklarına ve halka arz takvimini titizlikle tutan topluluğa teşekkür ederiz. Veriler kendi sahiplerine aittir; FRAUDE yalnızca okur, düzenler ve kaynağını gösterir.',
+    srcCorrectionTitle: 'Bir yanlışlık mı var?',
+    srcCorrectionBody:
+      'Kurumunuza ait bir kaydın burada yanlış anlatıldığını ya da yer almasını istemediğinizi düşünüyorsanız, depodan bize ulaşın; düzeltiriz.',
+    srcCorrectionCta: 'GitHub üzerinden bildir',
 
     // SSS
     faqKicker: 'Sık sorulanlar',
@@ -385,7 +403,8 @@ const STRINGS = {
 
     // Footer & meta
     footerTag: 'finansal dostunuz',
-    disclaimer: 'Veriler yatırım tavsiyesi değildir.',
+    disclaimer: 'Veriler gecikmelidir ve yatırım tavsiyesi değildir.',
+    navSources: 'Veri kaynakları',
     metaTitle: 'FRAUDE — Finansal Dostunuz',
   },
   en: {
@@ -429,7 +448,8 @@ const STRINGS = {
     modOpen: 'See the module',
 
     modBackAll: 'All modules',
-    modShotCaption: 'Screenshot taken from the app; the data is the live market at capture time.',
+    modShotCaption:
+      'Screenshot taken from the app. Data is delayed; the values on screen are from the moment of capture.',
     modNoShot:
       'This module runs against your own account, so we don’t publish a marketing screenshot of it; it opens with your data once you install the app.',
     modDoesTitle: 'What it does',
@@ -457,7 +477,7 @@ const STRINGS = {
     shotKicker: 'The app',
     shotTitle: 'The screen itself',
     shotSub: 'Not illustrations — screenshots taken from the app.',
-    shotCaption: 'The data is the live market at capture time.',
+    shotCaption: 'Data is delayed; the values on screen are from the moment of capture.',
     shotAll: 'See every module',
 
     flowKicker: 'In use',
@@ -491,6 +511,22 @@ const STRINGS = {
     accY3: 'Source is open — build it yourself if you prefer',
     accY4: 'Your own provider key for the AI features',
     accCta: 'Request a license',
+
+    srcPageKicker: 'Transparency',
+    srcPageTitle: 'Where the data comes from',
+    srcPageLead:
+      'FRAUDE produces no data of its own. Every row you see on screen was published by one of the institutions below, and you can reach its source from the screen.',
+    srcDelayTitle: 'Data is delayed',
+    srcDelayBody:
+      'FRAUDE does not distribute real-time data. Prices and disclosures are pulled from the sources’ public endpoints at intervals; the value on screen belongs to the moment of that pull. It is not suitable for decisions that need second-by-second pricing.',
+    srcTakesLabel: 'What we take',
+    srcThanksTitle: 'Thank you',
+    srcThanksBody:
+      'This app could not exist without institutions that keep their data public. Our thanks to KAP, SPK, TEFAS, Borsa İstanbul and TCMB for their transparency; to the brokerage houses that publish research for their work; to the news sources that share open indexes, and to the community that keeps the IPO calendar with care. The data belongs to its owners; FRAUDE only reads it, arranges it and shows where it came from.',
+    srcCorrectionTitle: 'Something wrong here?',
+    srcCorrectionBody:
+      'If a record about your institution is described incorrectly, or you would rather it were not listed, reach us through the repository and we will fix it.',
+    srcCorrectionCta: 'Tell us on GitHub',
 
     faqKicker: 'FAQ',
     faqTitle: 'You’re probably about to ask',
@@ -731,7 +767,8 @@ const STRINGS = {
     updManualNotes: 'Manual steps',
 
     footerTag: 'your financial companion',
-    disclaimer: 'Data is not investment advice.',
+    disclaimer: 'Data is delayed and is not investment advice.',
+    navSources: 'Data sources',
     metaTitle: 'FRAUDE — Your Financial Companion',
   },
 } as const;

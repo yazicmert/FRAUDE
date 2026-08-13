@@ -1275,6 +1275,88 @@ table.data td {
 }
 .md-cta .lp-sub { margin-bottom: 22px; }
 
+/* ── Veri kaynakları sayfası (/veri-kaynaklari) ── */
+/* Kaynak sayfasının başlığında modül kodu yok; rozet boşluğu da olmasın. */
+.md-head-plain { display: block; }
+
+.lp-sources-more {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--dimmer);
+  white-space: nowrap;
+}
+.lp-sources-more:hover { color: var(--up); }
+
+/* Gecikme uyarısı: sayfanın en görünür kutusu olmalı. */
+.src-delay {
+  max-width: 880px;
+  margin: 0 auto 44px;
+  padding: 22px 24px;
+  border: 1px solid rgba(224, 74, 63, 0.4);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--down-lo);
+}
+.src-delay h2 {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.src-delay p { font-size: 14px; line-height: 1.75; color: var(--paper); }
+
+.src-intro {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--dim);
+  margin-bottom: 22px;
+}
+
+.src-list { list-style: none; display: grid; gap: 22px; }
+
+.src-list li {
+  padding-left: 16px;
+  border-left: 1px solid var(--rule-2);
+}
+
+.src-list li > a {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--paper);
+  margin-bottom: 6px;
+}
+.src-list li > a:hover { color: var(--up); }
+
+.src-list li p { font-size: 14px; line-height: 1.7; color: var(--dim); }
+
+.src-takes-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+}
+
+.src-thanks {
+  max-width: 880px;
+  margin: 0 auto 44px;
+  padding: 30px 30px 32px;
+  border: 1px solid var(--rule-2);
+  border-radius: 10px;
+  background: var(--ink-1);
+}
+.src-thanks h2 {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
+.src-thanks p { font-size: 14.5px; line-height: 1.8; color: var(--dim); }
+
 /* ── Erişilebilirlik & duyarlılık ── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1391,6 +1473,10 @@ table.data td {
   .lp-access-why { padding: 22px 20px; }
   .lp-faq summary { font-size: 14px; padding-right: 28px; }
   .lp-faq p { padding-right: 0; }
+
+  .src-delay { padding: 18px 18px; }
+  .src-thanks { padding: 24px 20px 26px; }
+  .src-list li { padding-left: 12px; }
 
   .md { padding: 96px 18px 64px; }
   .md-head { gap: 14px; }

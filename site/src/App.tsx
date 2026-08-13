@@ -1,10 +1,11 @@
 import { BrandMark } from './components/Brand';
 import SiteNav from './components/SiteNav';
-import { usePath } from './lib/router';
+import { navigate, usePath } from './lib/router';
 import { displayName, useSession } from './lib/useSession';
 import { useI18n } from './lib/i18n';
 import Landing from './pages/Landing';
 import Module from './pages/Module';
+import Sources from './pages/Sources';
 import SignIn from './pages/SignIn';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
@@ -30,6 +31,8 @@ export default function App() {
     content = <LicenseAbuse />;
   } else if (path === '/guncellemeler') {
     content = <Updates />;
+  } else if (path === '/veri-kaynaklari') {
+    content = <Sources />;
   } else if (path.startsWith('/modul/')) {
     content = <Module slug={decodeURIComponent(path.slice('/modul/'.length))} />;
   } else if (path === '/giris') {
@@ -68,6 +71,15 @@ export default function App() {
           © {new Date().getFullYear()} FRAUDE — {t('footerTag')}
         </span>
         <div className="spacer" />
+        <a
+          href="/veri-kaynaklari"
+          onClick={(event) => {
+            event.preventDefault();
+            navigate('/veri-kaynaklari');
+          }}
+        >
+          {t('navSources')}
+        </a>
         <a href="https://github.com/yazicmert/FRAUDE" target="_blank" rel="noreferrer">
           GitHub
         </a>

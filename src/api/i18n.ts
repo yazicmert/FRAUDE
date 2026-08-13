@@ -579,7 +579,7 @@ export const translations = {
     monAiComment: 'Yapay Zeka Yorumu',
     monSeverity: 'Önem: {{s}}/10',
     // ── Ekonomik takvim ──
-    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
+    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nBir satıra tıklayınca o verinin kaynak sayfası tarayıcıda açılır.\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
     ecoCalRefreshNow: 'Şimdi yenile',
     ecoCalFilterAll: 'Tümü',
     ecoCalFilterMedium: 'Orta+',
@@ -608,6 +608,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: '{{n}} dk önce güncellendi',
     ecoCalUpdatedHoursAgo: '{{n}} sa önce güncellendi',
     ecoCalUpdatedDaysAgo: '{{n}} gün önce güncellendi',
+    ecoCalOpenSource: 'Kaynağı aç: {{source}}',
     // ── Hisse detayı ──
     inWatchlist: 'Portföyümde',
     addToWatchlist: 'Portföye Ekle',
@@ -1050,6 +1051,8 @@ export const translations = {
     updPromptHint:
       'Bu güncellemeyi kendi kopyanıza taşımak için: yerel FRAUDE klonunuzu AI ajanınızla (örn. Claude Code) açın ve bu promptu yapıştırın. Ajan değişikliği sizin sürümünüze uyarlar; bitince prompttaki "Kabul" komutlarıyla doğrulayın.',
     updCopyPrompt: 'Promptu kopyala',
+    updNoPrompt:
+      'Bu kayıt için hazır uygulama promptu yok — yalnız künyesi ve özeti yazılmış. Değişikliği kendi kopyanıza taşımak için "Değişikliği görüntüle" ile commit\'i açıp AI ajanınıza referans verebilirsiniz.',
     updCopied: '✓ kopyalandı',
     updManualNotes: 'Elle yapılacaklar',
     updContribute: 'Siz de katkı verin: depoyu klonlayın, AI ajanınızla geliştirin, PR açın.',
@@ -1699,7 +1702,7 @@ export const translations = {
     monAiComment: 'AI Commentary',
     monSeverity: 'Severity: {{s}}/10',
     // ── Economic calendar ──
-    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
+    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nClick a row to open that data point\'s source page in your browser.\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
     ecoCalRefreshNow: 'Refresh now',
     ecoCalFilterAll: 'All',
     ecoCalFilterMedium: 'Medium+',
@@ -1728,6 +1731,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: 'updated {{n}} min ago',
     ecoCalUpdatedHoursAgo: 'updated {{n}} h ago',
     ecoCalUpdatedDaysAgo: 'updated {{n}} days ago',
+    ecoCalOpenSource: 'Open source: {{source}}',
     // ── Ticker detail ──
     inWatchlist: 'In Portfolio',
     addToWatchlist: 'Add to Portfolio',
@@ -2170,6 +2174,8 @@ export const translations = {
     updPromptHint:
       'To bring this update into your own copy: open your local FRAUDE clone with your AI agent (e.g. Claude Code) and paste this prompt. The agent adapts the change to your version; verify with the "Kabul" commands in the prompt when done.',
     updCopyPrompt: 'Copy prompt',
+    updNoPrompt:
+      'This entry has no ready-made apply prompt — only its details and summary were written. To bring the change into your own copy, open the commit with “View change” and point your AI agent at it.',
     updCopied: '✓ copied',
     updManualNotes: 'Manual steps',
     updContribute: 'Contribute yourself: clone the repo, build with your AI agent, open a PR.',
