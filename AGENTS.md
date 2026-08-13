@@ -1,5 +1,17 @@
 # Repository agent workflow
 
+## After a merge: bring the local machine up to date
+
+Merging a PR changes only the remote. Two things on the developer's machine stay behind, and both must be checked whenever a task ends in a merge or a release — report each one explicitly rather than stopping at "merged".
+
+- **The primary clone.** Pull `main` with `git pull --ff-only` in the checkout the developer actually works from, not only in the worktree where the change was made. After a `[build]` merge this is required rather than tidy: CI pushes its own `release: vX.Y.Z sürüm damgası` commit on top of the merge, stamping `src-tauri/tauri.conf.json`, `CORE_VERSION` in `src/modules/workspaceRegistry.tsx`, and every `includedIn: null` field in `updates/registry.json`. The local `main` is therefore behind by at least one commit the moment the merge completes. An agent isolated in a worktree must not `cd` into the primary clone; use `git -C <path>` for read-only checks and ask before pulling. If the pull would not fast-forward, report it instead of rebasing or merging someone else's checkout.
+- **The installed desktop app.** `/Applications/FRAUDE Terminal.app` (macOS) keeps running the version it was installed with. Neither a merge nor a published release replaces it, so a fix that "did not work" is often just an older app. Compare the two versions and say so when they differ:
+  - installed: `defaults read "/Applications/FRAUDE Terminal.app/Contents/Info.plist" CFBundleShortVersionString`
+  - released: `gh release view --json tagName -q .tagName`
+  - new build: `releases/latest/download/FRAUDE-Terminal_macos_arm64.dmg`, Windows `…/FRAUDE-Terminal_windows_x64-setup.exe`
+
+A version number in the repository is not evidence of what is running. State the checked-out version and the installed version separately when either matters to the task.
+
 ## Rust/Cargo build artifacts
 
 - `core`, `server`, and `src-tauri` share the repository-root `target/` directory through `.cargo/config.toml`. Do not set `CARGO_TARGET_DIR` or create per-crate target directories.
