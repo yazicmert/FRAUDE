@@ -825,6 +825,229 @@ table.data td {
 .muted { color: var(--dim); }
 .small { font-size: 12.5px; }
 
+/* ── Mobil gezinme ── */
+/* Menü düğmesi yalnız dar ekranda; geniş ekranda bağlantılar zaten satırda. */
+.nav-toggle { display: none; }
+
+.nav-burger {
+  display: grid;
+  gap: 4px;
+  width: 18px;
+}
+.nav-burger i {
+  display: block;
+  height: 1.5px;
+  background: var(--paper);
+  border-radius: 1px;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.nav-burger-x i:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+.nav-burger-x i:nth-child(2) { opacity: 0; }
+.nav-burger-x i:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+
+.nav-panel { display: none; }
+.nav-scrim { display: none; }
+
+/* ── Ürün sekmeleri (kahramanın altındaki ekran görüntüsü) ── */
+.ps-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ps-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.ps-tab:hover { color: var(--paper); border-color: var(--rule-2); }
+
+.ps-tab-on {
+  color: var(--ink);
+  background: var(--up);
+  border-color: var(--up);
+}
+.ps-tab-on:hover { color: var(--ink); }
+
+.ps-tab-code {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.ps-frame {
+  border: 1px solid var(--rule-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+.ps-frame img { display: block; width: 100%; height: auto; }
+
+.ps-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.ps-caption a { color: var(--up); }
+
+/* ── Kullanım akışı ── */
+.lp-flow { list-style: none; display: grid; gap: 64px; }
+
+.lp-flow-item {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: center;
+}
+
+/* Sıradaki ikinci adım aynalanır; okuma tek sütuna hapsolmasın. */
+.lp-flow-item:nth-child(even) .lp-flow-copy { order: 2; }
+
+.lp-flow-n {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--up);
+  margin-bottom: 12px;
+}
+
+.lp-flow-copy h3 {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.lp-flow-copy p { font-size: 14.5px; line-height: 1.75; color: var(--dim); }
+
+.lp-flow-link {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dimmer);
+}
+.lp-flow-link:hover { color: var(--up); }
+
+.lp-flow-shot {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+.lp-flow-shot img { display: block; width: 100%; height: auto; }
+
+/* ── Erişim ── */
+/* Fiyatın kendisi bir rakam değil, tek kelime — o yüzden başlık gibi büyür. */
+.lp-price { font-size: clamp(38px, 7vw, 64px); }
+
+.lp-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.lp-included { list-style: none; display: grid; gap: 13px; }
+
+.lp-included li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.lp-included li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--up);
+  font-family: var(--mono);
+}
+
+.lp-access-why {
+  padding: 26px 28px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--ink-1);
+}
+.lp-access-why h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.lp-access-why p {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--dim);
+  margin-bottom: 20px;
+}
+
+/* ── SSS ── */
+.lp-faq { display: grid; border-top: 1px solid var(--rule); }
+
+.lp-faq details { border-bottom: 1px solid var(--rule); }
+
+.lp-faq summary {
+  padding: 20px 34px 20px 0;
+  position: relative;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  list-style: none;
+}
+.lp-faq summary::-webkit-details-marker { display: none; }
+
+.lp-faq summary::after {
+  content: '+';
+  position: absolute;
+  right: 4px;
+  top: 18px;
+  font-family: var(--mono);
+  font-size: 19px;
+  color: var(--up);
+}
+.lp-faq details[open] summary::after { content: '−'; }
+
+.lp-faq summary:focus-visible { outline: 2px solid var(--up); outline-offset: 3px; }
+
+.lp-faq p {
+  padding: 0 34px 22px 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--dim);
+}
+
+/* Kahramandaki ikincil platform bağlantısı — butonla yarışmaz. */
+.lp-alt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--dim);
+  align-self: center;
+}
+.lp-alt:hover { color: var(--up); }
+
+.btn-lg { padding: 13px 26px; font-size: 14px; }
+
 /* ── Modül ayrıntı sayfası (/modul/<slug>) ── */
 /* Sayfa geniş; okuma sütunu dar. Ekran görüntüsü tek başına tam genişliği
    kullanır, yoksa uygulamanın arayüzü küçülüp okunmaz hâle geliyor. */
@@ -1073,11 +1296,72 @@ table.data td {
     padding-bottom: 72px;
   }
   .lp-lead { max-width: none; }
+
+  /* Akış ve erişim iki sütundan tek sütuna; aynalama da iptal. */
+  .lp-flow-item { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .lp-flow-item:nth-child(even) .lp-flow-copy { order: 0; }
+  .lp-flow { gap: 52px; }
+  .lp-access { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+
+/* Gezinme bağlantıları satıra sığmamaya başladığında menüye katlanır. */
+@media (max-width: 860px) {
+  .site-nav .links { display: none; }
+  .nav-wide { display: none; }
+  .nav-toggle {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--rule-2);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .nav-toggle:focus-visible { outline: 2px solid var(--up); outline-offset: 2px; }
+
+  .nav-panel {
+    display: grid;
+    gap: 2px;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    max-height: calc(100dvh - 56px);
+    overflow-y: auto;
+    padding: 14px 16px 22px;
+    background: var(--ink);
+    border-bottom: 1px solid var(--rule-2);
+    z-index: 60;
+  }
+  .nav-panel[hidden] { display: none; }
+
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 56px 0 0;
+    background: rgba(6, 8, 11, 0.86);
+    z-index: 55;
+  }
+
+  .nav-panel a {
+    padding: 13px 4px;
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--paper);
+    cursor: pointer;
+  }
+  .nav-panel hr { border: 0; border-top: 1px solid var(--rule); margin: 8px 0; }
+  .nav-panel-cta {
+    margin-top: 12px;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 @media (max-width: 640px) {
-  .site-nav { gap: 12px; padding: 11px 16px; }
-  .site-nav .links { display: none; }
+  .site-nav { gap: 10px; padding: 11px 16px; }
   .lp-hero { padding: 118px 18px 60px; }
   .lp-section { padding: 68px 18px; }
   .lp-download { padding: 68px 18px 84px; }
@@ -1094,6 +1378,19 @@ table.data td {
   .term-rsi, .term-rsi-h { display: none; }
   .term-kap-txt { display: none; }
   .page { padding: 96px 18px 48px; }
+
+  /* Kahramanda çağrı tam genişlik, ikincil bağlantı altına iner. */
+  .lp-ctas { flex-direction: column; align-items: stretch; gap: 14px; }
+  .lp-ctas .lp-alt { align-self: flex-start; }
+  .lp-ctas-center { align-items: center; }
+
+  .ps-tabs { gap: 6px; }
+  .ps-tab { padding: 7px 11px; font-size: 11.5px; }
+  .lp-flow { gap: 44px; }
+  .lp-price { font-size: 44px; }
+  .lp-access-why { padding: 22px 20px; }
+  .lp-faq summary { font-size: 14px; padding-right: 28px; }
+  .lp-faq p { padding-right: 0; }
 
   .md { padding: 96px 18px 64px; }
   .md-head { gap: 14px; }
