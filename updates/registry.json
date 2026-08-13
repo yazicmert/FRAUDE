@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-forum-dolar-anma-tamamlamasi",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Forumda $ yazınca hisse listesi açılıyor, her harfte süzülüyor",
+        "en": "Typing $ in the forum opens a ticker list that narrows on every keystroke"
+      },
+      "summary": {
+        "tr": "Forumda hisse etiketlemenin iki yolu vardı: gövdeye kodu elle yazmak ya da ayrı \"Hisse etiketle\" kutusunu açıp aramak. İlki kodu ezbere bilmeyi gerektiriyordu — TUPRS mi TUPRAS mı, ISCTR mi ISBTR mi — ve yanlış yazılan kod hiçbir uyarı vermeden sessizce etiket olmuyordu. İkincisi ise yazma akışını bölüyordu.\n\nArtık gövdeye $ yazıldığı anda hisse listesi açılıyor ve yazılan her harfte BIST evreninde süzülüyor. Eşleşme hem koda hem şirket adına bakıyor: \"$tü\" TUPRS ve TURSG'yi de getiriyor, \"$türk\" ise TTRAK ve THYAO gibi adında geçenleri de. Sıralama önce kodla başlayanları, sonra adla başlayanları, en sonda içinde geçenleri veriyor. ↑↓ ile geziliyor, Enter ya da Tab seçiyor, Esc kapatıyor; seçim yarım anmayı geçerli kodun tamamına çeviriyor, böylece gönderi kendiliğinden etiketleniyor.\n\nListe hem yeni konu/yanıt kutusunda hem de kendi gönderini düzenleme kutusunda çalışıyor. $ yalnız sözcük başında sayılıyor; \"3$\" gibi tutarlar ya da e-posta benzeri diziler listeyi açmıyor. ⌘/Ctrl + Enter ile gönderme kısayolu liste açıkken de gönderiyor.",
+        "en": "There were two ways to tag a ticker in the forum: type the code into the body from memory, or open the separate \"Tag a ticker\" box and search there. The first needed you to know the code exactly — TUPRS or TUPRAS, ISCTR or ISBTR — and a mistyped code silently failed to become a tag. The second broke the flow of writing.\n\nNow typing $ in the body opens a ticker list that narrows across the BIST universe on every keystroke. Matching looks at both the code and the company name: \"$tu\" brings up TUPRS and TURSG, and \"$turk\" also surfaces names like TTRAK and THYAO. Results are ordered code-prefix first, then name-prefix, then anything containing the query. Browse with ↑↓, insert with Enter or Tab, dismiss with Esc; accepting rewrites the half-typed mention into the full valid code, so the post is tagged automatically.\n\nThe list works both in the new post/reply box and when editing your own post. The $ counts only at the start of a word, so amounts like \"3$\" or email-like strings do not open it. The ⌘/Ctrl + Enter send shortcut still posts while the list is open."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/forum/useTickerMention.ts",
+        "src/features/forum/forumApi.ts",
+        "src/features/forum/ForumComposer.tsx",
+        "src/features/forum/ForumPostCard.tsx",
+        "src/features/forum/Forum.css",
+        "src/api/i18n.ts"
+      ],
+      "agentPrompt": "Forum yazma kutusunda hisse etiketlemek, kodu ezbere bilmeyi gerektiriyor: kullanıcı gövdeye $THYAO yazıyor, yanlış yazarsa hiçbir uyarı olmadan etiket oluşmuyor. Ayrı bir \"Hisse etiketle\" kutusu var ama yazma akışını bölüyor. Amaç: gövdeye $ yazıldığı anda hisse listesi açılsın ve yazılan her harfte süzülsün.\n\nAdımlar:\n\n1. Forum veri katmanındaki (gövdedeki $KOD anmalarını yakalayan modül; forumApi ya da eşdeğeri) mevcut anma yakalayıcısının yanına, İMLECİN SOLUNDA yazılmakta olan yarım anmayı bulan bir yardımcı ekle. Bu yakalayıcı, tamamlanmış anmayı bulan mevcut düzenli ifadeden farklı olmalı: henüz geçerli olmayan yarım girdiyi ve şirket adı aramak için Türkçe harfleri de kabul etsin. Sigil ($ ve #) YALNIZ sözcük başında sayılsın — metin başı ya da boşluk/açan ayraç sonrası — ki \"3$\" gibi tutarlar veya e-posta benzeri diziler listeyi açmasın. Yardımcı; sigilin başlangıç dizinini, imlecin konumunu, hangi sigilin yazıldığını ve sorgu metnini döndürsün.\n\n2. Bu davranışı bir hook'ta topla (birden çok kutu aynı anda açık olabilir: konu, yanıt, düzenleme). Hook şunları versin: listenin açık olup olmadığı, süzülmüş satırlar, seçili satır dizini, textarea'nın onChange/onSelect akışından çağrılacak bir eşitleme işlevi, liste açıkken tuşu tüketen bir onKeyDown işleyicisi, seçme ve kapatma.\n\n3. Hisse evrenini panonun anlık görüntüsünden çek ve modül düzeyinde TEK bir istekte paylaştır — her kutu ayrı istek atmasın. İstek başarısız olursa bir süre (ör. 30 sn) yeniden denemeyi durdur; aksi hâlde her harfte yeni istek gider. Veri gelmezse elle yazmak yine çalışmalı.\n\n4. Süzme hem koda hem şirket adına baksın ve uygulamadaki mevcut arama normalleştirmesini kullansın (aksan + Türkçe ı/i düzleştirmesi). Sıralama: önce kodla başlayanlar, sonra adla başlayanlar, en sonda içinde geçenler; liste 8 satırla sınırlı olsun. Sigil'den hemen sonra, sorgu henüz boşken de liste açılsın.\n\n5. Klavye: ↑↓ gezinsin, Enter ve Tab seçsin, Esc kapatsın. Esc ile kapatılan anma, imleç oradan ayrılana kadar yeniden açılmasın. Gönderme kısayolu (⌘/Ctrl + Enter) liste açıkken de gönderiyor olmalı — anma işleyicisinden ÖNCE denetlenmeli.\n\n6. Seçim yapıldığında yarım anma, kullanıcının yazdığı sigil korunarak geçerli kodun tamamına çevrilsin, peşine bir boşluk konsun ve imleç oraya taşınsın. Böylece mevcut otomatik etiket çıkarımı gönderiyi kendiliğinden etiketler.\n\n7. Listeyi hem yeni gönderi/yanıt kutusuna hem de kendi gönderini düzenleme kutusuna bağla. Textarea'yı konumlandırma çerçevesi olacak bir sarmalayıcıya al ve listeyi kutunun hemen altına yasla. Satır seçimi mousedown üzerinde ve varsayılan davranış engellenerek yapılsın; aksi hâlde blur, tıklama işlenmeden listeyi kapatır.\n\n8. Liste altına klavye ipucunu yazan bir satır ekle ve metni arayüz sözlüğüne TR ve EN olarak koy. Kılavuz ekranındaki Forum bölümüne de bu davranışı anlatan bir madde ekle (iki dilde).\n\nKabul: npx tsc --noEmit sıfır hatayla geçmeli, npx vite build temiz olmalı. Uygulamada foruma $ yazınca liste açılmalı, harf ekledikçe daralmalı; Enter seçince gövdede $KOD oluşmalı ve gönderi etiketleri arasında görünmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-guncellemeler-ekrani-cokmesi",
       "date": "2026-08-14",
       "author": "yazicmert",
