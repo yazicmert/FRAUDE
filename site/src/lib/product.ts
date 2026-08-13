@@ -179,8 +179,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             en: 'Narrow by source tab: KAP, SPK, Research, News, Consensus — each tab shows its record count.',
           },
           {
-            tr: 'Şirket odağı: bir hisse kodu yazıp odaklandığınızda o şirketin kayıtları canlı çekilir.',
-            en: 'Company focus: type a ticker and focus, and that company’s records are fetched live.',
+            tr: 'Şirket odağı: bir hisse kodu yazıp odaklandığınızda o şirketin kayıtları o anda kaynaklardan çekilir.',
+            en: 'Company focus: type a ticker and focus, and that company’s records are fetched from the sources on the spot.',
           },
           {
             tr: 'Her satırda kaynak künyesi ve ilgili hisse kodları durur; belgeyi uygulamanın içindeki okuyucuda açarsınız.',
@@ -264,8 +264,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         slug: 'halka-arz',
         name: { tr: 'Halka Arz', en: 'IPOs' },
         desc: {
-          tr: 'Canlı ve taslak halka arz takibi.',
-          en: 'Live and draft IPO tracking.',
+          tr: 'Aktif ve taslak halka arz takibi.',
+          en: 'Active and draft IPO tracking.',
         },
         lead: {
           tr: 'SPK onayından işlem gününe kadar tek künye.',
@@ -314,8 +314,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         slug: 'izleme-radari',
         name: { tr: 'İzleme Radarı', en: 'Monitor Radar' },
         desc: {
-          tr: 'Fiyat ve bildirim uyarıları için canlı izleme radarı.',
-          en: 'Live radar for price and disclosure alerts.',
+          tr: 'Fiyat ve bildirim uyarıları için arka planda çalışan izleme radarı.',
+          en: 'A background radar for price and disclosure alerts.',
         },
         lead: {
           tr: 'Takip listenizin KAP bildirimlerini arka planda tarar.',
@@ -417,8 +417,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         slug: 'emtia',
         name: { tr: 'Emtia & Değerli Metaller', en: 'Commodities & Metals' },
         desc: {
-          tr: 'Ons/gram altın, gümüş, petrol ve sanayi metalleri için canlı ısı haritası ve hesaplayıcı.',
-          en: 'Live heatmap, gainers and converter for gold, silver, oil and industrial metals.',
+          tr: 'Ons/gram altın, gümüş, petrol ve sanayi metalleri için ısı haritası ve hesaplayıcı.',
+          en: 'Heatmap, gainers and converter for gold, silver, oil and industrial metals.',
         },
         lead: {
           tr: 'Altın, gümüş, enerji ve sanayi metali tek panelde.',
