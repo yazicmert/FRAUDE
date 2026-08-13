@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::domain::{
     AiKeyRecord, AiRequest, AiResponse, DashboardSnapshot, FqlResponse, KapAnnouncement, KapFilter,
@@ -482,9 +482,11 @@ pub async fn get_monitor_state(
 /// Frontend, watchlist her değiştiğinde bunu çağırır.
 #[tauri::command]
 pub async fn sync_monitor_tickers(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     tickers: Vec<String>,
 ) -> Result<crate::monitor::MonitorStateView, String> {
+    let mut added = false;
     let mut normalized: Vec<String> = tickers
         .into_iter()
         .map(|t| t.trim().trim_end_matches(".IS").to_uppercase())
@@ -509,8 +511,24 @@ pub async fn sync_monitor_tickers(
         }
         runtime.config.tickers = normalized;
         crate::monitor::save(&runtime);
+        added = true;
     }
-    Ok(runtime.view())
+    let view = runtime.view();
+    drop(runtime);
+
+    // Listeye yeni hisse girdiyse turu BEKLETME: kullanıcı hisseyi izlemeye
+    // aldığı an bildirimleri gelsin. Tur kilitli çalışır (monitor_cycle_lock),
+    // yani arka plan döngüsüyle çakışmaz; yeni hisse ilk turda yalnız
+    // tohumlanır (geçmiş bildirimler uyarı olarak yağmaz), sonraki turda
+    // gerçek yenilikler uyarıya döner.
+    if added {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = handle.state::<AppState>();
+            crate::run_monitor_and_notify(&handle, &state).await;
+        });
+    }
+    Ok(view)
 }
 
 /// İzleme yapılandırmasını günceller (açık/kapalı, aralık, ajan, OS bildirimi).

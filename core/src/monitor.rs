@@ -20,6 +20,17 @@ pub const EVENT_OWNERSHIP: &str = "ownership";
 pub const EVENT_BUSINESS: &str = "business";
 pub const EVENT_CAPITAL: &str = "capital";
 pub const EVENT_OTHER: &str = "other";
+/// Analist raporu: KAP olayı değil ama izlenen hissede takip edilesi bir
+/// gelişme (tavsiye/hedef fiyat değişebilir).
+pub const EVENT_REPORT: &str = "report";
+
+/// Rapor uyarısının şiddeti. Materyal eşiğin (6) hemen üstünde: radara ve
+/// rozete girer, ama ortaklık (9) ve iş ilişkisi (7) olaylarını geri itmez.
+const REPORT_SEVERITY: u8 = 6;
+
+/// Rapor arşivi tazeleme kapısının anahtarı. Hisse kodu OLAMAYACAK bir dize
+/// seçilir: kapı hisse başına değil, tur başına tutulur.
+const REPORTS_GATE_KEY: &str = "__reports__";
 
 /// Materyal olay eşiği: ortaklık (8-9), iş ilişkisi (7) ve sermaye (6)
 /// olayları bu eşiğin üstündedir. Yalnızca materyal olaylar uyarıya çevrilir,
@@ -31,6 +42,49 @@ pub const MATERIAL_SEVERITY: u8 = 6;
 const MAX_ALERTS: usize = 200;
 pub const DEFAULT_INTERVAL_SECS: u64 = 20 * 60;
 const MIN_INTERVAL_SECS: u64 = 5 * 60;
+
+/// Yoğun saatlerde hedeflenen üst sınır. Kullanıcının ayarı bundan sıksa ona
+/// dokunulmaz; seyrekse yoğun saatlerde buraya çekilir.
+///
+/// Neden: bildirimlerin neredeyse tamamı iş günü gündüz–akşam saatlerinde
+/// yayımlanıyor (ölçüm: 2026-08-06/13 arası KAP akışında gece saatlerinde
+/// neredeyse hiç kayıt yok, 18:00–21:00 arası yoğun). Sabit 20 dakika, gündüz
+/// gereksiz yavaş, gece gereksiz sıktı.
+const BUSY_INTERVAL_CAP_SECS: u64 = 10 * 60;
+
+/// Sakin saatlerde aralık bu katsayıyla seyrekleşir.
+const QUIET_INTERVAL_FACTOR: u64 = 4;
+
+/// Sakin saatlerde bile en fazla bu kadar beklenir (gece yayımlanan bir
+/// bildirim sabaha kadar bekletilmesin).
+const QUIET_INTERVAL_CAP_SECS: u64 = 2 * 60 * 60;
+
+/// Bildirim akışının yoğun olduğu saat aralığı (yerel saat, iş günleri).
+const BUSY_HOUR_START: u32 = 8;
+const BUSY_HOUR_END: u32 = 23;
+
+/// O an için beklenecek süre. Yoğun saatlerde sık, sakin saatlerde seyrek.
+///
+/// Toplam istek sayısını patlatmadan tazeliği artırır: sabit 20 dakikada günde
+/// 72 tur olurken, bu bölüşümle yoğun 15 saatte 90, sakin 9 saatte 5 tur olur —
+/// istekler bildirimlerin gerçekten yayımlandığı saatlere kayar.
+pub fn effective_interval(configured_secs: u64, now: chrono::DateTime<chrono::Local>) -> u64 {
+    use chrono::{Datelike, Timelike, Weekday};
+
+    let weekday = !matches!(now.weekday(), Weekday::Sat | Weekday::Sun);
+    let hour = now.hour();
+    let busy = weekday && (BUSY_HOUR_START..BUSY_HOUR_END).contains(&hour);
+
+    if busy {
+        clamp_interval(configured_secs.min(BUSY_INTERVAL_CAP_SECS))
+    } else {
+        clamp_interval(
+            configured_secs
+                .saturating_mul(QUIET_INTERVAL_FACTOR)
+                .min(QUIET_INTERVAL_CAP_SECS),
+        )
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MonitorConfig {
@@ -99,6 +153,13 @@ pub struct MonitorRuntime {
     /// İş Yatırım'ı günde bir kereden fazla yormamak için gate olarak kullanılır.
     #[serde(default)]
     pub shareholder_checked: std::collections::HashMap<String, String>,
+    /// Ticker → analist raporlarının en son tarandığı tarih (YYYY-MM-DD).
+    ///
+    /// Raporlar kurum kurum sayfa gezerek toplanıyor; her turda yapmak hem
+    /// yavaş hem kaynaklara kaba olurdu. Rapor akışı gün içinde birkaç kez
+    /// değiştiği için günde bir tur yeterli — ortaklık kontrolüyle aynı kapı.
+    #[serde(default)]
+    pub reports_checked: std::collections::HashMap<String, String>,
 }
 
 impl MonitorRuntime {
@@ -257,6 +318,7 @@ struct CycleInputs {
     seen: HashSet<String>,
     baselined: HashSet<String>,
     shareholder_checked: std::collections::HashMap<String, String>,
+    reports_checked: std::collections::HashMap<String, String>,
 }
 
 /// Bir izleme turu çalıştırır: yeni KAP olaylarını bulur, sınıflar, yorumlar,
@@ -292,14 +354,40 @@ pub async fn run_cycle(state: &crate::AppState) -> Vec<MonitorAlert> {
             seen: runtime.seen_keys.clone(),
             baselined: runtime.baselined.clone(),
             shareholder_checked: runtime.shareholder_checked.clone(),
+            reports_checked: runtime.reports_checked.clone(),
         }
     };
 
     let mut seen = inputs.seen;
     let mut baselined = inputs.baselined;
     let mut shareholder_checked = inputs.shareholder_checked;
+    let mut reports_checked = inputs.reports_checked;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let mut new_alerts: Vec<MonitorAlert> = Vec::new();
+
+    // Analist rapor arşivi tur başına EN FAZLA BİR KEZ tazelenir; hisse
+    // döngüsünde yalnız okunur. Kaynaklar kurum kurum sayfa gezdiği için
+    // hisse başına tazelemek aynı sayfaları N kez indirmek olurdu. Günde bir
+    // tur yeterli: rapor akışı gün içinde birkaç kez değişir.
+    //
+    // Anahtar tek: "__reports__". Hisse başına kapı tutmak, listeye yeni
+    // hisse eklendiğinde arşivi gereksiz yere yeniden taratırdı.
+    let report_archive: Option<Vec<crate::research_reports::AnalystReport>> = if reports_checked
+        .get(REPORTS_GATE_KEY)
+        .map(String::as_str)
+        != Some(today.as_str())
+    {
+        let (_, errors) = crate::research_reports::refresh(&state.http, false).await;
+        if errors.len() == crate::research_reports::SOURCES.len() {
+            // Kaynakların TAMAMI düştü: bugün tekrar denensin, kapıyı kapatma.
+            None
+        } else {
+            reports_checked.insert(REPORTS_GATE_KEY.to_string(), today.clone());
+            Some(crate::research_reports::load().reports)
+        }
+    } else {
+        Some(crate::research_reports::load().reports)
+    };
 
     for ticker in &inputs.tickers {
         let ticker = ticker.trim().to_uppercase();
@@ -411,6 +499,39 @@ pub async fn run_cycle(state: &crate::AppState) -> Vec<MonitorAlert> {
             }
         }
 
+        // Analist raporları: izlenen hisseye ait YENİ rapor uyarıya döner.
+        // Tavsiye/hedef fiyat değişikliği, KAP bildirimi kadar takip edilesi.
+        //
+        // Arşiv tazelemesi ticker başına DEĞİL, tur başına bir kez yapılır
+        // (yukarıda): kaynaklar kurum kurum sayfa gezdiği için hisse başına
+        // tazelemek aynı sayfaları N kez indirmek olurdu. Burada yalnız
+        // tazelenmiş arşiv okunur — maliyeti yok.
+        if let Some(archive) = report_archive.as_ref() {
+            for report in archive.iter().filter(|r| r.tickers.contains(&ticker)) {
+                let key_str = stable_key(&ticker, &report.title);
+                if !seen.insert(key_str) {
+                    continue;
+                }
+                if is_baseline {
+                    continue; // ilk tarama: yalnız tohumla
+                }
+                new_alerts.push(MonitorAlert {
+                    id: format!("mon-rep-{}-{}", ticker, report.id),
+                    ticker: ticker.clone(),
+                    company: company.clone(),
+                    title: format!("{} · {}", report.broker, report.title),
+                    url: report.pdf_url.clone().unwrap_or_else(|| report.url.clone()),
+                    date: report.published.clone(),
+                    category: format!("Analist Raporu · {}", report.broker),
+                    event_type: EVENT_REPORT.to_string(),
+                    severity: REPORT_SEVERITY,
+                    ai_comment: None,
+                    created_at: now_iso(),
+                    read: false,
+                });
+            }
+        }
+
         baselined.insert(ticker.clone());
     }
 
@@ -438,6 +559,7 @@ pub async fn run_cycle(state: &crate::AppState) -> Vec<MonitorAlert> {
         runtime.seen_keys = seen;
         runtime.baselined = baselined;
         runtime.shareholder_checked = shareholder_checked;
+        runtime.reports_checked = reports_checked;
         for alert in new_alerts.iter().rev() {
             runtime.alerts.insert(0, alert.clone());
         }
@@ -459,6 +581,53 @@ pub fn clamp_interval(secs: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    /// Yoğun saatte aralık üst sınıra çekilmeli; kullanıcı daha sıkını
+    /// seçtiyse ona dokunulmamalı.
+    #[test]
+    fn busy_hours_tighten_the_interval() {
+        let busy = chrono::Local
+            .with_ymd_and_hms(2026, 8, 13, 14, 0, 0) // Perşembe 14:00
+            .unwrap();
+        assert_eq!(effective_interval(DEFAULT_INTERVAL_SECS, busy), BUSY_INTERVAL_CAP_SECS);
+        // Kullanıcının seçtiği 5 dakika korunur (üst sınır onu gevşetmez).
+        assert_eq!(effective_interval(MIN_INTERVAL_SECS, busy), MIN_INTERVAL_SECS);
+    }
+
+    /// Gece ve hafta sonu seyrekleşmeli, ama sonsuza kadar değil.
+    #[test]
+    fn quiet_hours_relax_the_interval() {
+        let night = chrono::Local
+            .with_ymd_and_hms(2026, 8, 13, 3, 0, 0) // Perşembe 03:00
+            .unwrap();
+        let weekend = chrono::Local
+            .with_ymd_and_hms(2026, 8, 15, 14, 0, 0) // Cumartesi 14:00
+            .unwrap();
+
+        let expected = DEFAULT_INTERVAL_SECS * QUIET_INTERVAL_FACTOR;
+        assert_eq!(effective_interval(DEFAULT_INTERVAL_SECS, night), expected);
+        assert_eq!(effective_interval(DEFAULT_INTERVAL_SECS, weekend), expected);
+        // Üst sınır: çok seyrek bir ayar bile 2 saati aşmamalı.
+        assert_eq!(
+            effective_interval(6 * 60 * 60, night),
+            QUIET_INTERVAL_CAP_SECS
+        );
+    }
+
+    /// Sınır saatleri: 08:00 yoğun sayılır, 23:00 sayılmaz.
+    #[test]
+    fn busy_window_boundaries() {
+        let at = |hour| {
+            chrono::Local
+                .with_ymd_and_hms(2026, 8, 13, hour, 0, 0)
+                .unwrap()
+        };
+        assert_eq!(effective_interval(DEFAULT_INTERVAL_SECS, at(8)), BUSY_INTERVAL_CAP_SECS);
+        assert_eq!(effective_interval(DEFAULT_INTERVAL_SECS, at(22)), BUSY_INTERVAL_CAP_SECS);
+        assert_ne!(effective_interval(DEFAULT_INTERVAL_SECS, at(23)), BUSY_INTERVAL_CAP_SECS);
+        assert_ne!(effective_interval(DEFAULT_INTERVAL_SECS, at(7)), BUSY_INTERVAL_CAP_SECS);
+    }
 
     #[test]
     fn classifies_ownership_share_sale_highest() {

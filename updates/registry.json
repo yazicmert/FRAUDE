@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-izleme-listesi-otomatik-cekim",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "İzleme listesi kendi kendine besleniyor: anında ilk çekim, analist raporları ve saate duyarlı tarama",
+        "en": "The watchlist now feeds itself: instant first fetch, analyst reports, and time-aware scanning"
+      },
+      "summary": {
+        "tr": "İzlemeye aldığın hissenin gelişmelerini görmek için tarama sırasını beklemek gerekiyordu ve izleme yalnız KAP bildirimlerine bakıyordu. Dört değişiklik.\n\nHisseyi listeye ekler eklemez tarama başlar; 20 dakikaya kadar bekleme yok. İlk turda geçmiş bildirimler uyarı olarak yağmaz, yalnız zemin alınır — sonrasında çıkan her yenilik uyarıya döner.\n\nAnalist raporları da izleniyor. İzlediğin hisseye yeni rapor çıktığında tavsiye ve hedef fiyat değişikliğini radardan görürsün; rapor arşivi tur başına bir kez tazelenir, hisse başına değil — kurum sayfaları hisse sayısı kadar gezilmez.\n\nTarama sıklığı saate duyarlı. Bildirimlerin neredeyse tamamı iş günü 08:00–23:00 arasında yayımlanıyor; tarama o saatlerde sıklaşıyor, gece ve hafta sonu seyrekleşiyor. İstek sayısı artmadan tazelik artıyor: istekler bildirimlerin gerçekten çıktığı saatlere kayıyor. Kendi seçtiğin aralık daha sıksa ona dokunulmaz.\n\nİzleme listesi artık hesaba da yazılıyor. Sunucudaki bildirim işi bu listeye göre süzüyor, yani uygulama kapalıyken de aynı hisseler için e-posta gelir — listeyi iki ayrı yerde işaretlemek gerekmiyor.",
+        "en": "Seeing what happened to a ticker you had just started watching meant waiting for the next scan, and watching only covered KAP disclosures. Four changes.\n\nA scan now starts the moment you add a ticker — no waiting up to twenty minutes. The first pass does not flood you with past disclosures; it only takes a baseline, and everything that appears afterwards becomes an alert.\n\nAnalyst reports are watched too. When a new report lands on a ticker you follow, the rating and target-price change shows up on the radar; the report archive is refreshed once per round rather than once per ticker, so broker pages are not walked N times.\n\nScan frequency follows the clock. Almost every disclosure is published on weekdays between 08:00 and 23:00, so scanning tightens during those hours and relaxes overnight and at weekends. Freshness improves without more requests — they simply move to the hours when disclosures actually appear. A tighter interval you chose yourself is left alone.\n\nThe watchlist is now stored on your account as well. The server-side notification job filters by that list, so the same tickers reach you by email while the app is closed — no need to mark them in two places."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-halka-arz-grafigi-uydurmuyor",
       "date": "2026-08-13",
       "author": "yazicmert",
