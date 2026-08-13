@@ -28,6 +28,9 @@ const STRINGS = {
     navStart: 'Başlangıç',
     navDownload: 'İndir',
     navUpdates: 'Güncellemeler',
+    navAccess: 'Erişim',
+    navMenu: 'Menü',
+    navMenuClose: 'Menüyü kapat',
     signIn: 'Giriş Yap',
     adminNav: 'Yönetim',
     downloadShort: '⬇ İndir',
@@ -38,9 +41,11 @@ const STRINGS = {
     heroEyebrow: '{n} modül · macOS + Windows · açık kaynak',
     heroLine1: 'KAP, TEFAS, izahname, bülten.',
     heroLine2: 'Hepsi tek terminalde.',
+    // Kahraman metni kasten kısa: mobilde çağrı butonu ekranın üstünde kalsın.
     heroLead:
-      "Borsa İstanbul'u izlemek için açtığınız onlarca sekme tek bir masaüstü uygulamasında toplanır: canlı fiyat, FQL ile tarama, bildirim radarı, TEFAS fon kırılımı ve kendi API anahtarınızla çalışan araştırma ajanları.",
-    heroNote: 'Lisans anahtarıyla açılır; talebinizi hesabınızdan iletirsiniz.',
+      "Borsa İstanbul'u izlemek için açtığınız onlarca sekme tek masaüstü uygulamasında toplanır.",
+    heroNote: 'Ücretsiz. Lisans anahtarı yalnızca erişim kapısıdır.',
+    heroSecondary: 'Windows sürümü',
 
     // Kahraman terminali
     termTitle: 'Teknik Tarayıcı',
@@ -91,7 +96,25 @@ const STRINGS = {
     p3t: 'Açık kaynak, ajanla katkı',
     p3x: 'Depoyu klonlar, değişikliği kendi AI ajanınızla geliştirir ve PR açarsınız. Güvenlik incelemesinden geçen katkı hem bu sitede hem uygulamanın içinde listelenir.',
 
-    // Adımlar
+    // Ürün — kahramanın altındaki sekmeli ekran görüntüsü
+    shotKicker: 'Uygulama',
+    shotTitle: 'Ekranın kendisi',
+    shotSub: 'Aşağıdakiler tanıtım çizimi değil; uygulamadan alınmış ekran görüntüleri.',
+    shotCaption: 'Veriler çekim anındaki canlı piyasadan.',
+    shotAll: 'Tüm modülleri gör',
+
+    // Akış — ürünün nasıl kullanıldığı
+    flowKicker: 'Kullanım',
+    flowTitle: 'Bir sabahın işi',
+    flowSub: 'Piyasa açılışından bildirim radarına kadar üç ekran.',
+    f1t: 'Önce tarayın',
+    f1x: 'FQL ile koşulu yazın — aşırı satım, ucuz değer, momentum. Eşleşen hisseler göstergeleriyle listelenir.',
+    f2t: 'Sonra derinleşin',
+    f2x: 'Bir hisseye takıldıysanız Bilgi Deposu KAP bildirimini, SPK bültenini, aracı kurum analizini ve haberi tek zaman çizgisinde önünüze koyar.',
+    f3t: 'Sonra radara bağlayın',
+    f3x: 'Takip listenizi radara verin; ortaklık değişimi ya da yeni sözleşme çıktığında yapay zeka yorumuyla haber verir.',
+
+    // Adımlar (kurulum)
     stepsKicker: 'Kurulum',
     stepsTitle: 'Üç adımda başlayın',
     stepsSub: 'İndirmeden ilk taramaya birkaç dakika.',
@@ -101,6 +124,35 @@ const STRINGS = {
     s2x: 'E-postanızla kaydolun ve bu siteden lisans talebinizi iletin.',
     s3t: 'Lisansı etkinleştirin',
     s3x: 'Onaylanan anahtarınızı uygulamaya girin; terminal tamamen açılır.',
+
+    // Erişim
+    accKicker: 'Erişim',
+    accTitle: 'Ücretsiz',
+    accSub: 'Ödeme yok, abonelik yok, deneme süresi yok.',
+    accWhyTitle: 'Peki lisans anahtarı neden var?',
+    accWhyBody:
+      'Uygulama veriyi resmî kaynakların kendi uçlarından çekiyor ve bu uçların hız sınırları var. Anahtar, kapasiteyi ve kötüye kullanımı yönetmek için duruyor — ücretlendirme için değil. Talebinizi hesabınızdan iletirsiniz, onaylandığında anahtar e-postanıza gelir.',
+    accY1: 'Uygulamanın tamamı, 16 modül',
+    accY2: 'macOS ve Windows',
+    accY3: 'Kaynak kodu açık, kendiniz derleyebilirsiniz',
+    accY4: 'Yapay zeka için kendi sağlayıcı anahtarınız',
+    accCta: 'Lisans talep et',
+
+    // SSS
+    faqKicker: 'Sık sorulanlar',
+    faqTitle: 'Muhtemelen bunu soracaksınız',
+    q1: 'Verilerim nerede duruyor?',
+    a1: 'Fiyat ve bildirim verisi kendi bilgisayarınızdaki yerel veritabanında. Portföyünüz, izleme listeniz ve taramalarınız da orada. Bunları bize göndermiyoruz.',
+    q2: 'Yapay zeka için para ödüyor muyum?',
+    a2: 'Bize değil. Kendi sağlayıcı anahtarınızı giriyorsunuz ve sorgularınız doğrudan o sağlayıcıya gidiyor; faturayı onlar kesiyor. Sağlayıcıyı istediğiniz zaman değiştirebilirsiniz.',
+    q3: 'Veriler nereden geliyor, güvenilir mi?',
+    a3: "KAP, SPK, TEFAS, Borsa İstanbul, İş Yatırım ve TCMB'nin kendi uçlarından. Araya veri satan bir katman girmiyor ve her satırın kaynağına ekrandan gidebiliyorsunuz. Haber tarafı GDELT ve Google News gibi herkese açık kaynaklardan; modül bunu ekranında yazıyor.",
+    q4: 'Yatırım tavsiyesi veriyor mu?',
+    a4: 'Hayır. FRAUDE veriyi toplar, tarar ve gösterir; kararı siz verirsiniz. Yapay zeka yorumları da bir görüştür, tavsiye değildir.',
+    q5: 'Hangi platformlarda çalışıyor?',
+    a5: 'macOS ve Windows masaüstü. Uygulama Tauri ile paketleniyor, veri katmanı Rust.',
+    q6: 'Katkıda bulunabilir miyim?',
+    a6: 'Evet. Depo açık; değişikliği kendi yapay zeka ajanınızla geliştirip PR açabilirsiniz. Güvenlik incelemesinden geçen katkı hem bu sitede hem uygulamanın Güncellemeler sekmesinde listelenir.',
 
     // İndir bandı
     dlTitle: "FRAUDE'yi masaüstünüze kurun",
@@ -341,6 +393,9 @@ const STRINGS = {
     navStart: 'Getting Started',
     navDownload: 'Download',
     navUpdates: 'Updates',
+    navAccess: 'Access',
+    navMenu: 'Menu',
+    navMenuClose: 'Close menu',
     signIn: 'Sign In',
     adminNav: 'Admin',
     downloadShort: '⬇ Download',
@@ -351,8 +406,9 @@ const STRINGS = {
     heroLine1: 'Filings, funds, prospectuses, bulletins.',
     heroLine2: 'One terminal.',
     heroLead:
-      'The dozen tabs you keep open to follow Borsa Istanbul collapse into a single desktop app: live prices, FQL screening, a disclosure radar, TEFAS fund breakdowns and research agents that run on your own API key.',
-    heroNote: 'Unlocked with a license key; request yours from your account.',
+      'The dozen tabs you keep open to follow Borsa İstanbul collapse into a single desktop app.',
+    heroNote: 'Free. The license key is an access gate, nothing more.',
+    heroSecondary: 'Windows build',
 
     termTitle: 'Technical Screener',
     termSample: 'sample scan',
@@ -398,6 +454,22 @@ const STRINGS = {
     p3t: 'Open source, built with agents',
     p3x: 'Clone the repository, build your change with your own AI agent and open a PR. Once it passes security review, your contribution is listed both on this site and inside the app.',
 
+    shotKicker: 'The app',
+    shotTitle: 'The screen itself',
+    shotSub: 'Not illustrations — screenshots taken from the app.',
+    shotCaption: 'The data is the live market at capture time.',
+    shotAll: 'See every module',
+
+    flowKicker: 'In use',
+    flowTitle: 'One morning’s work',
+    flowSub: 'Three screens, from the opening bell to the disclosure radar.',
+    f1t: 'Screen first',
+    f1x: 'Write the condition in FQL — oversold, cheap value, momentum. Matching stocks are listed with their indicators.',
+    f2t: 'Then go deeper',
+    f2x: 'When one name catches your eye, the Knowledge Base puts its KAP disclosure, SPK bulletin, broker research and news on a single timeline.',
+    f3t: 'Then hand it to the radar',
+    f3x: 'Give the radar your watchlist; when ownership shifts or a new contract lands, it tells you — with an AI reading attached.',
+
     stepsKicker: 'Setup',
     stepsTitle: 'Start in three steps',
     stepsSub: 'A few minutes from download to your first scan.',
@@ -407,6 +479,33 @@ const STRINGS = {
     s2x: 'Sign up with your email and submit a license request on this site.',
     s3t: 'Activate your license',
     s3x: 'Enter your approved key in the app; the terminal unlocks fully.',
+
+    accKicker: 'Access',
+    accTitle: 'Free',
+    accSub: 'No payment, no subscription, no trial period.',
+    accWhyTitle: 'Then why is there a license key?',
+    accWhyBody:
+      'The app reads data from the official sources’ own endpoints, and those endpoints have rate limits. The key exists to manage capacity and abuse — not to charge you. Request one from your account; once approved, it arrives by email.',
+    accY1: 'The whole app, all 16 modules',
+    accY2: 'macOS and Windows',
+    accY3: 'Source is open — build it yourself if you prefer',
+    accY4: 'Your own provider key for the AI features',
+    accCta: 'Request a license',
+
+    faqKicker: 'FAQ',
+    faqTitle: 'You’re probably about to ask',
+    q1: 'Where does my data live?',
+    a1: 'Price and disclosure data sit in a local database on your own machine, and so do your portfolio, watchlist and saved scans. We don’t ship any of it to ourselves.',
+    q2: 'Am I paying for the AI?',
+    a2: 'Not to us. You enter your own provider key and your queries go straight to that provider, who bills you. Switch providers whenever you like.',
+    q3: 'Where does the data come from — can I trust it?',
+    a3: 'From the endpoints of KAP, SPK, TEFAS, Borsa İstanbul, İş Yatırım and TCMB themselves. No data reseller sits in between, and you can reach any row’s source from the screen. News comes from public sources such as GDELT and Google News, and the module says so on screen.',
+    q4: 'Is this investment advice?',
+    a4: 'No. FRAUDE collects, screens and displays data; the decision is yours. AI readings are one opinion, not a recommendation.',
+    q5: 'Which platforms does it run on?',
+    a5: 'macOS and Windows desktop. The app is packaged with Tauri; the data layer is Rust.',
+    a6: 'Yes. The repository is open — build your change with your own AI agent and open a PR. Once it passes security review it is listed both on this site and in the app’s Updates tab.',
+    q6: 'Can I contribute?',
 
     dlTitle: 'Get FRAUDE on your desktop',
     dlSub: 'Access requires a license key; request one from your account if you don’t have it yet.',
