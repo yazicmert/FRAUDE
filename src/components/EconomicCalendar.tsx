@@ -10,6 +10,17 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 /** Yerel önbellek anahtarı; çevrimdışı açılışta takvim buradan gelir. */
 const CACHE_KEY = 'fraude-eco-calendar';
 
+/**
+ * Önbellek şeması sürümü. Olaya YENİ BİR ALAN eklendiğinde artırılır.
+ *
+ * Gerekçe: bu önbellek 6 saat boyunca arka uca hiç sormaz. Sürüm damgası
+ * olmadan, yükseltme yapan kullanıcı eski şemayla yazılmış kaydı görmeye
+ * devam eder — `source_url` eklendiğinde takvim satırları tam olarak bu
+ * yüzden gösterge sayfasına değil genel takvime gidiyordu. Sürümü eski olan
+ * kayıt artık yok sayılır ve veri anında yeniden çekilir.
+ */
+const CACHE_VERSION = 1;
+
 /** Yenileme aralığı. Backend de aynı süreyle önbelleklediği için daha sık
  *  sormanın karşılığı yok. */
 const REFRESH_MS = 6 * 60 * 60 * 1000;
@@ -114,13 +125,18 @@ function surprise(event: EconomicEvent): 'above' | 'below' | 'inline' | null {
   return actual > expected ? 'above' : 'below';
 }
 
-/** Önbellekten okunan takvim; bozuk kayıtta boş döner. */
+/**
+ * Önbellekten okunan takvim; bozuk ya da eski şemayla yazılmış kayıtta boş
+ * döner. Boş dönmesi "hemen yeniden çek" demektir.
+ */
 function readCache(): { savedAt: number; events: EconomicEvent[] } | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.events)) return null;
+    // Sürümsüz kayıt, alan damgası eklenmeden önce yazılmıştır.
+    if (parsed?.version !== CACHE_VERSION) return null;
     return parsed;
   } catch {
     return null;
@@ -203,7 +219,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
     setOffline(false);
     setLoading(false);
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: now, events: merged }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ version: CACHE_VERSION, savedAt: now, events: merged }));
     } catch {
       /* kota dolu: önbelleksiz devam */
     }

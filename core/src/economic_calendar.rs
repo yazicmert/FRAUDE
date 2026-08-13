@@ -37,6 +37,16 @@ const SITE_ROOT: &str = "https://tradingeconomics.com";
 const FALLBACK_SOURCE_URL: &str = CALENDAR_SOURCES[0];
 const CACHE_TTL_SECS: i64 = 6 * 60 * 60; // 6 saat
 const CACHE_FILE: &str = "economic_calendar.json";
+/// Önbellek şeması sürümü. Olaya YENİ BİR ALAN eklendiğinde artırılır.
+///
+/// Gerekçe: alanlar `serde(default)` ile okunduğu için eski önbellek dosyası
+/// sorunsuz çözümlenir — ama yeni alan boş gelir. Sürüm damgası olmadan,
+/// yükseltme yapan kullanıcı TTL dolana dek (6 saate kadar) alanı boş olan
+/// bayat kaydı görür: `source_url` eklendiğinde takvim satırları tam olarak
+/// bu yüzden gösterge sayfasına değil genel takvime gidiyordu. Sürümü eski
+/// olan dosya artık TAZE sayılmaz, yani kendiliğinden yeniden çekilir; yine
+/// de son çare verisi olarak elde tutulur (kaynaklar düşerse ekran boşalmasın).
+const CACHE_VERSION: u32 = 1;
 /// Geçici hatada tek bir yeniden deneme; kaynak başına toplam iki istek.
 const RETRY_DELAY: Duration = Duration::from_millis(800);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -266,6 +276,10 @@ fn titlecase_event(raw: &str) -> String {
 /// takvim sıfırdan çekilmek zorunda kalıyordu.
 #[derive(Clone, Serialize, Deserialize)]
 struct CalendarCache {
+    /// Yazıldığı şema sürümü. `default`: sürüm alanı eklenmeden önce yazılmış
+    /// dosyalar 0 okunur ve böylece kendiliğinden bayat sayılır.
+    #[serde(default)]
+    version: u32,
     fetched_at: i64,
     events: Vec<EconomicEvent>,
 }
@@ -292,6 +306,12 @@ fn is_fresh(fetched_at: i64, now: i64) -> bool {
     (0..CACHE_TTL_SECS).contains(&age)
 }
 
+/// Önbellek kaydı kullanılabilir mi: hem şeması güncel hem de süresi dolmamış
+/// olmalı. Sürümü eski olan kayıt yaşı ne olursa olsun yeniden çekilir.
+fn is_usable(entry: &CalendarCache, now: i64) -> bool {
+    entry.version == CACHE_VERSION && is_fresh(entry.fetched_at, now)
+}
+
 /// Belleği diskten doldurur (ilk çağrıda), sonra bellekten döner.
 fn load_cache() -> Option<CalendarCache> {
     let cache = CACHE.get_or_init(|| Mutex::new(None));
@@ -306,6 +326,7 @@ fn load_cache() -> Option<CalendarCache> {
 
 fn save_cache(events: &[EconomicEvent]) {
     let entry = CalendarCache {
+        version: CACHE_VERSION,
         fetched_at: now_secs(),
         events: events.to_vec(),
     };
@@ -382,7 +403,7 @@ async fn fetch_source(client: &reqwest::Client, url: &str) -> Option<Vec<Economi
 pub async fn get_economic_calendar(client: &reqwest::Client) -> Vec<EconomicEvent> {
     let cached = load_cache();
     if let Some(entry) = &cached {
-        if is_fresh(entry.fetched_at, now_secs()) {
+        if is_usable(entry, now_secs()) {
             return entry.events.clone();
         }
     }
@@ -431,15 +452,64 @@ mod tests {
         let events = parse_calendar_html(FIXTURE);
         assert!(!events.is_empty());
         let entry = CalendarCache {
+            version: CACHE_VERSION,
             fetched_at: 1_760_000_000,
             events: events.clone(),
         };
         let json = serde_json::to_string(&entry).expect("serileştirilemedi");
         let back: CalendarCache = serde_json::from_str(&json).expect("geri okunamadı");
         assert_eq!(back.fetched_at, entry.fetched_at);
+        assert_eq!(back.version, CACHE_VERSION);
         assert_eq!(back.events.len(), events.len());
         assert_eq!(back.events[0].event, events[0].event);
         assert_eq!(back.events[0].impact, events[0].impact);
+        assert_eq!(back.events[0].source_url, events[0].source_url);
+    }
+
+    /// Yükseltme senaryosu: `source_url` eklenmeden önce yazılmış önbellek
+    /// dosyası hâlâ OKUNABİLİR olmalı (son çare verisi), ama TAZE SAYILMAMALI.
+    /// Aksi hâlde yeni sürüme geçen kullanıcı, TTL dolana dek her satırı genel
+    /// takvime gönderen bir takvim görür — bu hata bir kez yaşandı.
+    #[test]
+    fn cache_written_before_source_url_is_never_considered_usable() {
+        // 0.1.27'nin yazdığı dosyanın biçimi: sürüm alanı yok, olaylarda
+        // source_url yok.
+        let legacy = r#"{
+            "fetched_at": 1760000000,
+            "events": [{
+                "date": "2026-08-10",
+                "time": "07:00 AM",
+                "event": "Sanayi Üretimi (Yıllık)",
+                "category": "industrial production",
+                "actual": "-1.4%",
+                "previous": "-0.1%",
+                "consensus": "",
+                "forecast": "2.4%",
+                "impact": "medium"
+            }]
+        }"#;
+
+        let entry: CalendarCache = serde_json::from_str(legacy).expect("eski dosya okunabilmeli");
+        assert_eq!(entry.version, 0, "sürümsüz dosya 0 okunmalı");
+        assert_eq!(entry.events.len(), 1, "olaylar son çare verisi olarak elde kalmalı");
+        assert!(entry.events[0].source_url.is_empty());
+
+        // Yaşı ne olursa olsun kullanılabilir sayılmamalı: taze görünen bir
+        // kayıt bile yeniden çekilmeli.
+        assert!(is_fresh(entry.fetched_at, entry.fetched_at + 60), "yaş ölçütü tek başına taze der");
+        assert!(!is_usable(&entry, entry.fetched_at + 60), "eski şema kullanılabilir sayılmamalı");
+    }
+
+    /// Güncel şemayla yazılmış kayıtta tek ölçüt yaştır.
+    #[test]
+    fn current_schema_cache_is_usable_while_fresh() {
+        let entry = CalendarCache {
+            version: CACHE_VERSION,
+            fetched_at: 1_760_000_000,
+            events: parse_calendar_html(FIXTURE),
+        };
+        assert!(is_usable(&entry, entry.fetched_at + 60), "taze ve güncel şema kullanılmalı");
+        assert!(!is_usable(&entry, entry.fetched_at + CACHE_TTL_SECS), "TTL dolunca kullanılmamalı");
     }
 
     /// Yedek kaynak GERÇEKTEN yedek mi? Ağ gerektirir, bu yüzden varsayılan
