@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { getSession } from '../auth/session';
-import { getDashboardSnapshot } from '../../api/tauriClient';
 import { normalizeSearch } from '../../components/symbolCatalog';
+import { loadTickerUniverse, useTickerMention } from './useTickerMention';
 import {
   createPost,
   forumErrorKey,
@@ -52,6 +52,7 @@ export default function ForumComposer({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mention = useTickerMention(setBody, textareaRef);
 
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -62,14 +63,9 @@ export default function ForumComposer({
   useEffect(() => {
     if (!tagOpen || universe.length > 0) return;
     let cancelled = false;
-    void getDashboardSnapshot()
-      .then((snap) => {
-        if (cancelled) return;
-        setUniverse((snap?.equities ?? []).map((e) => ({ ticker: e.ticker, name: e.name })));
-      })
-      .catch(() => {
-        /* öneri yoksa elle giriş yeterli */
-      });
+    void loadTickerUniverse().then((rows) => {
+      if (!cancelled) setUniverse(rows);
+    });
     return () => {
       cancelled = true;
     };
@@ -131,21 +127,49 @@ export default function ForumComposer({
 
   return (
     <div className={`frm-composer${compact ? ' compact' : ''}`}>
-      <textarea
-        ref={textareaRef}
-        className="frm-input"
-        value={body}
-        maxLength={MAX_BODY_LENGTH}
-        placeholder={placeholder ?? t('forumComposerPlaceholder')}
-        rows={compact ? 2 : 3}
-        onChange={(event) => setBody(event.target.value)}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            event.preventDefault();
-            void submit();
-          }
-        }}
-      />
+      <div className="frm-input-wrap">
+        <textarea
+          ref={textareaRef}
+          className="frm-input"
+          value={body}
+          maxLength={MAX_BODY_LENGTH}
+          placeholder={placeholder ?? t('forumComposerPlaceholder')}
+          rows={compact ? 2 : 3}
+          onChange={(event) => {
+            setBody(event.target.value);
+            mention.sync(event.target);
+          }}
+          onSelect={(event) => mention.sync(event.currentTarget)}
+          onBlur={() => mention.close()}
+          onKeyDown={(event) => {
+            // ⌘/Ctrl + Enter her zaman gönderir; anma listesi yalnız yalın tuşları yer.
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              event.preventDefault();
+              void submit();
+              return;
+            }
+            mention.handleKeyDown(event);
+          }}
+        />
+        {mention.open && (
+          <ul className="frm-suggest frm-mention">
+            {mention.items.map((row, index) => (
+              <li
+                key={row.ticker}
+                className={index === mention.activeIndex ? 'active' : ''}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  mention.accept(row);
+                }}
+              >
+                <strong>${row.ticker}</strong>
+                <span>{row.name}</span>
+              </li>
+            ))}
+            <li className="frm-mention-hint">{t('forumMentionHint')}</li>
+          </ul>
+        )}
+      </div>
 
       <div className="frm-composer-tags">
         {tickers.map((symbol) => {

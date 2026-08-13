@@ -90,6 +90,35 @@ export function extractTickers(body: string): string[] {
   return found;
 }
 
+/**
+ * Yazılmakta olan anma: imlecin hemen solundaki $/# ve arkasındaki harfler.
+ * TICKER_MENTION'dan farkı, henüz geçerli bir kod olmayan yarım girdiyi de
+ * (ve şirket adı aramak için Türkçe harfleri de) kabul etmesi — öneri listesi
+ * bunun üzerinden süzülür. Sigil yalnız sözcük başında sayılır ki "3$" gibi
+ * tutarlar ya da e-posta benzeri diziler listeyi açmasın.
+ */
+const MENTION_DRAFT = /(?:^|[\s([{<"'“‘])([$#])([\p{L}\p{N}^.=-]{0,15})$/u;
+
+export interface MentionDraft {
+  /** Sigil'in gövdedeki başlangıç dizini. */
+  start: number;
+  /** İmlecin konumu; anmanın bitişi. */
+  end: number;
+  /** Kullanıcının yazdığı sigil ($ ya da #); seçimde aynısı korunur. */
+  sigil: string;
+  /** Sigil'den sonra yazılan ham metin (boş olabilir). */
+  query: string;
+}
+
+/** İmlecin solunda yazılmakta olan $KOD anmasını döndürür, yoksa null. */
+export function findMentionDraft(body: string, caret: number): MentionDraft | null {
+  const end = Math.max(0, Math.min(caret, body.length));
+  const before = body.slice(0, end);
+  const match = MENTION_DRAFT.exec(before);
+  if (!match) return null;
+  return { start: end - match[1].length - match[2].length, end, sigil: match[1], query: match[2] };
+}
+
 export type BodyToken =
   | { kind: 'text'; value: string }
   | { kind: 'ticker'; value: string; symbol: string };

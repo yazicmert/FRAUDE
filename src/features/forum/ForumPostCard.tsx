@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../api/i18n';
 import ForumComposer from './ForumComposer';
+import { useTickerMention } from './useTickerMention';
 import {
   blockUser,
   deletePost,
@@ -93,6 +94,8 @@ export default function ForumPostCard({
   const [editDraft, setEditDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const editRef = useRef<HTMLTextAreaElement | null>(null);
+  const mention = useTickerMention((next) => setEditDraft(next), editRef);
 
   // Satır yayından ya da tazelemeden güncel gelince ekrandaki sayaçlar da
   // tazelenmeli: aksi hâlde başkasının beğenisi ilk çizimden sonra hiç
@@ -264,14 +267,41 @@ export default function ForumPostCard({
 
         {editDraft !== null ? (
           <div className="frm-edit">
-            <textarea
-              className="frm-input"
-              value={editDraft}
-              maxLength={MAX_BODY_LENGTH}
-              rows={3}
-              autoFocus
-              onChange={(event) => setEditDraft(event.target.value)}
-            />
+            <div className="frm-input-wrap">
+              <textarea
+                ref={editRef}
+                className="frm-input"
+                value={editDraft}
+                maxLength={MAX_BODY_LENGTH}
+                rows={3}
+                autoFocus
+                onChange={(event) => {
+                  setEditDraft(event.target.value);
+                  mention.sync(event.target);
+                }}
+                onSelect={(event) => mention.sync(event.currentTarget)}
+                onBlur={() => mention.close()}
+                onKeyDown={(event) => mention.handleKeyDown(event)}
+              />
+              {mention.open && (
+                <ul className="frm-suggest frm-mention">
+                  {mention.items.map((row, index) => (
+                    <li
+                      key={row.ticker}
+                      className={index === mention.activeIndex ? 'active' : ''}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        mention.accept(row);
+                      }}
+                    >
+                      <strong>${row.ticker}</strong>
+                      <span>{row.name}</span>
+                    </li>
+                  ))}
+                  <li className="frm-mention-hint">{t('forumMentionHint')}</li>
+                </ul>
+              )}
+            </div>
             <div className="frm-composer-actions">
               <button type="button" className="small-button" onClick={() => setEditDraft(null)}>
                 {t('forumCancel')}

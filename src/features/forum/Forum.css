@@ -164,6 +164,11 @@
   margin: 10px 0;
 }
 
+/* $ anma listesinin tutunduğu çerçeve. */
+.frm-input-wrap {
+  position: relative;
+}
+
 .frm-input {
   width: 100%;
   background: var(--bg-dark);
@@ -299,6 +304,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.frm-suggest li.active {
+  background: var(--bg-hover);
+}
+
+/* Gövdedeki $ anmasının listesi: kutunun hemen altına yaslanır. */
+.frm-mention {
+  width: min(340px, 100%);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.frm-mention-hint {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  margin-top: 2px;
+  cursor: default;
+}
+.frm-mention-hint:hover {
+  background: none;
 }
 
 .frm-composer-foot {
