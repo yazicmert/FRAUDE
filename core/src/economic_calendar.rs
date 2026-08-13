@@ -31,6 +31,10 @@ const CALENDAR_SOURCES: [&str; 2] = [
     "https://tradingeconomics.com/turkey/calendar",
     "https://tradingeconomics.com/calendar",
 ];
+/// Satır bağlantıları göreli (`/turkey/current-account`) geldiği için kök gerekir.
+const SITE_ROOT: &str = "https://tradingeconomics.com";
+/// Gösterge sayfası bulunamayan satırların düştüğü genel takvim.
+const FALLBACK_SOURCE_URL: &str = CALENDAR_SOURCES[0];
 const CACHE_TTL_SECS: i64 = 6 * 60 * 60; // 6 saat
 const CACHE_FILE: &str = "economic_calendar.json";
 /// Geçici hatada tek bir yeniden deneme; kaynak başına toplam iki istek.
@@ -67,6 +71,13 @@ pub struct EconomicEvent {
     pub forecast: String,
     /// Etki seviyesi.
     pub impact: Impact,
+    /// Göstergenin kaynak sayfası (TradingEconomics). Satır bir gösterge
+    /// sayfasına bağlanmıyorsa takvimin kendisine düşülür.
+    ///
+    /// `default`: alan eklenmeden önce yazılmış disk önbelleği hâlâ okunabilsin
+    /// diye — aksi hâlde eski dosya çözümlenemez ve takvim boş açılırdı.
+    #[serde(default)]
+    pub source_url: String,
 }
 
 /// Etki seviyesini `data-category` değerinden çıkarır. Buradaki adlar
@@ -94,6 +105,16 @@ fn category_impact(category: &str) -> Impact {
     }
 }
 
+/// Göreli takvim bağlantısını mutlak adrese çevirir; zaten mutlak olanı
+/// olduğu gibi bırakır (kaynak sayfa biçimi değişirse diye).
+fn absolute_url(href: &str) -> String {
+    let href = href.trim();
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return href.to_string();
+    }
+    format!("{SITE_ROOT}/{}", href.trim_start_matches('/'))
+}
+
 /// Bir elemanın metnini boşlukları sadeleştirerek döndürür.
 fn text_of(element: ElementRef<'_>) -> String {
     element.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
@@ -115,6 +136,8 @@ fn parse_calendar_html(html: &str) -> Vec<EconomicEvent> {
     let previous_sel = Selector::parse("#previous").unwrap();
     let consensus_sel = Selector::parse("#consensus").unwrap();
     let forecast_sel = Selector::parse("#forecast").unwrap();
+    // Satırın `data-url`'i yoksa olay adındaki bağlantıya düşülür.
+    let event_link_sel = Selector::parse("a.calendar-event").unwrap();
 
     // Tarih ilk hücrenin class'ında taşınır: class=' 2026-07-23'
     let date_re = Regex::new(r"\b(\d{4}-\d{2}-\d{2})\b").unwrap();
@@ -145,6 +168,22 @@ fn parse_calendar_html(html: &str) -> Vec<EconomicEvent> {
 
         let impact = category_impact(&category);
 
+        // Göstergenin kendi sayfası: önce satırın `data-url`'i, yoksa olay
+        // adındaki bağlantı. İkisi de yoksa takvim sayfasına düşülür ki
+        // tıklama her satırda bir yere gitsin.
+        let source_url = row
+            .value()
+            .attr("data-url")
+            .filter(|href| !href.trim().is_empty())
+            .or_else(|| {
+                row.select(&event_link_sel)
+                    .next()
+                    .and_then(|a| a.value().attr("href"))
+                    .filter(|href| !href.trim().is_empty())
+            })
+            .map(absolute_url)
+            .unwrap_or_else(|| FALLBACK_SOURCE_URL.to_string());
+
         events.push(EconomicEvent {
             date,
             time,
@@ -155,6 +194,7 @@ fn parse_calendar_html(html: &str) -> Vec<EconomicEvent> {
             consensus: cell(&consensus_sel),
             forecast: cell(&forecast_sel),
             impact,
+            source_url,
         });
     }
 
@@ -461,6 +501,42 @@ mod tests {
         assert_eq!(cari.consensus, "$-0.96B");
         assert_eq!(cari.forecast, "$-1.3B");
         assert_eq!(cari.impact, Impact::High);
+        assert_eq!(cari.source_url, "https://tradingeconomics.com/turkey/current-account");
+    }
+
+    /// Her satır tıklanabilir olmalı: `data-url` yoksa olay adındaki bağlantı,
+    /// o da yoksa takvim sayfası. Boş `source_url` ölü bir tıklama demektir.
+    #[test]
+    fn every_row_carries_a_source_url() {
+        let events = parse_calendar_html(FIXTURE);
+        assert!(!events.is_empty());
+        for event in &events {
+            assert!(
+                event.source_url.starts_with("https://tradingeconomics.com/"),
+                "{} satırında kaynak bağlantısı yok: {:?}",
+                event.event,
+                event.source_url
+            );
+        }
+    }
+
+    /// `data-url` taşımayan satır olay adındaki bağlantıya, o da yoksa takvime düşer.
+    #[test]
+    fn source_url_falls_back_when_row_has_no_data_url() {
+        let html = r#"<table><tbody>
+            <tr data-country="turkey" data-category="inflation rate" data-event="inflation rate">
+              <td class=" 2026-08-14"></td>
+              <td><a class='calendar-event' href='/turkey/inflation-cpi'>Inflation Rate</a></td>
+            </tr>
+            <tr data-country="turkey" data-category="tourism revenues" data-event="tourism revenues">
+              <td class=" 2026-08-15"></td>
+              <td>Tourism Revenues</td>
+            </tr>
+          </tbody></table>"#;
+        let events = parse_calendar_html(html);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].source_url, "https://tradingeconomics.com/turkey/inflation-cpi");
+        assert_eq!(events[1].source_url, FALLBACK_SOURCE_URL);
     }
 
     #[test]

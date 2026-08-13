@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-takvim-satiri-kaynagina-gider",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Ekonomik takvimde bir satıra tıklayınca o verinin kaynak sayfası açılıyor",
+        "en": "Clicking a row in the economic calendar opens that data point's source page"
+      },
+      "summary": {
+        "tr": "Takvim satırları rakamı gösteriyor ama rakamın nereden geldiğini göstermiyordu: “Kapasite Kullanım Oranı 74,0%” satırından tanıma, geçmiş seriye veya açıklamanın kendisine gitmenin yolu yoktu. Kaynak yalnızca başlıktaki (?) ipucunda, o da site adı olarak yazılıydı — kullanıcı siteyi elle açıp göstergeyi aramak zorundaydı.\n\nArtık satırın tamamı tıklanabilir. Tıklayınca göstergenin kendi sayfası varsayılan tarayıcıda açılır: takvim sayfası değil, tam o göstergenin sayfası — kapasite kullanımı için kapasite kullanımı, cari denge için cari denge. Adres uydurulmaz, kaynak sayfanın satırında zaten yazan bağlantı okunur; bağlantı taşımayan satır genel takvime düşer, resmi tatiller ise tatil listesine gider.\n\nSatırın üzerine gelince sağda küçük bir ok belirir ve ipucu hangi siteye gidileceğini söyler. Yeri her satırda ayrıldığı için imleç gezerken değerler kaymaz. Klavyeyle de gezilebilir: satırlar sekme sırasına girer, odaklanan satır çerçeveyle belirtilir.",
+        "en": "Calendar rows showed the number but not where the number came from: from “Capacity Utilization 74.0%” there was no way to reach the definition, the historical series, or the release itself. The source was named only in the (?) tooltip in the header, and only as a site name — you had to open that site by hand and search for the indicator.\n\nThe whole row is now clickable. Clicking opens the indicator's own page in your default browser: not the calendar page, but the page for that exact indicator — capacity utilization for capacity utilization, current account for current account. The address is not guessed; it is read from the link the source page already carries on the row. Rows without one fall back to the general calendar, and public holidays open the holiday list.\n\nHovering a row reveals a small arrow on the right, and the tooltip names the site you are about to visit. The arrow's space is always reserved, so values do not shift as the cursor moves. Keyboard navigation works too: rows are in the tab order and the focused row is outlined."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-14-guncellemeler-ekrani-cokmesi",
       "date": "2026-08-14",
       "author": "yazicmert",
