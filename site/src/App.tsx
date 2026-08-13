@@ -3,6 +3,7 @@ import { navigate, usePath } from './lib/router';
 import { displayName, useSession } from './lib/useSession';
 import { useI18n } from './lib/i18n';
 import Landing from './pages/Landing';
+import Module from './pages/Module';
 import SignIn from './pages/SignIn';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
@@ -28,6 +29,8 @@ export default function App() {
     content = <LicenseAbuse />;
   } else if (path === '/guncellemeler') {
     content = <Updates />;
+  } else if (path.startsWith('/modul/')) {
+    content = <Module slug={decodeURIComponent(path.slice('/modul/'.length))} />;
   } else if (path === '/giris') {
     content = user ? <Account user={user} /> : <SignIn />;
   } else if (path === '/hesap') {

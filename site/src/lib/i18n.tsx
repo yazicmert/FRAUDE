@@ -61,6 +61,22 @@ const STRINGS = {
     modSub:
       'Her modül kendi sekmesinde açılır, aynı çalışma alanını paylaşır; sıralamasını ve hangilerinin yükleneceğini siz belirlersiniz.',
     modAlways: 'Ayrıca her yerden:',
+    modOpen: 'Modülü incele',
+
+    // Modül ayrıntı sayfası
+    modBackAll: 'Tüm modüller',
+    modShotCaption: 'Uygulamadan alınmış ekran görüntüsü; veriler çekim anındaki canlı piyasadan.',
+    modNoShot:
+      'Bu modül kişisel hesabınıza bağlı çalıştığı için tanıtım ekran görüntüsü yayımlamıyoruz; uygulamayı kurduğunuzda kendi verinizle açılır.',
+    modDoesTitle: 'Ne yapar',
+    modFeedsTitle: 'Nereden beslenir',
+    modFlowTitle: 'Tipik akış',
+    modPrev: 'Önceki',
+    modNext: 'Sonraki',
+    modCtaTitle: 'Bu modülü kendi verinizle deneyin',
+    modCtaSub: 'Uygulamayı kurun; modül ilk açılışta çalışmaya hazır gelir.',
+    modNotFound: 'Böyle bir modül yok',
+    modNotFoundSub: 'Bağlantı eski olabilir. Tüm modüllere dönüp oradan seçin.',
 
     // Farklar
     whyKicker: 'Farklar',
@@ -354,6 +370,21 @@ const STRINGS = {
     modSub:
       'Every module opens in its own tab and shares one workspace; you decide the order and which ones load.',
     modAlways: 'Also available everywhere:',
+    modOpen: 'See the module',
+
+    modBackAll: 'All modules',
+    modShotCaption: 'Screenshot taken from the app; the data is the live market at capture time.',
+    modNoShot:
+      'This module runs against your own account, so we don’t publish a marketing screenshot of it; it opens with your data once you install the app.',
+    modDoesTitle: 'What it does',
+    modFeedsTitle: 'What feeds it',
+    modFlowTitle: 'Typical flow',
+    modPrev: 'Previous',
+    modNext: 'Next',
+    modCtaTitle: 'Try this module on your own data',
+    modCtaSub: 'Install the app; the module is ready to work on first launch.',
+    modNotFound: 'No such module',
+    modNotFoundSub: 'The link may be out of date. Go back to all modules and pick one there.',
 
     whyKicker: 'Differences',
     whyTitle: 'Three design decisions',
