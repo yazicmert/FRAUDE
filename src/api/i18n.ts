@@ -580,7 +580,7 @@ export const translations = {
     monAiComment: 'Yapay Zeka Yorumu',
     monSeverity: 'Önem: {{s}}/10',
     // ── Ekonomik takvim ──
-    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
+    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nBir satıra tıklayınca o verinin kaynak sayfası tarayıcıda açılır.\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
     ecoCalRefreshNow: 'Şimdi yenile',
     ecoCalFilterAll: 'Tümü',
     ecoCalFilterMedium: 'Orta+',
@@ -609,6 +609,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: '{{n}} dk önce güncellendi',
     ecoCalUpdatedHoursAgo: '{{n}} sa önce güncellendi',
     ecoCalUpdatedDaysAgo: '{{n}} gün önce güncellendi',
+    ecoCalOpenSource: 'Kaynağı aç: {{source}}',
     // ── Hisse detayı ──
     inWatchlist: 'Portföyümde',
     addToWatchlist: 'Portföye Ekle',
@@ -657,6 +658,12 @@ export const translations = {
     reportsTabConsensus: 'Konsensüs',
     reportsAllBrokers: 'Tüm Kurumlar',
     reportsAllKinds: 'Tüm Türler',
+    reportsScopeAll: 'Tüm Kapsamlar',
+    reportsScopeDomestic: 'Yurt İçi',
+    reportsScopeGlobal: 'Küresel',
+    reportsViaNews: 'haber kaynaklı · {{source}}',
+    reportsViaNewsHint:
+      'Bu kayıt kurumun raporunun kendisi değil, çağrıyı aktaran haberdir. Küresel kurumların BIST raporları kurumsal aboneliğe kapalı olduğu için kamuya açık bir uç yok; bağlantı habere gider.',
     reportsSearchPlaceholder: 'Başlık, hisse kodu veya analist ara...',
     reportsSearchTickerPlaceholder: 'Hisse kodu ara...',
     reportsEmpty: 'Bu filtrelerle rapor bulunamadı.',
@@ -1697,7 +1704,7 @@ export const translations = {
     monAiComment: 'AI Commentary',
     monSeverity: 'Severity: {{s}}/10',
     // ── Economic calendar ──
-    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
+    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nClick a row to open that data point\'s source page in your browser.\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
     ecoCalRefreshNow: 'Refresh now',
     ecoCalFilterAll: 'All',
     ecoCalFilterMedium: 'Medium+',
@@ -1726,6 +1733,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: 'updated {{n}} min ago',
     ecoCalUpdatedHoursAgo: 'updated {{n}} h ago',
     ecoCalUpdatedDaysAgo: 'updated {{n}} days ago',
+    ecoCalOpenSource: 'Open source: {{source}}',
     // ── Ticker detail ──
     inWatchlist: 'In Portfolio',
     addToWatchlist: 'Add to Portfolio',
@@ -1774,6 +1782,12 @@ export const translations = {
     reportsTabConsensus: 'Consensus',
     reportsAllBrokers: 'All Brokers',
     reportsAllKinds: 'All Types',
+    reportsScopeAll: 'All Scopes',
+    reportsScopeDomestic: 'Domestic',
+    reportsScopeGlobal: 'Global',
+    reportsViaNews: 'via news · {{source}}',
+    reportsViaNewsHint:
+      "This entry is not the institution's own report but a news story relaying the call. Global institutions' BIST research is behind an institutional subscription with no public endpoint, so the link goes to the news article.",
     reportsSearchPlaceholder: 'Search title, ticker or analyst...',
     reportsSearchTickerPlaceholder: 'Search ticker...',
     reportsEmpty: 'No report matches these filters.',

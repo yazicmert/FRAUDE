@@ -196,6 +196,8 @@ export default function KnowledgeBaseView({
 
   const [broker, setBroker] = useState<string>(ALL);
   const [reportKind, setReportKind] = useState<string>(ALL);
+  /** Kurumun yerleşimi: yurt içi arşivler mi, küresel kurum çağrıları mı. */
+  const [scope, setScope] = useState<'all' | AnalystReport['scope']>('all');
 
   const [kap, setKap] = useState<KapAnnouncement[]>(initialRows ?? []);
   const [spk, setSpk] = useState<SpkBulletin[]>([]);
@@ -407,6 +409,7 @@ export default function KnowledgeBaseView({
       if (entry.payload.kind === 'report') {
         if (broker !== ALL && entry.badge !== broker) return false;
         if (reportKind !== ALL && entry.payload.item.kind !== reportKind) return false;
+        if (scope !== 'all' && entry.payload.item.scope !== scope) return false;
       }
       if (!needle) return true;
       return (
@@ -415,7 +418,19 @@ export default function KnowledgeBaseView({
         entry.tickers.some((code) => normalize(code).includes(needle))
       );
     });
-  }, [scoped, tab, query, broker, reportKind]);
+  }, [scoped, tab, query, broker, reportKind, scope]);
+
+  /** Akışta gerçekten kaydı olan kapsamlar; tek kapsam varsa çip gösterilmez. */
+  const scopeCounts = useMemo(() => {
+    let domestic = 0;
+    let global = 0;
+    for (const entry of scoped) {
+      if (entry.payload.kind !== 'report') continue;
+      if (entry.payload.item.scope === 'global') global += 1;
+      else domestic += 1;
+    }
+    return { domestic, global };
+  }, [scoped]);
 
   const consensusRows = useMemo(() => {
     const rows = company ? consensus.filter((row) => row.ticker === company) : consensus;
@@ -584,6 +599,26 @@ export default function KnowledgeBaseView({
           rapora özel süzgeç göstermek yanıltıcı olur. */}
       {tab === 'report' && (brokers.length > 0 || reportKinds.length > 0) && (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+          {/* Kapsam çipi yalnız iki kapsam da doluysa anlamlı: küresel çağrı
+              yoksa "Yurt içi" seçeneği hiçbir şeyi süzmez. */}
+          {scopeCounts.global > 0 && scopeCounts.domestic > 0 && (
+            <>
+              {chip(scope === 'all', t('reportsScopeAll'), () => setScope('all'), 'scope-all')}
+              {chip(
+                scope === 'domestic',
+                `${t('reportsScopeDomestic')} (${scopeCounts.domestic})`,
+                () => setScope('domestic'),
+                'scope-domestic',
+              )}
+              {chip(
+                scope === 'global',
+                `${t('reportsScopeGlobal')} (${scopeCounts.global})`,
+                () => setScope('global'),
+                'scope-global',
+              )}
+              <span style={{ width: '1px', height: '18px', background: 'var(--border-color)' }} />
+            </>
+          )}
           {chip(broker === ALL, t('reportsAllBrokers'), () => setBroker(ALL), 'broker-all')}
           {brokers.map(([name, count]) =>
             chip(broker === name, `${name} (${count})`, () => setBroker(name), `broker-${name}`),
@@ -671,6 +706,18 @@ export default function KnowledgeBaseView({
                             )}
                             {entry.payload.item.analyst && (
                               <span className="kap-item-category">{entry.payload.item.analyst}</span>
+                            )}
+                            {/* Küresel kurumların BIST raporları aboneliğe
+                                kapalı; elimizdeki rapor değil, çağrıyı aktaran
+                                haber. Bu ayrım gizlenmez. */}
+                            {entry.payload.item.via && (
+                              <span
+                                className="kap-item-category"
+                                style={{ color: '#d29922', borderColor: '#d2992255' }}
+                                title={t('reportsViaNewsHint')}
+                              >
+                                {t('reportsViaNews', { source: entry.payload.item.via })}
+                              </span>
                             )}
                           </>
                         )}
