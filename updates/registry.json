@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-takvim-onbellegi-sema-damgasi",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Takvim satırları güncellemeden sonra da genel takvime gidiyordu",
+        "en": "Calendar rows still opened the general calendar after updating"
+      },
+      "summary": {
+        "tr": "Takvim satırlarını kendi gösterge sayfasına bağlayan değişiklik yayına girdikten sonra da satırlar genel takvim sayfasına gidiyordu. Sebep ayrıştırıcı değildi — kaynak sayfa doğru adresi hâlâ satırın üzerinde taşıyor ve ayrıştırıcı onu doğru okuyor.\n\nSuçlu önbellekti. Takvim iki yerde saklanıyor: arka uçta bir disk dosyası ve arayüzde bir yerel kayıt. İkisi de altı saat boyunca yeniden çekmiyor. Yeni alan (gösterge adresi) eklendiğinde, yükseltmeden ÖNCE yazılmış kayıtlar okunmaya devam ediyordu; alan eksik olduğu için boş geliyor, boş adres de her satırı genel takvime düşürüyordu. Alanlar bilerek \"eksikse varsayılan\" diye okunuyor — eski dosya çözümlenemezse takvim komple boşalırdı — ama bu, eksik alanlı kaydın taze sayılmasına da yol açıyordu. Sonuç: güncelleyen kullanıcı, altı saate kadar hiçbir satırı doğru açmayan bir takvim görüyordu.\n\nArtık her iki önbellek de şema sürümü damgası taşıyor. Damgası eski olan kayıt, yaşı ne olursa olsun taze sayılmıyor ve veri anında yeniden çekiliyor. Eski kayıt yine de okunabilir durumda tutuluyor: kaynaklar tümden düşerse ekran boşalmak yerine son bilinen takvimi göstermeye devam ediyor. Olaya yeni bir alan eklendiğinde sürüm artırılır ve aynı tuzak bir daha kurulmaz.",
+        "en": "After the change that links calendar rows to their own indicator pages went live, rows still opened the general calendar. The parser was not at fault — the source page still carries the right address on the row, and the parser reads it correctly.\n\nThe caches were. The calendar is stored in two places: a file on disk in the backend and a local record in the interface. Neither refetches for six hours. When the new field (the indicator address) was added, records written BEFORE the upgrade kept being read; the field was missing, so it came back empty, and an empty address drops every row onto the general calendar. Fields are deliberately read as \"default if absent\" — an old file that failed to parse would blank the calendar entirely — but that also let a record with missing fields count as fresh. The result: anyone who updated saw a calendar where no row opened correctly, for up to six hours.\n\nBoth caches now carry a schema version stamp. A record with an older stamp is never treated as fresh regardless of its age, so the data is refetched at once. The old record is still kept readable: if every source fails, the screen shows the last known calendar instead of emptying. When a new field is added to an event the version is raised, and the same trap cannot be set again."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/economic_calendar.rs",
+        "src/components/EconomicCalendar.tsx"
+      ],
+      "agentPrompt": "Ekonomik takvimde satıra tıklayınca göstergenin kendi sayfasının açılması gerekiyor, ama güncelleme sonrası her satır genel takvim sayfasına gidiyor. Ayrıştırıcı DOĞRU çalışıyor: kaynak sayfa adresi satırın üzerinde taşıyor ve okunuyor. Sorun önbellekte.\n\nKök sebep: takvim iki katmanda saklanıyor — arka uçta disk önbelleği, arayüzde yerel depo kaydı — ve ikisi de altı saat boyunca yeniden çekmiyor. Olaya yeni bir alan eklendiğinde, yükseltmeden önce yazılmış kayıtlar hâlâ okunuyor; alan \"eksikse varsayılan\" olarak çözümlendiği için boş geliyor ve boş adres satırı genel takvime düşürüyor. Yani kullanıcı yeni sürüme geçse bile, önbellek yaşlanana dek bozuk davranışı görüyor.\n\nAdımlar:\n\n1. Arka uçtaki takvim önbelleği kaydına bir şema sürümü alanı ekle. Alan, sürüm damgası eklenmeden yazılmış dosyalar için varsayılana (0) düşmeli — eski dosya HÂLÂ okunabilmeli.\n\n2. Tazelik ölçütünü ikiye ayır: yaş ölçütü olduğu gibi kalsın, üstüne \"şeması güncel mi\" koşulu eklensin. Kayıt ancak hem şeması güncelse hem de süresi dolmamışsa kullanılsın. Bunu ayrı ve sınanabilir bir yardımcı olarak yaz.\n\n3. Eski şemalı kayıt yine de SON ÇARE verisi olarak elde kalsın: bütün kaynaklar düştüğünde ekran boşalmak yerine son bilinen takvimi göstermeye devam etmeli. Yani \"kullanılabilir değil\" demek \"at\" demek olmamalı.\n\n4. Önbelleği diske yazan yer güncel sürüm damgasını yazsın.\n\n5. Aynı korumayı ARAYÜZ tarafındaki yerel depo önbelleğine de uygula: kaydı okuyan işlev, sürüm damgası beklenenden farklıysa null dönsün (bu \"hemen yeniden çek\" demek), yazan yer de damgayı koysun. Tek katmanı düzeltmek yetmez — arayüz altı saat boyunca arka uca hiç sormadığı için hata sürer.\n\n6. Testler: (a) alan eklenmeden önce yazılmış bir kaydın hâlâ OKUNABİLDİĞİNİ ama taze SAYILMADIĞINI doğrula — kaydı, eski sürümün ürettiği ham biçimden kur; (b) güncel şemalı kaydın yalnız yaşına göre değerlendirildiğini doğrula.\n\nKabul: cargo test ve npx tsc --noEmit geçmeli. Uygulamada takvim satırına tıklayınca göstergenin kendi sayfası açılmalı; eski önbellekle açılan uygulamada bile ilk açılışta doğru adresler gelmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-forum-dolar-anma-tamamlamasi",
       "date": "2026-08-14",
       "author": "yazicmert",
