@@ -1,5 +1,19 @@
 # Repository agent workflow
 
+## Branching, merging, releasing
+
+- Work on a branch and land it through a pull request: `gh pr create --base main` then `gh pr merge <n> --squash`. Never push to `main` directly and never force-push a branch that has been pushed. `main` history is a flat list of squashed PR commits (`subject (#n)`); preserve that shape.
+- To bring a branch up to date with `main`, merge `origin/main` into it. Do not rebase a pushed branch: rebasing requires a force-push, and the squash merge discards the intermediate merge commit anyway.
+- `[build]` in a commit subject triggers the CI version stamp and the macOS/Windows release build. Put it in the squash subject only when a release is actually intended; a plain feature merge must not carry it.
+- Merging to `main` publishes: entries in `updates/registry.json` become visible on the public `/guncellemeler` page and in the in-app Updates module. The merge itself is the approval gate — review the entry text, not just the code.
+- Verify before opening the PR, since CI does not run the full matrix: `npx tsc --noEmit`, `npm run build`, `cargo test --manifest-path core/Cargo.toml --lib`, and `cargo check --manifest-path src-tauri/Cargo.toml`. The Tauri crate must be checked separately — a closure passed into an async task can compile in `core` and fail only at the Tauri command boundary with "implementation of `FnOnce` is not general enough".
+
+## Community updates registry
+
+- Every user-visible change adds one entry to `updates/registry.json`, newest first, with `includedIn: null` until a release stamps it.
+- Because every entry is prepended, **parallel branches always conflict on the first array element** — expect it on every second merge. Do not hand-merge the conflict markers: the hunk shape differs per branch (one side is frequently empty) and text merging silently corrupts the file.
+- Resolve at the JSON level instead: load `origin/main`'s copy, insert your entry at index 0, and write it back with `json.dumps(data, ensure_ascii=False, indent=2)` plus a trailing newline. That round-trip reproduces the committed file byte-for-byte, so the diff stays limited to the new entry. Afterwards assert that ids are unique.
+
 ## Rust/Cargo build artifacts
 
 - `core`, `server`, and `src-tauri` share the repository-root `target/` directory through `.cargo/config.toml`. Do not set `CARGO_TARGET_DIR` or create per-crate target directories.
