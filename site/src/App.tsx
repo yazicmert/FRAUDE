@@ -1,8 +1,10 @@
-import { BrandMark, Wordmark } from './components/Brand';
-import { navigate, usePath } from './lib/router';
+import { BrandMark } from './components/Brand';
+import SiteNav from './components/SiteNav';
+import { usePath } from './lib/router';
 import { displayName, useSession } from './lib/useSession';
 import { useI18n } from './lib/i18n';
 import Landing from './pages/Landing';
+import Module from './pages/Module';
 import SignIn from './pages/SignIn';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
@@ -15,7 +17,7 @@ import './styles.css';
 export default function App() {
   const path = usePath();
   const { user, ready, isAdmin } = useSession();
-  const { t, lang, setLang } = useI18n();
+  const { t } = useI18n();
 
   let content: JSX.Element;
   // Masaüstü GitHub girişinin dönüş durağı; oturum gerektirmez, jetonu
@@ -28,6 +30,8 @@ export default function App() {
     content = <LicenseAbuse />;
   } else if (path === '/guncellemeler') {
     content = <Updates />;
+  } else if (path.startsWith('/modul/')) {
+    content = <Module slug={decodeURIComponent(path.slice('/modul/'.length))} />;
   } else if (path === '/giris') {
     content = user ? <Account user={user} /> : <SignIn />;
   } else if (path === '/hesap') {
@@ -54,45 +58,7 @@ export default function App() {
 
   return (
     <>
-      <nav className="site-nav">
-        <a className="brand" onClick={() => navigate('/')}>
-          <BrandMark size={30} />
-          <Wordmark />
-        </a>
-        <div className="links">
-          <a href="/#moduller">{t('navFeatures')}</a>
-          <a href="/#baslangic">{t('navStart')}</a>
-          <a href="/#indir">{t('navDownload')}</a>
-          <a onClick={() => navigate('/guncellemeler')}>{t('navUpdates')}</a>
-        </div>
-        <div className="spacer" />
-        <button
-          className="btn btn-sm"
-          aria-label="Language"
-          onClick={() => setLang(lang === 'tr' ? 'en' : 'tr')}
-        >
-          {lang === 'tr' ? 'EN' : 'TR'}
-        </button>
-        {user ? (
-          <>
-            {isAdmin && (
-              <button className="btn btn-sm" onClick={() => navigate('/admin')}>
-                {t('adminNav')}
-              </button>
-            )}
-            <button className="btn btn-sm" onClick={() => navigate('/hesap')}>
-              {displayName(user)}
-            </button>
-          </>
-        ) : (
-          <button className="btn btn-sm" onClick={() => navigate('/giris')}>
-            {t('signIn')}
-          </button>
-        )}
-        <a className="btn btn-primary btn-sm" href="/#indir">
-          {t('downloadShort')}
-        </a>
-      </nav>
+      <SiteNav user={user} isAdmin={isAdmin} userLabel={user ? displayName(user) : ''} />
 
       {content}
 

@@ -18,6 +18,22 @@
       "includedIn": null
     },
     {
+      "id": "2026-08-13-uygulamada-sifremi-unuttum",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Şifresini unutan kullanıcı uygulamadan çıkmak zorundaydı: giriş ekranına “Şifremi unuttum” eklendi",
+        "en": "Users who forgot their password had to leave the app: “Forgot password?” is now on the sign-in screen"
+      },
+      "summary": {
+        "tr": "Giriş ekranında şifre yenilemenin yolu yoktu; şifresini unutan kullanıcı uygulamayı kapatıp siteye gitmek zorunda kalıyordu, çoğu da o adresi bilmiyordu. Artık şifre alanının altında “Şifremi unuttum” var: e-postanızı yazın, yenileme bağlantısı gelsin.\n\nBağlantı bilerek uygulamaya değil sitedeki /sifre-yenile sayfasına döner. Sebebi şu: e-posta çoğu zaman telefonda açılır ve masaüstüne özel fraude:// bağlantısı orada ölü bir bağlantıdır — kullanıcı şifresini hiç değiştiremeden kilitlenirdi. Site sayfası her cihazda çalışır; yeni şifre orada belirlenir, kullanıcı uygulamaya dönüp girer. E-postanın dili (TR/EN) dönüş adresindeki ?lang= ile arayüz dilinden gelir.\n\nMesajlar da düzeltildi: adresin kayıtlı olup olmadığı söylenmez (“bu adres kayıtlıysa gönderildi”) — Supabase, hesap taramasını engellemek için iki durumda da başarı döndürür. Art arda denemede sunucunun kısıtlama uyarısı artık “beklenmeyen hata” yerine “bir dakika bekleyip tekrar deneyin” olarak görünüyor.",
+        "en": "The sign-in screen offered no way to reset a password: anyone who forgot theirs had to close the app and find the website, which most users did not know about. There is now a “Forgot password?” link under the password field — enter your email and a reset link is sent.\n\nThe link deliberately returns to the site's /sifre-yenile page rather than to the app. Email is usually opened on a phone, where the desktop-only fraude:// link is dead, and the user would be locked out with no way to change the password at all. The web page works on every device; the new password is set there and the user comes back to the app to sign in. The email language (TR/EN) follows the interface language through the ?lang= return address.\n\nThe wording was tightened too: the app never reveals whether an address is registered (“if this address is registered, a link has been sent”) because Supabase reports success either way to prevent account probing. Rapid retries now show the server's throttle notice as “wait a minute and try again” instead of “unexpected error”."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-tarayici-kategori-evreni",
       "date": "2026-08-13",
       "author": "yazicmert",

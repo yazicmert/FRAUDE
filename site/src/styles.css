@@ -461,7 +461,14 @@ button { font-family: inherit; }
   gap: 26px 34px;
 }
 
-.lp-mod { display: flex; gap: 14px; }
+/* Kart artık modül sayfasına giden bağlantı; renk/alt çizgi devralınmasın. */
+.lp-mod {
+  display: flex;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
 
 .lp-mod-code {
   flex: none;
@@ -490,6 +497,25 @@ button { font-family: inherit; }
 }
 
 .lp-mod p { font-size: 13.5px; line-height: 1.6; color: var(--dim); }
+
+.lp-mod-go {
+  display: inline-block;
+  margin-top: 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--dimmer);
+  transition: color 0.15s ease;
+}
+
+.lp-mod:hover .lp-mod-go,
+.lp-mod:focus-visible .lp-mod-go { color: var(--up); }
+
+.lp-mod:focus-visible {
+  outline: 2px solid var(--up);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
 
 .lp-alwayson {
   display: flex;
@@ -799,6 +825,456 @@ table.data td {
 .muted { color: var(--dim); }
 .small { font-size: 12.5px; }
 
+/* ── Mobil gezinme ── */
+/* Menü düğmesi yalnız dar ekranda; geniş ekranda bağlantılar zaten satırda. */
+.nav-toggle { display: none; }
+
+.nav-burger {
+  display: grid;
+  gap: 4px;
+  width: 18px;
+}
+.nav-burger i {
+  display: block;
+  height: 1.5px;
+  background: var(--paper);
+  border-radius: 1px;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.nav-burger-x i:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+.nav-burger-x i:nth-child(2) { opacity: 0; }
+.nav-burger-x i:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+
+.nav-panel { display: none; }
+.nav-scrim { display: none; }
+
+/* ── Ürün sekmeleri (kahramanın altındaki ekran görüntüsü) ── */
+.ps-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.ps-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.ps-tab:hover { color: var(--paper); border-color: var(--rule-2); }
+
+.ps-tab-on {
+  color: var(--ink);
+  background: var(--up);
+  border-color: var(--up);
+}
+.ps-tab-on:hover { color: var(--ink); }
+
+.ps-tab-code {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.ps-frame {
+  border: 1px solid var(--rule-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+.ps-frame img { display: block; width: 100%; height: auto; }
+
+.ps-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.ps-caption a { color: var(--up); }
+
+/* ── Kullanım akışı ── */
+.lp-flow { list-style: none; display: grid; gap: 64px; }
+
+.lp-flow-item {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: center;
+}
+
+/* Sıradaki ikinci adım aynalanır; okuma tek sütuna hapsolmasın. */
+.lp-flow-item:nth-child(even) .lp-flow-copy { order: 2; }
+
+.lp-flow-n {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--up);
+  margin-bottom: 12px;
+}
+
+.lp-flow-copy h3 {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.lp-flow-copy p { font-size: 14.5px; line-height: 1.75; color: var(--dim); }
+
+.lp-flow-link {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dimmer);
+}
+.lp-flow-link:hover { color: var(--up); }
+
+.lp-flow-shot {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+.lp-flow-shot img { display: block; width: 100%; height: auto; }
+
+/* ── Erişim ── */
+/* Fiyatın kendisi bir rakam değil, tek kelime — o yüzden başlık gibi büyür. */
+.lp-price { font-size: clamp(38px, 7vw, 64px); }
+
+.lp-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.lp-included { list-style: none; display: grid; gap: 13px; }
+
+.lp-included li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.lp-included li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--up);
+  font-family: var(--mono);
+}
+
+.lp-access-why {
+  padding: 26px 28px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--ink-1);
+}
+.lp-access-why h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.lp-access-why p {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--dim);
+  margin-bottom: 20px;
+}
+
+/* ── SSS ── */
+.lp-faq { display: grid; border-top: 1px solid var(--rule); }
+
+.lp-faq details { border-bottom: 1px solid var(--rule); }
+
+.lp-faq summary {
+  padding: 20px 34px 20px 0;
+  position: relative;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  list-style: none;
+}
+.lp-faq summary::-webkit-details-marker { display: none; }
+
+.lp-faq summary::after {
+  content: '+';
+  position: absolute;
+  right: 4px;
+  top: 18px;
+  font-family: var(--mono);
+  font-size: 19px;
+  color: var(--up);
+}
+.lp-faq details[open] summary::after { content: '−'; }
+
+.lp-faq summary:focus-visible { outline: 2px solid var(--up); outline-offset: 3px; }
+
+.lp-faq p {
+  padding: 0 34px 22px 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--dim);
+}
+
+/* Kahramandaki ikincil platform bağlantısı — butonla yarışmaz. */
+.lp-alt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--dim);
+  align-self: center;
+}
+.lp-alt:hover { color: var(--up); }
+
+.btn-lg { padding: 13px 26px; font-size: 14px; }
+
+/* ── Modül ayrıntı sayfası (/modul/<slug>) ── */
+/* Sayfa geniş; okuma sütunu dar. Ekran görüntüsü tek başına tam genişliği
+   kullanır, yoksa uygulamanın arayüzü küçülüp okunmaz hâle geliyor. */
+.md {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 112px 26px 96px;
+}
+
+.md-back,
+.md-head,
+.md-noshot,
+.md-section,
+.md-nav,
+.md-cta {
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.md-back {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--dimmer);
+  margin-bottom: 34px;
+}
+.md-back:hover { color: var(--up); }
+
+.md-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 34px;
+}
+
+/* Modül kodu sayfanın künyesi: kartlardaki rozetin büyütülmüş hâli. */
+.md-code {
+  flex: none;
+  width: 58px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(25, 194, 116, 0.45);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--up);
+}
+
+.md-title {
+  font-family: var(--mono);
+  font-size: clamp(26px, 4.2vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.md-lead {
+  margin-top: 10px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.md-shot {
+  margin-bottom: 44px;
+  border: 1px solid var(--rule-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ink-1);
+}
+
+.md-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.md-shot figcaption {
+  padding: 11px 14px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dimmer);
+}
+
+.md-noshot {
+  margin-bottom: 44px;
+  padding: 20px 22px;
+  border: 1px dashed var(--rule-2);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+
+.md-section { margin-bottom: 44px; }
+
+.md-h2 {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+  padding-bottom: 11px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.md-does { list-style: none; display: grid; gap: 16px; }
+
+.md-does li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+/* İşaret yerine terminal istem oku — sayfanın dilinde kalır. */
+.md-does li::before {
+  content: '>';
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font-family: var(--mono);
+  color: var(--up);
+}
+
+.md-feeds {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.md-feeds li {
+  border: 1px solid var(--rule-2);
+  border-radius: 4px;
+  padding: 5px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.md-flow { list-style: none; display: grid; gap: 14px; }
+
+.md-flow li {
+  display: grid;
+  grid-template-columns: 2.4em minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+
+.md-flow-n {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--up);
+}
+
+.md-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+  margin-bottom: 56px;
+}
+
+.md-nav-link {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+.md-nav-link:hover { border-color: var(--rule-2); }
+
+/* İleri bağlantı sağa yaslanır; okuma yönüyle tutarlı olsun. */
+.md-nav-next { text-align: right; }
+
+.md-nav-dir {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+}
+
+.md-nav-name {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.md-nav-link:hover .md-nav-name { color: var(--up); }
+
+.md-cta {
+  text-align: center;
+  padding: 40px 26px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--ink-1);
+}
+/* Kapanış çağrısının başlığı bölüm etiketi değil, gerçek bir başlık. */
+.md-cta .md-h2 {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 10px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--paper);
+}
+.md-cta .lp-sub { margin-bottom: 22px; }
+
 /* ── Erişilebilirlik & duyarlılık ── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -820,11 +1296,72 @@ table.data td {
     padding-bottom: 72px;
   }
   .lp-lead { max-width: none; }
+
+  /* Akış ve erişim iki sütundan tek sütuna; aynalama da iptal. */
+  .lp-flow-item { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .lp-flow-item:nth-child(even) .lp-flow-copy { order: 0; }
+  .lp-flow { gap: 52px; }
+  .lp-access { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+
+/* Gezinme bağlantıları satıra sığmamaya başladığında menüye katlanır. */
+@media (max-width: 860px) {
+  .site-nav .links { display: none; }
+  .nav-wide { display: none; }
+  .nav-toggle {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--rule-2);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .nav-toggle:focus-visible { outline: 2px solid var(--up); outline-offset: 2px; }
+
+  .nav-panel {
+    display: grid;
+    gap: 2px;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    max-height: calc(100dvh - 56px);
+    overflow-y: auto;
+    padding: 14px 16px 22px;
+    background: var(--ink);
+    border-bottom: 1px solid var(--rule-2);
+    z-index: 60;
+  }
+  .nav-panel[hidden] { display: none; }
+
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 56px 0 0;
+    background: rgba(6, 8, 11, 0.86);
+    z-index: 55;
+  }
+
+  .nav-panel a {
+    padding: 13px 4px;
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--paper);
+    cursor: pointer;
+  }
+  .nav-panel hr { border: 0; border-top: 1px solid var(--rule); margin: 8px 0; }
+  .nav-panel-cta {
+    margin-top: 12px;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 @media (max-width: 640px) {
-  .site-nav { gap: 12px; padding: 11px 16px; }
-  .site-nav .links { display: none; }
+  .site-nav { gap: 10px; padding: 11px 16px; }
   .lp-hero { padding: 118px 18px 60px; }
   .lp-section { padding: 68px 18px; }
   .lp-download { padding: 68px 18px 84px; }
@@ -841,4 +1378,25 @@ table.data td {
   .term-rsi, .term-rsi-h { display: none; }
   .term-kap-txt { display: none; }
   .page { padding: 96px 18px 48px; }
+
+  /* Kahramanda çağrı tam genişlik, ikincil bağlantı altına iner. */
+  .lp-ctas { flex-direction: column; align-items: stretch; gap: 14px; }
+  .lp-ctas .lp-alt { align-self: flex-start; }
+  .lp-ctas-center { align-items: center; }
+
+  .ps-tabs { gap: 6px; }
+  .ps-tab { padding: 7px 11px; font-size: 11.5px; }
+  .lp-flow { gap: 44px; }
+  .lp-price { font-size: 44px; }
+  .lp-access-why { padding: 22px 20px; }
+  .lp-faq summary { font-size: 14px; padding-right: 28px; }
+  .lp-faq p { padding-right: 0; }
+
+  .md { padding: 96px 18px 64px; }
+  .md-head { gap: 14px; }
+  .md-code { width: 46px; height: 40px; font-size: 15px; }
+  /* Dar ekranda önceki/sonraki alt alta; ikisi de sola yaslı okunur. */
+  .md-nav { grid-template-columns: minmax(0, 1fr); }
+  .md-nav-next { text-align: left; }
+  .md-cta { padding: 32px 20px; }
 }

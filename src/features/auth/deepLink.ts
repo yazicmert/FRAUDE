@@ -37,6 +37,20 @@ const SITE_ORIGIN =
  */
 export const DESKTOP_OAUTH_REDIRECT = `${SITE_ORIGIN}/uygulamaya-giris`;
 
+/**
+ * Şifre yenileme bağlantısının döneceği adres — masaüstünde bile fraude://
+ * DEĞİL, sitedeki sayfa. Sebep: yenileme e-postası çoğu zaman başka bir
+ * cihazda (telefon, iş bilgisayarı) açılır ve özel şema orada ölü bağlantıdır;
+ * kullanıcı da şifresini değiştiremediği için kilitlenir. Site sayfası her
+ * yerde çalışır, yeni şifre orada belirlenir ve kullanıcı uygulamaya dönüp
+ * girer. `?lang=` e-posta şablonunun dilini seçer (kullanıcı oturum açmamıştır,
+ * başka güvenilir sinyal yoktur) ve Supabase Redirect URL listesinde iki TAM
+ * adres olarak bulunmalıdır — joker yok, bkz. supabase/config.toml.
+ */
+export function passwordResetRedirect(lang: string): string {
+  return `${SITE_ORIGIN}/sifre-yenile?lang=${lang === 'en' ? 'en' : 'tr'}`;
+}
+
 /** Derin bağlantı sonucu; LoginView dinler (sessiz başarısızlık olmasın). */
 export const AUTH_CALLBACK_EVENT = 'fraude:auth-callback';
 

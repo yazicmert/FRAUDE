@@ -15,6 +15,7 @@ import {
   DESKTOP_OAUTH_REDIRECT,
   initAuthDeepLink,
   markOAuthPending,
+  passwordResetRedirect,
 } from './deepLink';
 
 export interface AuthUser {
@@ -33,6 +34,7 @@ export type AuthError =
   | 'confirm-email'
   | 'weak-password'
   | 'oauth-unavailable'
+  | 'rate-limited'
   | 'network'
   | 'unknown';
 
@@ -74,8 +76,14 @@ export function getSession(): AuthUser | null {
   return currentUser;
 }
 
-function mapError(message: string): AuthError {
+function mapError(message: string, status?: number): AuthError {
   const text = message.toLowerCase();
+  // GoTrue yenileme/doğrulama e-postalarını kısıtlar ("For security purposes,
+  // you can only request this after 46 seconds"); bu 'unknown' olarak
+  // gösterilseydi kullanıcı beklemek yerine tekrar tekrar denerdi.
+  if (status === 429 || text.includes('security purposes') || text.includes('rate limit')) {
+    return 'rate-limited';
+  }
   if (text.includes('already registered') || text.includes('already exists')) return 'email-taken';
   if (text.includes('invalid login credentials')) return 'invalid-credentials';
   if (text.includes('email not confirmed')) return 'confirm-email';
@@ -122,6 +130,28 @@ export async function signIn(email: string, password: string): Promise<AuthUser 
     });
     if (error) return mapError(error.message);
     return toUser(data.user)!;
+  } catch {
+    return 'network';
+  }
+}
+
+/**
+ * Şifre yenileme bağlantısı ister ("şifremi unuttum").
+ *
+ * Adresin kayıtlı olup olmadığı BİLİNEMEZ: GoTrue, hesap taramasını önlemek
+ * için kayıtsız adreslerde de başarı döner. Arayüz bu yüzden nötr bir mesaj
+ * gösterir ("bu adres kayıtlıysa…"), "böyle bir hesap yok" demez.
+ *
+ * Yeni şifre sitedeki /sifre-yenile sayfasında belirlenir; gerekçesi
+ * passwordResetRedirect'te.
+ */
+export async function requestPasswordReset(email: string): Promise<AuthError | null> {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: passwordResetRedirect(getLanguage()),
+    });
+    if (error) return mapError(error.message, error.status);
+    return null;
   } catch {
     return 'network';
   }
