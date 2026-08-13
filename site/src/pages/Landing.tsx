@@ -72,6 +72,16 @@ export default function Landing() {
             <li key={source}>{source}</li>
           ))}
         </ul>
+        <a
+          className="lp-sources-more"
+          href="/veri-kaynaklari"
+          onClick={(event) => {
+            event.preventDefault();
+            navigate('/veri-kaynaklari');
+          }}
+        >
+          {t('navSources')} →
+        </a>
       </section>
 
       <section className="lp-section" id="uygulama">

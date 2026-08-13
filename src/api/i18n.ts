@@ -1045,6 +1045,8 @@ export const translations = {
     updPromptHint:
       'Bu güncellemeyi kendi kopyanıza taşımak için: yerel FRAUDE klonunuzu AI ajanınızla (örn. Claude Code) açın ve bu promptu yapıştırın. Ajan değişikliği sizin sürümünüze uyarlar; bitince prompttaki "Kabul" komutlarıyla doğrulayın.',
     updCopyPrompt: 'Promptu kopyala',
+    updNoPrompt:
+      'Bu kayıt için hazır uygulama promptu yok — yalnız künyesi ve özeti yazılmış. Değişikliği kendi kopyanıza taşımak için "Değişikliği görüntüle" ile commit\'i açıp AI ajanınıza referans verebilirsiniz.',
     updCopied: '✓ kopyalandı',
     updManualNotes: 'Elle yapılacaklar',
     updContribute: 'Siz de katkı verin: depoyu klonlayın, AI ajanınızla geliştirin, PR açın.',
@@ -2160,6 +2162,8 @@ export const translations = {
     updPromptHint:
       'To bring this update into your own copy: open your local FRAUDE clone with your AI agent (e.g. Claude Code) and paste this prompt. The agent adapts the change to your version; verify with the "Kabul" commands in the prompt when done.',
     updCopyPrompt: 'Copy prompt',
+    updNoPrompt:
+      'This entry has no ready-made apply prompt — only its details and summary were written. To bring the change into your own copy, open the commit with “View change” and point your AI agent at it.',
     updCopied: '✓ copied',
     updManualNotes: 'Manual steps',
     updContribute: 'Contribute yourself: clone the repo, build with your AI agent, open a PR.',

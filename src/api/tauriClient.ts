@@ -286,9 +286,21 @@ export function askAi(
   agentId?: string,
   history?: import('../types').AiChatMessage[],
   effortLevel?: string,
+  /** Arayüzden seçilen anahtar; boşsa arka uç varsayılanı kullanır. */
+  apiKeyId?: string,
+  /** Tam `data:image/...;base64,...` veri-URL'leri. */
+  images?: string[],
 ) {
   return invoke<AiResponse>('ask_ai', {
-    request: { prompt, active_context: activeContext, agent_id: agentId, history, effort_level: effortLevel },
+    request: {
+      prompt,
+      active_context: activeContext,
+      agent_id: agentId,
+      api_key_id: apiKeyId,
+      images,
+      history,
+      effort_level: effortLevel,
+    },
   });
 }
 

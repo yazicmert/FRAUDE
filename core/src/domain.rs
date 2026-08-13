@@ -208,6 +208,14 @@ pub struct AiRequest {
     pub prompt: String,
     pub active_context: Option<String>,
     pub agent_id: Option<String>,
+    /// Arayüzden açıkça seçilen AI anahtarı. Boşsa ajanın anahtarı, o da yoksa
+    /// varsayılan anahtar kullanılır.
+    #[serde(default)]
+    pub api_key_id: Option<String>,
+    /// Tam `data:image/...;base64,...` veri-URL'leri; istek vision parçalarına
+    /// dönüşür. Metne gömülen görsel model tarafından görülmez.
+    #[serde(default)]
+    pub images: Option<Vec<String>>,
     /// Panelin gönderdiği aktif sohbetin mesajları; None ise (terminal gibi
     /// tek atımlık çağrılar) küresel geçmişten kısa bağlam eklenir.
     #[serde(default)]
