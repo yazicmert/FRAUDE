@@ -172,7 +172,12 @@ pub fn run() {
                         let state = monitor_handle.state::<AppState>();
                         run_monitor_and_notify(&monitor_handle, &state).await;
                         let runtime = state.monitor.lock().await;
-                        monitor::clamp_interval(runtime.config.interval_secs)
+                        // Aralık saate duyarlıdır: bildirimlerin yayımlandığı
+                        // saatlerde sık, gece/hafta sonu seyrek.
+                        monitor::effective_interval(
+                            runtime.config.interval_secs,
+                            chrono::Local::now(),
+                        )
                     };
                     tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
                 }
