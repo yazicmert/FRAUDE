@@ -39,12 +39,71 @@ export interface CommunityUpdate {
   area: string;
   title: LocalizedText;
   summary: LocalizedText;
-  commit: string;
   includedIn: string | null;
-  security: { reviewed: boolean; reviewer: string };
-  touches: string[];
-  agentPrompt: string;
-  notes: LocalizedText | null;
+  // Aşağıdakiler kayıtların bir bölümünde yok: şema zamanla sadeleşti ve
+  // yalnız künye + özet yazılan kayıtlar var. Zorunlu sayılırlarsa eksik alan
+  // tüm listeyi çökertir (update.security.reviewed bunu yapıyordu).
+  commit?: string;
+  security?: { reviewed: boolean; reviewer: string | null };
+  touches?: string[];
+  agentPrompt?: string;
+  notes?: LocalizedText | null;
+}
+
+/** Kayıtlar topluluktan geliyor; tek bozuk alan tüm ekranı düşürmemeli. */
+function normalizeUpdate(raw: unknown): CommunityUpdate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+
+  const localized = (field: unknown): LocalizedText | null => {
+    if (!field || typeof field !== 'object') return null;
+    const { tr, en } = field as Record<string, unknown>;
+    const trText = typeof tr === 'string' ? tr : null;
+    const enText = typeof en === 'string' ? en : null;
+    if (!trText && !enText) return null;
+    return { tr: trText ?? (enText as string), en: enText ?? (trText as string) };
+  };
+
+  const title = localized(value.title);
+  const summary = localized(value.summary);
+  if (typeof value.id !== 'string' || !title || !summary) return null;
+
+  const rawSecurity =
+    value.security && typeof value.security === 'object'
+      ? (value.security as Record<string, unknown>)
+      : null;
+  const text = (field: unknown): string | undefined =>
+    typeof field === 'string' && field.trim() ? field : undefined;
+
+  return {
+    id: value.id,
+    date: typeof value.date === 'string' ? value.date : '',
+    author: typeof value.author === 'string' ? value.author : 'topluluk',
+    kind: value.kind === 'feature' ? 'feature' : 'fix',
+    area: typeof value.area === 'string' ? value.area : 'app',
+    title,
+    summary,
+    includedIn: typeof value.includedIn === 'string' ? value.includedIn : null,
+    commit: text(value.commit),
+    security: rawSecurity
+      ? {
+          reviewed: Boolean(rawSecurity.reviewed),
+          reviewer: typeof rawSecurity.reviewer === 'string' ? rawSecurity.reviewer : null,
+        }
+      : undefined,
+    touches: Array.isArray(value.touches)
+      ? value.touches.filter((entry): entry is string => typeof entry === 'string')
+      : undefined,
+    agentPrompt: text(value.agentPrompt),
+    notes: localized(value.notes),
+  };
+}
+
+function normalizeUpdates(list: unknown): CommunityUpdate[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map(normalizeUpdate)
+    .filter((update): update is CommunityUpdate => update !== null);
 }
 
 interface UpdatesRegistry {
@@ -205,7 +264,7 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
     if (!force) {
       const cached = readCache();
       if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-        setUpdates(cached.registry.updates);
+        setUpdates(normalizeUpdates(cached.registry.updates));
         setLatestTag(cached.latestTag ?? null);
         return;
       }
@@ -230,7 +289,7 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
         // sürüm bilgisi olmadan devam
       }
 
-      setUpdates(registry.updates);
+      setUpdates(normalizeUpdates(registry.updates));
       setLatestTag(tag);
       setCheckedAt(new Date().toLocaleTimeString());
       localStorage.setItem(
@@ -241,7 +300,7 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
       // Ağ yoksa bayat önbellek boş ekrandan iyidir
       const cached = readCache();
       if (cached) {
-        setUpdates(cached.registry.updates);
+        setUpdates(normalizeUpdates(cached.registry.updates));
         setLatestTag(cached.latestTag ?? null);
       } else {
         setError(true);
@@ -301,6 +360,7 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
   };
 
   const copyPrompt = (update: CommunityUpdate) => {
+    if (!update.agentPrompt) return;
     navigator.clipboard.writeText(update.agentPrompt).then(() => {
       setCopiedId(update.id);
       setTimeout(() => setCopiedId((prev) => (prev === update.id ? null : prev)), 2000);
@@ -625,7 +685,7 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
                 {update.kind === 'fix' ? t('updKindFix') : t('updKindFeature')}
               </span>
               <span className="upd-badge area">{update.area}</span>
-              {update.security.reviewed && <span className="upd-sec">{t('updSecurityOk')}</span>}
+              {update.security?.reviewed && <span className="upd-sec">{t('updSecurityOk')}</span>}
               <span className="upd-meta">
                 <img
                   className="upd-avatar"
@@ -649,9 +709,11 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
               ) : (
                 <span className="upd-ship out">{t('updNotShipped')}</span>
               )}
-              <button className="upd-link" onClick={() => void openUrl(update.commit)}>
-                {t('updViewCommit')}
-              </button>
+              {update.commit && (
+                <button className="upd-link" onClick={() => void openUrl(update.commit as string)}>
+                  {t('updViewCommit')}
+                </button>
+              )}
               {included ? (
                 <button className="upd-btn" disabled>✓ {t('updApplyIncluded')}</button>
               ) : shippedInNewer ? (
@@ -667,16 +729,24 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
 
             {open && !included && !shippedInNewer && (
               <div className="upd-prompt">
-                <p className="upd-prompt-hint">{t('updPromptHint')}</p>
-                <div className="upd-code">
-                  <div className="upd-code-bar">
-                    <span>prompt</span>
-                    <button onClick={() => copyPrompt(update)}>
-                      {copiedId === update.id ? t('updCopied') : `⧉ ${t('updCopyPrompt')}`}
-                    </button>
-                  </div>
-                  <pre>{update.agentPrompt}</pre>
-                </div>
+                {/* Promptu olmayan kayıtlarda boş bir kod kutusu göstermek yerine
+                    ne yapılacağı söylenir; uygulama yolu prompt olduğu için. */}
+                {update.agentPrompt ? (
+                  <>
+                    <p className="upd-prompt-hint">{t('updPromptHint')}</p>
+                    <div className="upd-code">
+                      <div className="upd-code-bar">
+                        <span>prompt</span>
+                        <button onClick={() => copyPrompt(update)}>
+                          {copiedId === update.id ? t('updCopied') : `⧉ ${t('updCopyPrompt')}`}
+                        </button>
+                      </div>
+                      <pre>{update.agentPrompt}</pre>
+                    </div>
+                  </>
+                ) : (
+                  <p className="upd-prompt-hint">{t('updNoPrompt')}</p>
+                )}
                 {update.notes && (
                   <p className="upd-note">
                     <strong>{t('updManualNotes')}:</strong> {update.notes[locale]}
