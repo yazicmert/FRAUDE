@@ -241,9 +241,19 @@ export async function getFinancialStatements(
   return invoke('get_financial_statements', { ticker, currency });
 }
 
-export function runScreener(query: string, market = 'BIST100') {
+/**
+ * Tarayıcı sorgusunu çalıştırır.
+ *
+ * `market` VARSAYILAN OLARAK BOŞ: eskiden 'BIST100' idi ve arka uç sorgunun
+ * başına ekliyordu ("BIST100 EMTIA where …"). Kategori süzgeci else-if
+ * zinciriyle çalıştığı için ilk dal (bist100) her zaman kazanıyor, evren 100
+ * hisseye iniyordu — Emtia/Kripto/Global kategorileri hiç sonuç veremiyor,
+ * "Tüm Varlıklar" da sessizce BIST 100 demek oluyordu. Kategoriyi çağıran
+ * belirler (ScreenerView sorgunun başına BIST/GLOBAL/EMTIA/KRIPTO yazar).
+ */
+export function runScreener(query: string, market?: string) {
   return invoke<ScreenerResult>('run_screener', {
-    request: { market, query },
+    request: { market: market ?? null, query },
   });
 }
 

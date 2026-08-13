@@ -75,6 +75,12 @@ export default function ScreenerView({ initialRows, initialCategory = 'ALL', onS
     void execute(nextQuery, cat);
   };
 
+  // Temel analiz filtreleri (F/K, PD/DD, ROE, temettü) yalnız hisse için
+  // anlamlıdır: emtia, kripto ve dövizin bilançosu yok, bu alanlar evrende
+  // hiç dolmuyor. Kategori hisse değilken bu düğmeleri göstermek kullanıcıya
+  // her zaman boş sonuç veren bir filtre sunmaktı.
+  const supportsFundamentals = categoryFilter === 'ALL' || categoryFilter === 'BIST' || categoryFilter === 'GLOBAL';
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       void execute();
@@ -137,25 +143,29 @@ export default function ScreenerView({ initialRows, initialCategory = 'ALL', onS
           >
             {t('presetOverbought')}
           </button>
-          <button 
+          {supportsFundamentals && (
+            <button 
             type="button" 
             className="secondary-button"
             onClick={() => void execute('where fk < 8 where pb < 1.5')}
           >
             {t('presetDeepValue')}
           </button>
+          )}
           {/* "Büyüme" ve "Kalite (marj)" presetleri kaldırıldı: satış/kâr
               büyümesi ve marj alanları evren düzeyinde hiçbir kaynaktan
               dolmuyor (İş Yatırım screener yalnız tahmin verir), bu filtreler
               her zaman boş sonuç üretiyordu. Yerine gerçek veriyle çalışan
               Değer taraması kondu (F/K + ROE İş Yatırım Cari'den gelir). */}
-          <button
+          {supportsFundamentals && (
+            <button
             type="button"
             className="secondary-button"
             onClick={() => void execute('where fk < 10 where roe > 20')}
           >
             {t('presetValue')}
           </button>
+          )}
           <button
             type="button" 
             className="secondary-button"
@@ -163,13 +173,15 @@ export default function ScreenerView({ initialRows, initialCategory = 'ALL', onS
           >
             {t('presetMomentum')}
           </button>
-          <button 
+          {supportsFundamentals && (
+            <button 
             type="button" 
             className="secondary-button"
             onClick={() => void execute('where dividend_yield > 5')}
           >
             {t('presetDividend')}
           </button>
+          )}
         </div>
 
         {/* Kullanıcının kaydettiği preset'ler + kaydetme */}
