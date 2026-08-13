@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getEconomicCalendar, getMarketHolidays, type EconomicEvent, type EconomicImpact } from '../api/tauriClient';
 import { useTranslation } from '../api/i18n';
+import { openUrl } from '../lib/openExternal';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -29,6 +30,31 @@ const IMPACT_KEY: Record<EconomicImpact, string> = {
 };
 
 type ImpactFilter = 'all' | 'high' | 'medium';
+
+/* ── Kaynaklar ────────────────────────────────────────────────────────────── */
+
+/** Makro satırların kaynağı; backend her satıra kendi gösterge sayfasını
+ *  koyar, koyamazsa (ve alan eklenmeden önceki önbellekte) buraya düşülür. */
+const MACRO_SOURCE_URL = 'https://tradingeconomics.com/turkey/calendar';
+
+/** Resmi tatiller Nager.Date'ten gelir; ülke sayfası tüm listeyi gösterir. */
+const HOLIDAY_SOURCE_URL = 'https://date.nager.at/PublicHoliday/Country/TR';
+
+/** Tıklamanın gideceği adres. Önbellekten okunan eski kayıtlarda alan
+ *  bulunmadığı için satır yine de bir yere gitsin diye yedek verilir. */
+function sourceUrlOf(event: EconomicEvent): string {
+  if (event.source_url) return event.source_url;
+  return event.impact === 'holiday' ? HOLIDAY_SOURCE_URL : MACRO_SOURCE_URL;
+}
+
+/** Bağlantının hangi siteye gittiğini ipucunda göstermek için alan adı. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
 
 /* ── Yardımcılar ──────────────────────────────────────────────────────────── */
 
@@ -157,6 +183,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
             consensus: '',
             forecast: '',
             impact: 'holiday' as EconomicImpact,
+            source_url: HOLIDAY_SOURCE_URL,
           }))
         : [];
 
@@ -304,8 +331,17 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
             {items.map((event, index) => {
               const direction = surprise(event);
               const expected = event.consensus || event.forecast;
+              const source = sourceUrlOf(event);
               return (
-                <div key={`${date}-${index}`} className="eco-cal-row">
+                // Satırın tamamı kaynağa açılır. <button>: dış tarayıcıya
+                // çıkış sayfa içi gezinme değil, ayrıca klavye erişimi hazır gelir.
+                <button
+                  type="button"
+                  key={`${date}-${index}`}
+                  className="eco-cal-row"
+                  title={t('ecoCalOpenSource', { source: hostOf(source) })}
+                  onClick={() => void openUrl(source)}
+                >
                   <span
                     className="eco-cal-dot"
                     style={{ background: IMPACT_META[event.impact].color }}
@@ -352,7 +388,13 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                       </>
                     )}
                   </span>
-                </div>
+
+                  {/* Tıklanabilirlik göstergesi; yeri hep ayrılır ki
+                      imleç satıra girince düzen kaymasın. */}
+                  <span className="eco-cal-open" aria-hidden="true">
+                    ↗
+                  </span>
+                </button>
               );
             })}
           </div>

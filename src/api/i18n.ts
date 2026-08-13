@@ -579,7 +579,7 @@ export const translations = {
     monAiComment: 'Yapay Zeka Yorumu',
     monSeverity: 'Önem: {{s}}/10',
     // ── Ekonomik takvim ──
-    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
+    ecoCalHelp: 'Yaklaşan makroekonomik duyurular ve resmi tatiller.\n\nKaynaklar:\n• Makro veriler: TradingEconomics\n• Resmi tatiller: Nager.Date\n\nBir satıra tıklayınca o verinin kaynak sayfası tarayıcıda açılır.\n\nOk işareti açıklanan değerin beklentiye göre yönünü gösterir; olumlu/olumsuz yorumu içermez.',
     ecoCalRefreshNow: 'Şimdi yenile',
     ecoCalFilterAll: 'Tümü',
     ecoCalFilterMedium: 'Orta+',
@@ -608,6 +608,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: '{{n}} dk önce güncellendi',
     ecoCalUpdatedHoursAgo: '{{n}} sa önce güncellendi',
     ecoCalUpdatedDaysAgo: '{{n}} gün önce güncellendi',
+    ecoCalOpenSource: 'Kaynağı aç: {{source}}',
     // ── Hisse detayı ──
     inWatchlist: 'Portföyümde',
     addToWatchlist: 'Portföye Ekle',
@@ -1693,7 +1694,7 @@ export const translations = {
     monAiComment: 'AI Commentary',
     monSeverity: 'Severity: {{s}}/10',
     // ── Economic calendar ──
-    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
+    ecoCalHelp: 'Upcoming macroeconomic releases and public holidays.\n\nSources:\n• Macro data: TradingEconomics\n• Public holidays: Nager.Date\n\nClick a row to open that data point\'s source page in your browser.\n\nThe arrow shows the direction of the actual value versus consensus; it is not a good/bad judgement.',
     ecoCalRefreshNow: 'Refresh now',
     ecoCalFilterAll: 'All',
     ecoCalFilterMedium: 'Medium+',
@@ -1722,6 +1723,7 @@ export const translations = {
     ecoCalUpdatedMinAgo: 'updated {{n}} min ago',
     ecoCalUpdatedHoursAgo: 'updated {{n}} h ago',
     ecoCalUpdatedDaysAgo: 'updated {{n}} days ago',
+    ecoCalOpenSource: 'Open source: {{source}}',
     // ── Ticker detail ──
     inWatchlist: 'In Portfolio',
     addToWatchlist: 'Add to Portfolio',

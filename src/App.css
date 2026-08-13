@@ -2180,17 +2180,55 @@ tr.clickable-row:hover {
   color: #58a6ff;
 }
 
+/* Satır bir <button>: tıklayınca verinin kaynak sayfası dış tarayıcıda açılır.
+   Aşağıdaki sıfırlamalar düğmenin kendi görünümünü siler, satır eskisi gibi
+   düz bir liste satırı gibi durur. */
 .eco-cal-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
   font-size: 0.72rem;
   transition: background 0.1s;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.eco-cal-row:hover {
+.eco-cal-row:hover,
+.eco-cal-row:focus-visible {
   background: var(--bg-dark);
+}
+
+.eco-cal-row:focus-visible {
+  outline: 1px solid #58a6ff;
+  outline-offset: -1px;
+}
+
+/* Satırın hazır sağ boşluğuna yerleşir: akıştan yer almadığı için etkinlik
+   adı sütunu daralmaz (panel 420px, adlar zaten kırpılıyor) ve imleç girip
+   çıkarken değerler kaymaz — yalnız görünürlüğü değişir. */
+.eco-cal-open {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.6rem;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s;
+  pointer-events: none;
+}
+
+.eco-cal-row:hover .eco-cal-open,
+.eco-cal-row:focus-visible .eco-cal-open {
+  opacity: 1;
 }
 
 .eco-cal-dot {

@@ -205,6 +205,9 @@ export interface EconomicEvent {
   consensus: string;
   forecast: string;
   impact: EconomicImpact;
+  /** Verinin geldiği sayfa. Alan eklenmeden önce önbelleğe yazılmış
+   *  kayıtlarda bulunmayabilir; okuyan taraf yedek adrese düşer. */
+  source_url?: string;
 }
 
 export function getEconomicCalendar() {
