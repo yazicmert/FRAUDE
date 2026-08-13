@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getEconomicCalendar, getMarketHolidays, type EconomicEvent, type EconomicImpact } from '../api/tauriClient';
+import {
+  getCalendarEventNews,
+  getEconomicCalendar,
+  getMarketHolidays,
+  type EconomicEvent,
+  type EconomicImpact,
+} from '../api/tauriClient';
+import type { NewsItem } from '../types';
 import { useTranslation } from '../api/i18n';
 import { openUrl } from '../lib/openExternal';
+import { documentFromNews, requestArticleReader } from '../features/reports/ReportDocumentModal';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -174,9 +182,35 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
   const [loading, setLoading] = useState(!cached);
   const [offline, setOffline] = useState(false);
   const [filter, setFilter] = useState<ImpactFilter>('all');
+  /** Açık duran satırın anahtarı; aynı anda tek satır açılır. */
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  /** Satır anahtarı → o maddenin haber araması. */
+  const [newsByRow, setNewsByRow] = useState<Record<string, { loading: boolean; items: NewsItem[] }>>({});
   const ref = useRef<HTMLDivElement>(null);
   const onCountRef = useRef(onCount);
   onCountRef.current = onCount;
+
+  /**
+   * Satırı açar/kapatır; ilk açılışta haberleri çeker.
+   *
+   * Sonuç satır anahtarında saklanır: kullanıcı satırı kapatıp yeniden açınca
+   * arama tekrarlanmasın. Arka uç ayrıca kendi içinde önbellekliyor, bu yüzden
+   * burada süre takibi yapılmaz.
+   */
+  const toggleRow = useCallback(
+    (key: string, event: EconomicEvent) => {
+      setOpenRow((current) => (current === key ? null : key));
+      setNewsByRow((current) => {
+        if (current[key]) return current;
+        void getCalendarEventNews(event, lang)
+          .then((items) => setNewsByRow((rows) => ({ ...rows, [key]: { loading: false, items } })))
+          // Haber gelmemesi satırın açılmasını engellememeli: liste boş görünür.
+          .catch(() => setNewsByRow((rows) => ({ ...rows, [key]: { loading: false, items: [] } })));
+        return { ...current, [key]: { loading: true, items: [] } };
+      });
+    },
+    [lang],
+  );
 
   /* Veri çekimi: tatiller + makro takvim birleştirilir, sonuç önbelleğe yazılır. */
   const load = useCallback(async (signal: { cancelled: boolean }) => {
@@ -348,15 +382,20 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
               const direction = surprise(event);
               const expected = event.consensus || event.forecast;
               const source = sourceUrlOf(event);
+              const rowKey = `${date}-${index}`;
+              // Resmi tatilin açıklanan verisi ve haber gündemi yok; eski
+              // davranış korunur, satır doğrudan tatil listesine çıkar.
+              const isHoliday = event.impact === 'holiday';
+              const expanded = openRow === rowKey;
+              const news = newsByRow[rowKey];
               return (
-                // Satırın tamamı kaynağa açılır. <button>: dış tarayıcıya
-                // çıkış sayfa içi gezinme değil, ayrıca klavye erişimi hazır gelir.
+                <div key={rowKey} className={`eco-cal-item${expanded ? ' is-open' : ''}`}>
                 <button
                   type="button"
-                  key={`${date}-${index}`}
                   className="eco-cal-row"
-                  title={t('ecoCalOpenSource', { source: hostOf(source) })}
-                  onClick={() => void openUrl(source)}
+                  aria-expanded={isHoliday ? undefined : expanded}
+                  title={isHoliday ? t('ecoCalOpenSource', { source: hostOf(source) }) : t('ecoCalDetails')}
+                  onClick={() => (isHoliday ? void openUrl(source) : toggleRow(rowKey, event))}
                 >
                   <span
                     className="eco-cal-dot"
@@ -408,9 +447,63 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                   {/* Tıklanabilirlik göstergesi; yeri hep ayrılır ki
                       imleç satıra girince düzen kaymasın. */}
                   <span className="eco-cal-open" aria-hidden="true">
-                    ↗
+                    {isHoliday ? '↗' : expanded ? '▾' : '▸'}
                   </span>
                 </button>
+
+                {expanded && !isHoliday && (
+                  <div className="eco-cal-detail">
+                    <div className="eco-cal-detail-actions">
+                      {/* Gösterge sayfası uygulama içindeki okuyucuda açılır;
+                          kaynağın kendi düzeni betiksiz çerçevede görünür. */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          requestArticleReader({
+                            id: source,
+                            title: event.event,
+                            source: hostOf(source),
+                            kindLabel: t('ecoCalOpenIndicator'),
+                            published: event.date,
+                            url: source,
+                            sourceKind: 'article',
+                          })
+                        }
+                      >
+                        {t('ecoCalOpenIndicator')}
+                      </button>
+                      <button type="button" onClick={() => void openUrl(source)}>
+                        {t('ecoCalOpenExternal')}
+                      </button>
+                    </div>
+
+                    <div className="eco-cal-news-title">{t('ecoCalRelatedNews')}</div>
+                    {news?.loading && <div className="eco-cal-news-note">{t('ecoCalNewsLoading')}</div>}
+                    {news && !news.loading && news.items.length === 0 && (
+                      <div className="eco-cal-news-note">{t('ecoCalNewsEmpty')}</div>
+                    )}
+                    <ul className="eco-cal-news">
+                      {(news?.items ?? []).slice(0, 8).map((item) => (
+                        <li key={item.link}>
+                          <button
+                            type="button"
+                            // Haber uygulama içindeki okuyucuda açılır; dış
+                            // tarayıcıya çıkmak için satırdaki düğme var.
+                            onClick={() =>
+                              requestArticleReader(
+                                documentFromNews(item, t('ecoCalNewsKind'), item.pub_date ?? ''),
+                              )
+                            }
+                          >
+                            <span className="eco-cal-news-headline">{item.title}</span>
+                            <span className="eco-cal-news-source">{item.source}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>

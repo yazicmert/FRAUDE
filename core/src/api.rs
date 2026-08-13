@@ -494,6 +494,18 @@ pub async fn get_news_html(state: &AppState, url: String) -> Result<String, Stri
     services::get_news_html(&state.http, &url).await
 }
 
+/// Takvim maddesiyle ilgili haberler. Hata döndürmez: haber bulunamaması
+/// takvim satırının açılmasını engellememeli, liste boş görünür.
+pub async fn get_calendar_event_news(
+    state: &AppState,
+    category: String,
+    event: String,
+    date: String,
+    lang: String,
+) -> Result<Vec<NewsItem>, String> {
+    Ok(crate::calendar_news::get_calendar_event_news(&state.http, &category, &event, &date, &lang).await)
+}
+
 pub async fn get_bist_indices(
     state: &AppState,
 ) -> Result<

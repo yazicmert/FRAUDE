@@ -214,6 +214,19 @@ export function getEconomicCalendar() {
   return invoke<EconomicEvent[]>('get_economic_calendar');
 }
 
+/**
+ * Takvim maddesiyle ilgili haberler. Sorgu olayın KATEGORİSİNDEN üretilir
+ * (görünen ad kaynağın İngilizce etiketidir, Türkçe basında geçmez).
+ */
+export function getCalendarEventNews(event: EconomicEvent, lang: string) {
+  return invoke<NewsItem[]>('get_calendar_event_news', {
+    category: event.category,
+    event: event.event,
+    date: event.date,
+    lang,
+  });
+}
+
 export function executeFql(command: string, activeContext?: string) {
   return invoke<FqlResponse>('execute_fql', {
     command,

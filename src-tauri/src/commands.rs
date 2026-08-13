@@ -224,6 +224,17 @@ pub async fn get_news_html(state: State<'_, AppState>, url: String) -> Result<St
 }
 
 #[tauri::command]
+pub async fn get_calendar_event_news(
+    state: State<'_, AppState>,
+    category: String,
+    event: String,
+    date: String,
+    lang: String,
+) -> Result<Vec<crate::domain::NewsItem>, String> {
+    api::get_calendar_event_news(&state, category, event, date, lang).await
+}
+
+#[tauri::command]
 pub async fn get_bist_indices(state: State<'_, AppState>) -> Result<(std::collections::HashMap<String, Vec<crate::domain::IndexConstituent>>, Vec<crate::domain::IndexChange>), String> {
     api::get_bist_indices(&state).await
 }
