@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-13-tarayici-kategori-evreni",
+      "date": "2026-08-13",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "data",
+      "title": {
+        "tr": "Tarayıcıda emtia, kripto ve global kategorileri hiç sonuç vermiyordu; “Tüm Varlıklar” da aslında BIST 100'dü",
+        "en": "The screener returned nothing for commodities, crypto and global — and “All assets” was really just the BIST 100"
+      },
+      "summary": {
+        "tr": "Teknik tarayıcıda Emtialar seçilince sonuç boş geliyordu; kripto ve global de aynı şekilde. Sebep kategori değil, isteğin kendisiydi: uygulama her sorgunun başına sessizce “BIST100” yazıyordu. Kategori süzgeci sırayla denendiği için ilk eşleşen kural kazanıyor ve evren 100 hisseye iniyordu — sonra “emtia olanları göster” denince geriye hiçbir şey kalmıyordu. Aynı sebeple “Tüm Varlıklar” da gerçekte BIST 100 demekti ve BIST kategorisi 100 hissenin dışını hiç görmüyordu.\n\nÖnek kaldırıldı. Emtia seçilince emtialar, kripto seçilince kripto varlıklar, “Tüm Varlıklar” seçilince evrenin tamamı taranıyor.\n\nİki küçük düzeltme daha: bilanço gerektiren hazır taramalar (F/K, PD/DD, ROE, temettü) artık yalnız hisse kategorilerinde görünüyor — emtianın ve kriptonun bilançosu yok, bu düğmeler her koşulda boş sonuç veriyordu. Sonuç metinleri de “hisse” demeyi bıraktı; kategori ne olursa olsun doğru olan “varlık”.\n\nHatanın sessizce geri gelmemesi için kategori süzgecine testler eklendi; biri doğrudan “BIST100 öneki kategoriyi yutuyor mu” sorusunu sınıyor.",
+        "en": "Selecting Commodities in the technical screener returned nothing, and so did crypto and global. The cause was not the category but the request itself: the app silently prefixed every query with “BIST100”. Category filters are tried in order, so the first matching rule won and the universe shrank to a hundred stocks — after which “show me the commodities” left nothing at all. For the same reason “All assets” actually meant the BIST 100, and the BIST category never saw anything outside those hundred names.\n\nThe prefix is gone. Commodities scan commodities, crypto scans crypto, and “All assets” scans the whole universe.\n\nTwo smaller fixes: the preset scans that need financial statements (P/E, P/B, ROE, dividend yield) now appear only for equity categories — commodities and crypto have no balance sheet, so those buttons always produced nothing. Result messages stopped saying “stocks” too; whatever the category, the accurate word is “instruments”.\n\nTests were added so the bug cannot come back quietly, including one that asks directly whether a “BIST100” prefix swallows the category."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-13-forum-sonsuz-yukleniyor",
       "date": "2026-08-13",
       "author": "yazicmert",
