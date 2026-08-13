@@ -2218,6 +2218,7 @@ export const translations = {
   }
 };
 
+import { useCallback } from 'react';
 import { useTranslation as useI18nextTranslation } from 'react-i18next';
 
 export type Language = 'tr' | 'en';
@@ -2233,18 +2234,32 @@ export function setLanguage(_lang: Language) {
 
 export function useTranslation() {
   const { t, i18n } = useI18nextTranslation();
-  
-  const setLang = (l: Language) => {
-    // i18next detektörsüz kurulu; tercih burada kalıcılaştırılmazsa uygulama
-    // her açılışta TR'ye döner.
-    localStorage.setItem('i18nextLng', l);
-    i18n.changeLanguage(l);
-  };
 
-  // Provide a wrapper for t that handles type-safety optionally
-  // But standard t() expects strings anyway. The old code casted to keyof typeof translations.tr.
-  // We can just cast it.
-  const typedT = (key: string, options?: Record<string, unknown>) => t(key, options) as string;
+  const setLang = useCallback(
+    (l: Language) => {
+      // i18next detektörsüz kurulu; tercih burada kalıcılaştırılmazsa uygulama
+      // her açılışta TR'ye döner.
+      localStorage.setItem('i18nextLng', l);
+      i18n.changeLanguage(l);
+    },
+    [i18n],
+  );
+
+  // `t`'yi saran bu fonksiyonun KİMLİĞİ KARARLI OLMAK ZORUNDA.
+  //
+  // Eskiden her render'da yeniden üretiliyordu. Onu bağımlılık dizisine koyan
+  // her hook da her render'da yenileniyordu; bağımlılığı bir effect'e bağlı
+  // olan bileşenlerde bu sonsuz döngü demekti: effect çalışır → durum değişir
+  // → render → effect yeniden çalışır. Forum akışında belirtisi "Yükleniyor…"
+  // yazısının hiç kaybolmaması ve uygulamanın kilitlenmesiydi (her turda
+  // Supabase'e yeni istek gidiyordu).
+  //
+  // react-i18next'in `t`'si dil değişene dek kararlıdır; sarmalayıcı da ona
+  // bağlanınca aynı kararlılığı devralır.
+  const typedT = useCallback(
+    (key: string, options?: Record<string, unknown>) => t(key, options) as string,
+    [t],
+  );
 
   return { t: typedT, lang: i18n.language as Language, setLanguage: setLang };
 }
