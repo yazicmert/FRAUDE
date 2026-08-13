@@ -600,6 +600,24 @@
   font-size: 13px;
 }
 
+/* "Şifremi unuttum": şifre alanının altında, sağa yaslı ve sessiz — giriş
+   düğmesiyle yarışmasın diye ikincil renkte durur, üzerine gelince canlanır. */
+.auth-forgot {
+  margin: -4px 0 0;
+  text-align: right;
+}
+
+.auth-forgot button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+}
+
+.auth-forgot button:hover { color: var(--accent-secondary, #00c3ff); }
+
 .auth-note {
   margin: 16px 0 0;
   text-align: center;
