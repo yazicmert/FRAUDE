@@ -19,6 +19,7 @@ pub mod domain;
 pub mod economic_calendar;
 pub mod fql;
 pub mod fundamentals;
+pub mod global_calls;
 pub mod indicators;
 pub mod ipo_follow;
 pub mod ipo_pipeline;

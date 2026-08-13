@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-kuresel-kurum-cagrilari",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "data",
+      "title": {
+        "tr": "Bilgi Deposu'na küresel kurumların BIST çağrıları eklendi — raporun kendisi değil, olduğu gibi işaretlenmiş hâli",
+        "en": "Global institutions' BIST calls added to the Knowledge Base — not the reports themselves, and labelled as such"
+      },
+      "summary": {
+        "tr": "Depodaki analiz akışı 12 yurt içi aracı kurumdan ibaretti. Goldman Sachs, JPMorgan, Morgan Stanley, HSBC, Citi, UBS, Bank of America gibi 22 küresel kurumun BIST çağrıları da girdi.\n\nÖnce dürüst not: bu kurumların BIST raporları kurumsal aboneliğe kapalıdır, kamuya açık bir uç yoktur ve bu değişmeyecek. Bu yüzden depoya giren kayıt raporun kendisi DEĞİL, çağrıyı aktaran haberdir. Bu gizlenmiyor: satırda \"haber kaynaklı · yayın adı\" yazıyor, bağlantı rapora değil habere gidiyor ve uydurma bir PDF üretilmiyor.\n\nAsıl iş süzmede. Google News \"OR\"ları gevşek bağlıyor: kurum adı + BIST sorgusu Riskified, Snap, Marvell ve Güney Kore borsası haberleri döndürüyor. Kayıt üretilmesi için dört kapının hepsi geçilmeli — tanınan kurum, analiz izi (\"en çok alım satım yaptığı hisseler\" gibi takas haberleri elenir), doğrulanmış BIST kodu ya da Türkiye+hisse bağlamı, ve emtia/kur elemesi. Hiçbiri sağlanmazsa kayıt yok.\n\nİlk canlı koşuda iki hata bu sayede yakalandı. \"HEDEF\" gerçek bir BIST kodudur (Hedef Holding); rapor başlıkları için yazılmış kod çıkarımı metni büyük harfe çevirdiği için her \"hedef fiyat\" haberini bu şirkete bağlıyordu. Dahası kod bulunmuş sayıldığından Türkiye kapısı atlanıyor, ABD hisselerinin haberleri de akışa giriyordu — 17 kaydın 9'u yabancıydı. Haberde BIST kodu büyük harfle yazılır, Türkçe sözcük yazılmaz; eşleme artık bu ayrımı koruyor ve akış 6 kayda indi, altısı da gerçekten Türkiye piyasasına ait.\n\nAynı çağrıyı on yayın birden geçiyor. Kimlik habere değil çağrının kendisine bağlandı (kurum + kod + tarih + tavsiye + hedef), böylece on haber tek kayda iniyor. Analiz sekmesine yurt içi/küresel kapsam çipi geldi.",
+        "en": "The research stream in the base covered 12 domestic brokers only. BIST calls from 22 global institutions — Goldman Sachs, JPMorgan, Morgan Stanley, HSBC, Citi, UBS, Bank of America among them — are now included.\n\nThe honest note first: these institutions' BIST research sits behind an institutional subscription, there is no public endpoint, and that will not change. So the entry that lands in the base is NOT the report — it is the news story relaying the call. Nothing hides this: the row reads \"via news · outlet\", the link goes to the article rather than a report, and no fabricated PDF is produced.\n\nThe real work is in the filtering. Google News binds \"OR\" loosely: an institution + BIST query returns stories about Riskified, Snap, Marvell and the South Korean market. Producing a record requires passing all four gates — a recognised institution, an analysis marker (trading-flow stories like \"the shares it traded most\" are dropped), a verified BIST code or a Turkey+equity context, and a commodity/FX filter. If none hold, no record.\n\nThat discipline caught two bugs on the first live run. \"HEDEF\" is a real BIST code (Hedef Holding), and the ticker extraction written for report titles uppercases the text — so every \"hedef fiyat\" (price target) story was being tagged to that company. Worse, because a code appeared to be found, the Turkey gate was skipped and US stock stories entered the stream: 9 of 17 entries were foreign. In news prose a BIST code is written in capitals and a Turkish word is not; the matcher now preserves that distinction, and the stream dropped to 6 entries, all genuinely about the Turkish market.\n\nTen outlets relay the same call. Identity is now bound to the call rather than the article (institution + ticker + date + rating + target), so ten stories collapse into one entry. The research tab gained a domestic/global scope chip."
+      },
+      "includedIn": null
+    },
+    {
       "id": "2026-08-14-takvim-satiri-kaynagina-gider",
       "date": "2026-08-14",
       "author": "yazicmert",
