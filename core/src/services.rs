@@ -1583,7 +1583,7 @@ async fn fetch_gdelt(
         .collect())
 }
 
-async fn fetch_google_news(
+pub(crate) async fn fetch_google_news(
     client: &reqwest::Client,
     query: &str,
     ticker: Option<&str>,

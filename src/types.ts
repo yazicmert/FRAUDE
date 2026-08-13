@@ -502,6 +502,15 @@ export interface AnalystReport {
   rating?: string | null;
   target_price?: number | null;
   source_id: string;
+  /**
+   * Kayıt kurumun kendi yayınından değil, çağrıyı aktaran haberden
+   * çıkarıldıysa haberi geçen yayın ("Bloomberg HT").
+   *
+   * Küresel kurumların BIST raporları aboneliğe kapalı olduğu için onların
+   * kayıtlarında bu alan hep doludur. Ekran bunu göstermek zorundadır: haber
+   * aktarımı ile raporun kendisi aynı şey değildir.
+   */
+  via?: string | null;
 }
 
 /**

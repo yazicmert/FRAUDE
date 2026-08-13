@@ -108,12 +108,25 @@ pub struct AnalystReport {
     pub target_price: Option<f64>,
     /// `SOURCES` içindeki kaynak kimliği.
     pub source_id: String,
+    /// Kayıt kurumun kendi yayınından değil, çağrıyı **aktaran haberden**
+    /// çıkarıldıysa haberi geçen yayın ("Bloomberg HT").
+    ///
+    /// `None` ise kayıt kurumun kendi arşivinden gelir. Küresel kurumların
+    /// BIST raporları aboneliğe kapalı olduğu için onların kayıtlarında bu alan
+    /// hep doludur; ekran bu ayrımı kullanıcıya göstermek zorundadır — haber
+    /// aktarımı ile raporun kendisi aynı şey değildir.
+    ///
+    /// `default`: alan eklenmeden önce yazılmış arşivler okunabilsin diye.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
 }
 
 /// Ayrıştırıcı sürümü. Kaynak eklendiğinde ya da bir alanın çıkarımı
 /// düzeltildiğinde artırılır: diskteki arşiv eski sürümdeyse atılıp baştan
 /// kurulur, yoksa yalnız yeni gelen kayıtlar düzelir ve geçmiş bozuk kalır.
-pub const PARSER_VERSION: u32 = 2;
+/// 3: küresel kurum çağrıları (`global_calls`) arşive girdi ve kayda `via`
+///    alanı eklendi; eski arşivde bu kayıtlar hiç yok.
+pub const PARSER_VERSION: u32 = 3;
 
 /// Diskteki arşiv.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -513,7 +526,7 @@ const SHORT_RATINGS: &[(&str, &str)] = &[
 ];
 
 /// Türkçe harfleri ASCII'ye indirip küçük harfe çevirir (arama anahtarı).
-fn fold(input: &str) -> String {
+pub(crate) fn fold(input: &str) -> String {
     input
         .chars()
         .map(|c| match c {
@@ -659,7 +672,7 @@ pub fn extract_tickers(title: &str, tags: &[String], universe: &HashSet<String>)
 ///
 /// Uzun dizi önce denenir: "Türk Hava Yolları" ile "Türk Traktör" ilk
 /// kelimeyi paylaşır, kısa eşleşme kazansaydı yanlış şirkete bağlanırdı.
-fn ticker_from_company_name(title: &str) -> Option<&'static str> {
+pub(crate) fn ticker_from_company_name(title: &str) -> Option<&'static str> {
     for segment in title.split(['|', ':', '–', '—', '(', ')', '/']) {
         let words: Vec<&str> = segment.split_whitespace().collect();
         if words.is_empty() {
@@ -785,6 +798,7 @@ pub fn parse_wordpress_feed(
             rating: extract_rating(&haystack),
             target_price: extract_target_price(&haystack),
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     Ok(reports)
@@ -855,6 +869,7 @@ pub fn parse_vakif_listing(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -925,6 +940,7 @@ pub fn parse_halk_listing(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -1003,6 +1019,7 @@ pub fn parse_garanti_json(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     Ok(reports)
@@ -1085,6 +1102,7 @@ pub fn parse_ziraat_listing(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -1175,6 +1193,7 @@ pub fn parse_gedik_next_data(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     Ok(reports)
@@ -1296,6 +1315,7 @@ pub fn parse_ahlatci_timeline(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -1402,6 +1422,7 @@ pub fn parse_phillip_cards(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -1488,6 +1509,7 @@ pub fn parse_integral_cards(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -1563,6 +1585,7 @@ pub fn parse_seker_reports(
             published_ts,
             analyst: None,
             source_id: spec.id.to_string(),
+            via: None,
         });
     }
     reports
@@ -2074,6 +2097,15 @@ pub async fn refresh(client: &reqwest::Client, deep: bool) -> (usize, Vec<String
             Ok(reports) => added += merge(&mut archive, reports),
             Err(error) => errors.push(format!("{}: {error}", spec.broker)),
         }
+    }
+
+    // Küresel kurumlar `SOURCES` döngüsüne katılmaz: kaynakları kendi arşivleri
+    // değil haber akışı olduğu için sayfalama, beyaz liste ve `deep_pages`
+    // kavramlarının hiçbiri geçerli değil. Kayıt biçimi yine de aynı, dolayısıyla
+    // aynı arşive aynı `merge` ile girerler.
+    match crate::global_calls::fetch(client, universe).await {
+        Ok(calls) => added += merge(&mut archive, calls),
+        Err(error) => errors.push(format!("{}: {error}", crate::global_calls::SOURCE_LABEL)),
     }
 
     save(&archive);
