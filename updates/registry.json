@@ -16,7 +16,7 @@
         "en": "After the change that links calendar rows to their own indicator pages went live, rows still opened the general calendar. The parser was not at fault — the source page still carries the right address on the row, and the parser reads it correctly.\n\nThe caches were. The calendar is stored in two places: a file on disk in the backend and a local record in the interface. Neither refetches for six hours. When the new field (the indicator address) was added, records written BEFORE the upgrade kept being read; the field was missing, so it came back empty, and an empty address drops every row onto the general calendar. Fields are deliberately read as \"default if absent\" — an old file that failed to parse would blank the calendar entirely — but that also let a record with missing fields count as fresh. The result: anyone who updated saw a calendar where no row opened correctly, for up to six hours.\n\nBoth caches now carry a schema version stamp. A record with an older stamp is never treated as fresh regardless of its age, so the data is refetched at once. The old record is still kept readable: if every source fails, the screen shows the last known calendar instead of emptying. When a new field is added to an event the version is raised, and the same trap cannot be set again."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.30",
       "security": {
         "reviewed": false,
         "reviewer": null
