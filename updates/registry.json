@@ -2,6 +2,41 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-takvim-satiri-etkiledigi-paylari-etiketliyor",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Ekonomik takvim satırı, etkilediği payları ve o konudaki raporları etiketliyor",
+        "en": "An economic calendar row now tags the shares it touches and the research on that topic"
+      },
+      "summary": {
+        "tr": "Ekonomik takvim bir rakam gösteriyordu: \"Otomobil Üretimi (Yıllık) %15,5\". Rakamın kimi ilgilendirdiğini bulmak okuyucuya kalıyordu — hangi payların o veriye açık olduğunu bilmek için takvimden çıkıp aramak gerekiyordu.\n\nSatır açıldığında artık üç şey birden geliyor. Önce ETKİ KANALI: verinin piyasaya hangi yoldan geçtiğini anlatan tek cümle (otomobil üretiminde üretim hacmi ve yan sanayi siparişi, cari dengede enerji faturası ve turizm geliri). Sonra ETİKETLER: BIST tarafında o kanala en açık paylar, dünya tarafında ilgili enstrümanlar — otomobil üretiminde FROTO, TOASO, TTRAK, OTKAR, KARSN, ASUZU, EGEEN ile Ford Motor, Stellantis, Toyota ve DAX. Her rozetin üstünde neden orada olduğunu söyleyen bir gerekçe duruyor. Son olarak İLGİLİ ANALİZ RAPORLARI: kurum arşivinde o konuya ayrılmış makro notlar ve etiketlenen payların şirket raporları, yakın tarihliden başlayarak.\n\nEtiket YÖN İDDİA ETMEZ. \"Bu veri gelince şu pay yükselir\" demez; hangi payın o veriyle ilgili olduğunu söyler — takvimdeki sapma okunun olumlu/olumsuz yorumu taşımaması da aynı sebeple. Eşleme sabit bir tabloda tutulur, yapay zekâya sorulmaz: takvim çevrimdışı da açılıyor ve anahtar isteyen bir sağlayıcıya bağlanmak paneli kırılgan yapardı. Tablo aynı zamanda sınanabilir; canlı takvimde görünen 28 kategorinin hepsinin karşılığı olduğu testle bağlandı.\n\nRapor eşlemesinde ölçülen gerçek gürültü ayıklandı: günlük bültenler (\"Piyasalarda Bugün\", \"Günlük Bülten\", \"Pay Geri Alımları\") her konuyu bir cümleyle andığı için konu terimini de hisse kodunu da taşıyor ve listeyi dolduruyordu. Arama rapor BAŞLIĞINDA yapılır ve bu yinelenen yayınlar elenir; geriye \"Cari İşlemler Dengesi - Temmuz 2026\", \"Otomotiv Sektör Raporu\", \"TCMB Enflasyon Raporu\" gibi satırın gerçek karşılıkları kalır. Arşiv boşsa liste sessizce boş görünmez, \"arşiv henüz kurulmadı\" der — \"rapor yok\" ile \"arşiv yok\" aynı şey değil.\n\nBunun yanında iki şey düzeldi. Gösterge sayfası ya da bir haber açıldığında takvim paneli artık kapanıyor: panel açık kalınca okunacak sayfanın tam üstünde duruyor ve sayfa görünmez oluyordu. Ve kaynağın iki adla yayımladığı satırlar Türkçeye çevrildi — ekranda \"Gdp Growth Rate Yoy\" ve \"Inflation Report\" diye görünen kayıtlar artık \"GSYİH Büyümesi (Yıllık)\" ve \"TCMB Enflasyon Raporu\".",
+        "en": "The economic calendar showed a number: \"Car Production (YoY) 15.5%\". Working out who that number concerns was left to the reader — you had to leave the calendar and go searching to learn which shares are exposed to it.\n\nExpanding a row now brings three things at once. First the CHANNEL: one sentence on how the release reaches the market (output volume and supplier orders for car production; the energy bill and tourism revenue for the current account). Then the TAGS: the BIST shares most exposed to that channel and the related world instruments — for car production FROTO, TOASO, TTRAK, OTKAR, KARSN, ASUZU, EGEEN alongside Ford Motor, Stellantis, Toyota and the DAX. Every badge carries the reason it is there. Finally RELATED RESEARCH: macro notes brokers devoted to that topic plus company research on the tagged shares, newest first.\n\nA tag makes NO CLAIM ABOUT DIRECTION. It does not say \"this share rises when the data lands\"; it says which share the data concerns — the same reason the surprise arrow in the calendar carries no good/bad judgement. The mapping lives in a fixed table rather than being asked of an AI: the calendar opens offline too, and hanging it off a key-gated provider would make the panel fragile. The table is also testable; a test pins that all 28 categories seen in the live calendar have an entry.\n\nReal measured noise was removed from the research matching: daily bulletins (\"Piyasalarda Bugün\", \"Günlük Bülten\", \"Pay Geri Alımları\") mention every topic in one sentence, so they carry both the topic term and the ticker and used to fill the list. The search now runs on the report TITLE and drops these recurring publications, leaving the row's real counterparts — \"Cari İşlemler Dengesi - Temmuz 2026\", \"Otomotiv Sektör Raporu\", \"TCMB Enflasyon Raporu\". When the archive is empty the list does not go quietly blank, it says the archive is not built yet — \"no research\" and \"no archive\" are not the same thing.\n\nTwo fixes came with it. The calendar panel now closes when an indicator page or an article opens: left open, it sat directly on top of the page to be read and hid it. And rows the source publishes under a second name are translated — records that read \"Gdp Growth Rate Yoy\" and \"Inflation Report\" on screen now read \"GSYİH Büyümesi (Yıllık)\" and \"TCMB Enflasyon Raporu\"."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/calendar_impact.rs",
+        "core/src/calendar_news.rs",
+        "core/src/economic_calendar.rs",
+        "core/src/api.rs",
+        "src-tauri/src/commands.rs",
+        "src/components/EconomicCalendar.tsx",
+        "src/api/tauriClient.ts",
+        "src/lib/actions.ts",
+        "src/App.tsx",
+        "src/App.css"
+      ],
+      "agentPrompt": "Ekonomik takvim satırı yalnız rakam gösteriyor; o verinin hangi payları ilgilendirdiği kullanıcıya kalıyor. Satır akıllansın: açıldığında etkilenebilecek payları ve o konudaki analiz raporlarını da göstersin.\n\nAdımlar:\n\n1. Kaynağın kategori adından (`data-category`) piyasa profiline giden bir tablo kur: bir ETKİ KANALI cümlesi, BIST tarafında etkilenebilecek paylar, dünya tarafında ilgili enstrümanlar. Her etiket kendi GEREKÇESİNİ taşısın — gerekçesiz rozet \"bu pay neden burada?\" sorusunu cevapsız bırakır. Tablo iki dilli olsun; arayüz tam iki dilli.\n\n2. YÖN İDDİA ETME. \"Şu veri gelirse şu pay yükselir\" cümlesi kurma; ilişkinin üretim/talep/maliyet kanalı olduğunu ekranda da yaz. Takvimdeki sapma oku da aynı sebeple yorum taşımıyor.\n\n3. Eşlemeyi yapay zekâya sorma, sabit tabloda tut: takvim çevrimdışı da açılıyor. Tabloyu testle bağla — uygulamanın disk önbelleğindeki CANLI kategorileri oku ve hepsinin karşılığı olduğunu doğrula, yoksa eksik anahtar o satırda bölümü sessizce hiç çizmez.\n\n4. İlgili raporları kurumların diskteki arşivinden süz; takvim satırı açmak 12 kaynağı taramayı BAŞLATMASIN. İki yol: raporun BAŞLIĞI konunun terimini taşıyor (makro not) ya da raporun etiketi etiketlenen paylardan biri (şirket araştırması). Konu raporu önce sıralansın.\n\n5. Günlük bültenleri ele: \"Piyasalarda Bugün\", \"Günlük Bülten\", \"Pay Geri Alımları\" gibi yinelenen yayınlar her konuyu bir cümleyle andığı için hem terimi hem kodu taşır ve listeyi doldurur. Özetle değil başlıkla eşle. Arşiv boşsa \"rapor yok\" deme, \"arşiv henüz kurulmadı\" de.\n\n6. Türkçe büyük/küçük harf tuzağına dikkat: `to_lowercase()` 'İ'yi \"i + birleşen nokta\" yapar. Başlık eşlemesi projede zaten bulunan parmak izi fonksiyonundan geçsin, ikinci bir katlama kuralı yazma.\n\n7. Tıklanabilirlik dürüst olsun: uygulamanın kendi sayfasında açabildiği sembol (BIST kodu, katalogdaki döviz/emtia/endeks) düğme olsun; \"F\" (Ford) gibi karşılığı olmayan sembol düz bilgi etiketi kalsın — tıklanınca boş sayfa açan rozet, hiç tıklanmayandan kötüdür.\n\n8. Okuyucu açılınca takvim panelini KAPAT: panel açık kalırsa okunacak sayfanın tam üstünde durur.\n\nKabul: npx tsc --noEmit, npm run build, cargo test --manifest-path core/Cargo.toml --lib ve cargo check --manifest-path src-tauri/Cargo.toml temiz geçmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-gosterge-sayfasi-kendi-duzeniyle",
       "date": "2026-08-14",
       "author": "yazicmert",

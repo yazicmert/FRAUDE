@@ -235,6 +235,14 @@ pub async fn get_calendar_event_news(
 }
 
 #[tauri::command]
+pub async fn get_calendar_event_impact(
+    category: String,
+    lang: String,
+) -> Result<fraude_core::calendar_impact::CalendarImpact, String> {
+    api::get_calendar_event_impact(category, lang).await
+}
+
+#[tauri::command]
 pub async fn get_bist_indices(state: State<'_, AppState>) -> Result<(std::collections::HashMap<String, Vec<crate::domain::IndexConstituent>>, Vec<crate::domain::IndexChange>), String> {
     api::get_bist_indices(&state).await
 }

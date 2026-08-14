@@ -2279,6 +2279,73 @@ tr.clickable-row:hover {
   margin-bottom: 4px;
 }
 
+/* Ayrıntı panelinde üç bölüm alt alta geliyor (etki, rapor, haber); başlıklar
+   bir öncekinden ayrılsın. Dikey kenar boşlukları çakıştığı için üstteki
+   bölümün kendi boşluğuyla toplanmaz. */
+.eco-cal-detail > .eco-cal-news-title,
+.eco-cal-impact > .eco-cal-news-title {
+  margin-top: 10px;
+}
+
+/* ── Etkilenebilecek paylar ─────────────────────────────────────────────── */
+.eco-cal-impact-channel {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-main);
+}
+
+.eco-cal-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.eco-cal-tag-label {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  /* Sabit genişlik: BIST ve DÜNYA satırlarının rozetleri aynı sütunda başlar. */
+  width: 38px;
+  flex-shrink: 0;
+}
+
+/* Rozet iki biçimde çizilir: uygulamada sayfası olan sembol düğme (.is-open),
+   olmayan düz etiket. Görünüm ortak, yalnız tıklanabilirlik farklı. */
+.eco-cal-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1.5;
+  cursor: help;
+}
+
+.eco-cal-tag.is-open {
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.eco-cal-tag.is-open:hover,
+.eco-cal-tag.is-open:focus-visible {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.eco-cal-impact-note {
+  margin: 2px 0 0;
+  font-size: 0.58rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
 .eco-cal-news-note {
   font-size: 0.68rem;
   color: var(--text-muted);

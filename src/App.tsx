@@ -482,7 +482,15 @@ export default function App() {
       const target = (e as CustomEvent<ViewerDocument>).detail;
       if (target) setArticleDocument(target);
     };
+    // Ekonomik takvimin etiketlediği pay/enstrüman: şeritteki tıklamayla aynı
+    // yoldan açılır, böylece endeks karşılığı olan semboller endeks sekmesine
+    // düşer ("^GDAXI" → DAX).
+    const onOpenSymbol = (e: Event) => {
+      const symbol = (e as CustomEvent<{ symbol?: string }>).detail?.symbol;
+      if (symbol) openFromMarquee(symbol);
+    };
     window.addEventListener(ARTICLE_READER_EVENT, onOpenArticle);
+    window.addEventListener('fraude-open-symbol', onOpenSymbol);
     window.addEventListener('fraude-open-alerts', onOpenAlerts);
     window.addEventListener('fraude-ai-ask', onAiAsk);
     window.addEventListener('fraude-open-palette', onOpenPalette);
@@ -502,6 +510,7 @@ export default function App() {
     const statusTimer = setInterval(() => setMarketStatus(getMarketStatus()), 30_000);
     return () => {
       window.removeEventListener(ARTICLE_READER_EVENT, onOpenArticle);
+      window.removeEventListener('fraude-open-symbol', onOpenSymbol);
       window.removeEventListener('fraude-open-alerts', onOpenAlerts);
       window.removeEventListener('fraude-ai-ask', onAiAsk);
       window.removeEventListener('fraude-open-palette', onOpenPalette);

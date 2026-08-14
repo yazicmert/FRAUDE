@@ -3,6 +3,7 @@ import type {
   AiKeyRecord,
   AiHistoryRecord,
   AiResponse,
+  AnalystReport,
   DashboardSnapshot,
   FqlResponse,
   HistoricalQuote,
@@ -223,6 +224,39 @@ export function getCalendarEventNews(event: EconomicEvent, lang: string) {
     category: event.category,
     event: event.event,
     date: event.date,
+    lang,
+  });
+}
+
+/** Takvim satırına etiketlenen tek bir enstrüman. */
+export interface ImpactLink {
+  /** BIST kodu ("FROTO") ya da sağlayıcı sembolü ("BZ=F", "STLA"). */
+  symbol: string;
+  name: string;
+  /** İlişkinin gerekçesi — yön değil, kanal anlatır. */
+  why: string;
+}
+
+/** Takvim maddesinin piyasa karşılığı. */
+export interface CalendarImpact {
+  /** Verinin piyasaya hangi yoldan geçtiğini anlatan cümle; boşsa bölüm çizilmez. */
+  channel: string;
+  bist: ImpactLink[];
+  global: ImpactLink[];
+  reports: AnalystReport[];
+  /** Rapor arşivi kurulmuş mu — boş liste "rapor yok" mu, "arşiv yok" mu? */
+  archive_ready: boolean;
+}
+
+/**
+ * Takvim maddesinin etkilediği paylar ve o konudaki analiz raporları.
+ *
+ * Ağa çıkmaz: etiketler sabit tablodan, raporlar diskteki kurum arşivinden
+ * gelir. Bu yüzden haber aramasından bağımsız ve anında döner.
+ */
+export function getCalendarEventImpact(event: EconomicEvent, lang: string) {
+  return invoke<CalendarImpact>('get_calendar_event_impact', {
+    category: event.category,
     lang,
   });
 }

@@ -160,7 +160,11 @@ fn remember(key: String, items: &[NewsItem], now: i64) {
 /// 'İ' → "i̇" (i + birleşen nokta) olur, yani "AÇIKLANDI" → "açiklandi" ile
 /// "açıklandı" birbirini tutmaz ve aynı haber listede iki kez görünür.
 /// Noktasız/noktalı i farkı burada silinir.
-fn fingerprint(title: &str) -> String {
+///
+/// `pub(crate)`: `calendar_impact` rapor başlıklarını aynı kuralla eşliyor —
+/// iki ayrı katlama kuralı, aynı başlığın bir yerde tutup başka yerde
+/// tutmaması demek olurdu.
+pub(crate) fn fingerprint(title: &str) -> String {
     let lowered = title.to_lowercase();
     let flattened: String = lowered
         .chars()

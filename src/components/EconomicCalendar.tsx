@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  getCalendarEventImpact,
   getCalendarEventNews,
   getEconomicCalendar,
   getMarketHolidays,
+  type CalendarImpact,
   type EconomicEvent,
   type EconomicImpact,
+  type ImpactLink,
 } from '../api/tauriClient';
 import type { NewsItem } from '../types';
 import { useTranslation } from '../api/i18n';
-import { documentFromNews, requestArticleReader } from '../features/reports/ReportDocumentModal';
+import {
+  documentFromNews,
+  documentFromReport,
+  requestArticleReader,
+  type ViewerDocument,
+} from '../features/reports/ReportDocumentModal';
+import { dispatchOpenSymbol } from '../lib/actions';
+import { classifyInstrument } from '../lib/instrumentKind';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -163,6 +173,19 @@ function newsDate(raw: string | undefined, locale: string): string {
   return parsed.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/**
+ * Uygulama bu sembolü kendi sayfasında açabiliyor mu?
+ *
+ * Katalogdaki döviz/emtia/endeks kodları ve bilinen küresel devler açılabilir;
+ * geri kalan her sembol BIST hissesi varsayılır. "F" (Ford) ya da "STLA"
+ * (Stellantis) böyle bir kod DEĞİL — tıklanabilir yapılsa İş Yatırım'da
+ * karşılığı olmayan boş bir hisse sayfası açılırdı. Bu yüzden dünya
+ * etiketlerinin bir kısmı bilgi amaçlı düz etiket olarak durur.
+ */
+function canOpenSymbol(symbol: string): boolean {
+  return classifyInstrument(symbol) !== 'bist-equity';
+}
+
 /** Son güncelleme zamanını insan diline çevirir. */
 function freshnessLabel(savedAt: number | null, t: Translate): string {
   if (!savedAt) return t('ecoCalUpdatingNow');
@@ -172,6 +195,53 @@ function freshnessLabel(savedAt: number | null, t: Translate): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return t('ecoCalUpdatedHoursAgo', { n: hours });
   return t('ecoCalUpdatedDaysAgo', { n: Math.floor(hours / 24) });
+}
+
+/* ── Etiket satırı ────────────────────────────────────────────────────────── */
+
+interface TagRowProps {
+  label: string;
+  links: ImpactLink[];
+  /** İpucunda gösterilen "sayfasını aç" metni. */
+  openLabel: string;
+  onOpen: (symbol: string) => void;
+  /** Sembolün uygulama içinde bir sayfası var mı? */
+  canOpen: (symbol: string) => boolean;
+}
+
+/**
+ * Etiketlenen payların tek satırlık listesi.
+ *
+ * Gerekçe ipucunda durur: rozetin üstünde altı kelimeyle "neden bu pay?"
+ * sorusuna cevap veren bir cümle var. Ekranda göstermek 420 piksellik paneli
+ * duvar yazısına çevirirdi.
+ */
+function TagRow({ label, links, openLabel, onOpen, canOpen }: TagRowProps) {
+  if (links.length === 0) return null;
+  return (
+    <div className="eco-cal-tag-row">
+      <span className="eco-cal-tag-label">{label}</span>
+      {links.map((link) =>
+        canOpen(link.symbol) ? (
+          <button
+            key={link.symbol}
+            type="button"
+            className="eco-cal-tag is-open"
+            title={`${link.name} — ${link.why}\n${openLabel}`}
+            onClick={() => onOpen(link.symbol)}
+          >
+            {link.symbol}
+          </button>
+        ) : (
+          // Uygulamada sayfası olmayan sembol düğme DEĞİL: tıklanabilir
+          // görünüp boş ekran açmaktansa bilgi etiketi olarak durur.
+          <span key={link.symbol} className="eco-cal-tag" title={`${link.name} — ${link.why}`}>
+            {link.symbol}
+          </span>
+        ),
+      )}
+    </div>
+  );
 }
 
 /* ── Bileşen ──────────────────────────────────────────────────────────────── */
@@ -185,6 +255,15 @@ interface Props {
   onCount?: (total: number, highToday: number) => void;
 }
 
+/** Açılmış bir satırın toplanan içeriği. */
+interface RowDetail {
+  /** Haber araması sürüyor mu — etki tablosu yerelden anında geldiği için
+   *  ayrı izlenir, ağ yavaşken etiketler beklemez. */
+  newsLoading: boolean;
+  news: NewsItem[];
+  impact: CalendarImpact | null;
+}
+
 export default function EconomicCalendar({ open, onClose, onCount }: Props) {
   const { t, lang } = useTranslation();
   const locale = lang === 'tr' ? 'tr-TR' : 'en-US';
@@ -196,14 +275,38 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
   const [filter, setFilter] = useState<ImpactFilter>('all');
   /** Açık duran satırın anahtarı; aynı anda tek satır açılır. */
   const [openRow, setOpenRow] = useState<string | null>(null);
-  /** Satır anahtarı → o maddenin haber araması. */
-  const [newsByRow, setNewsByRow] = useState<Record<string, { loading: boolean; items: NewsItem[] }>>({});
+  /** Satır anahtarı → o maddenin etiketleri, raporları ve haberleri. */
+  const [detailByRow, setDetailByRow] = useState<Record<string, RowDetail>>({});
   const ref = useRef<HTMLDivElement>(null);
   const onCountRef = useRef(onCount);
   onCountRef.current = onCount;
 
   /**
-   * Satırı açar/kapatır; ilk açılışta haberleri çeker.
+   * Okuyucuyu açar ve takvimi kapatır.
+   *
+   * Panel açık kalırsa okunacak sayfanın tam üstünde durur — gösterge sayfası
+   * arkada görünmez hâle geliyordu. Takvim düğmesi yerinde: kullanıcı okumayı
+   * bitirince paneli yeniden açar.
+   */
+  const openInReader = useCallback(
+    (document: ViewerDocument) => {
+      requestArticleReader(document);
+      onClose();
+    },
+    [onClose],
+  );
+
+  /** Etiketlenen payın sayfasını açar; takvim yine kapanır. */
+  const openSymbol = useCallback(
+    (symbol: string) => {
+      dispatchOpenSymbol(symbol);
+      onClose();
+    },
+    [onClose],
+  );
+
+  /**
+   * Satırı açar/kapatır; ilk açılışta etkilenen payları ve haberleri toplar.
    *
    * Sonuç satır anahtarında saklanır: kullanıcı satırı kapatıp yeniden açınca
    * arama tekrarlanmasın. Arka uç ayrıca kendi içinde önbellekliyor, bu yüzden
@@ -211,14 +314,27 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
    */
   const toggleRow = useCallback(
     (key: string, event: EconomicEvent) => {
+      // İki istek ayrı ayrı yerleşiyor; her biri yalnız kendi alanını yazsın.
+      const patch = (changes: Partial<RowDetail>) =>
+        setDetailByRow((rows) => ({
+          ...rows,
+          [key]: { ...(rows[key] ?? { newsLoading: false, news: [], impact: null }), ...changes },
+        }));
+
       setOpenRow((current) => (current === key ? null : key));
-      setNewsByRow((current) => {
+      setDetailByRow((current) => {
         if (current[key]) return current;
+        // Etki tablosu yereldir ve anında gelir, haber araması ağa çıkar.
+        // Biri diğerini bekletmemeli.
         void getCalendarEventNews(event, lang)
-          .then((items) => setNewsByRow((rows) => ({ ...rows, [key]: { loading: false, items } })))
+          .then((news) => patch({ newsLoading: false, news }))
           // Haber gelmemesi satırın açılmasını engellememeli: liste boş görünür.
-          .catch(() => setNewsByRow((rows) => ({ ...rows, [key]: { loading: false, items: [] } })));
-        return { ...current, [key]: { loading: true, items: [] } };
+          .catch(() => patch({ newsLoading: false, news: [] }));
+        void getCalendarEventImpact(event, lang)
+          .then((impact) => patch({ impact }))
+          // Etki tablosu yoksa bölüm hiç çizilmez; satırın kalanı çalışır.
+          .catch(() => undefined);
+        return { ...current, [key]: { newsLoading: true, news: [], impact: null } };
       });
     },
     [lang],
@@ -399,7 +515,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
               // davranış korunur, satır doğrudan tatil listesine çıkar.
               const isHoliday = event.impact === 'holiday';
               const expanded = openRow === rowKey;
-              const news = newsByRow[rowKey];
+              const detail = detailByRow[rowKey];
               return (
                 <div key={rowKey} className={`eco-cal-item${expanded ? ' is-open' : ''}`}>
                 <button
@@ -411,7 +527,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                     isHoliday
                       ? // Tatilin açıklanan verisi ve haber gündemi yok; kaynak
                         // sayfası doğrudan açılır — ama o da uygulama içinde.
-                        requestArticleReader({
+                        openInReader({
                           id: source,
                           title: event.event,
                           source: hostOf(source),
@@ -486,7 +602,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                       <button
                         type="button"
                         onClick={() =>
-                          requestArticleReader({
+                          openInReader({
                             id: source,
                             title: event.event,
                             source: hostOf(source),
@@ -504,20 +620,86 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                           araç çubuğunda "↗ Dışarıda aç" duruyor. */}
                     </div>
 
+                    {/* Etkilenebilecek paylar. Kanal cümlesi boşsa kategori
+                        sözlükte yok demektir; uydurma etiket göstermektense
+                        bölüm hiç çizilmez. */}
+                    {detail?.impact?.channel && (
+                      <div className="eco-cal-impact">
+                        <div className="eco-cal-news-title">{t('ecoCalImpactTitle')}</div>
+                        <p className="eco-cal-impact-channel">{detail.impact.channel}</p>
+                        <TagRow
+                          label={t('ecoCalImpactBist')}
+                          links={detail.impact.bist}
+                          openLabel={t('ecoCalOpenSymbol')}
+                          onOpen={openSymbol}
+                          // BIST kodunun karşılığı her zaman bir hisse sayfası.
+                          canOpen={() => true}
+                        />
+                        <TagRow
+                          label={t('ecoCalImpactGlobal')}
+                          links={detail.impact.global}
+                          openLabel={t('ecoCalOpenSymbol')}
+                          onOpen={openSymbol}
+                          canOpen={canOpenSymbol}
+                        />
+                        <p className="eco-cal-impact-note">{t('ecoCalImpactDisclaimer')}</p>
+                      </div>
+                    )}
+
+                    {/* İlgili analiz raporları: kurum arşivinde bu konuya ya da
+                        etiketlenen paylara ayrılmış yakın tarihli kayıtlar. */}
+                    {detail?.impact && (
+                      <>
+                        <div className="eco-cal-news-title">{t('ecoCalRelatedReports')}</div>
+                        {detail.impact.reports.length === 0 && (
+                          <div className="eco-cal-news-note">
+                            {detail.impact.archive_ready
+                              ? t('ecoCalReportsEmpty')
+                              : t('ecoCalReportsArchiveEmpty')}
+                          </div>
+                        )}
+                        <ul className="eco-cal-news">
+                          {detail.impact.reports.map((report) => (
+                            <li key={report.id}>
+                              <button
+                                type="button"
+                                // Rapor, Analiz modülündekiyle aynı okuyucuda
+                                // açılır: PDF indirilip uygulama içinde çizilir.
+                                onClick={() =>
+                                  openInReader(documentFromReport(report, t('ecoCalReportKind')))
+                                }
+                              >
+                                <span className="eco-cal-news-headline">{report.title}</span>
+                                <span className="eco-cal-news-source">
+                                  {report.broker}
+                                  {newsDate(report.published, locale) && (
+                                    <> · {newsDate(report.published, locale)}</>
+                                  )}
+                                  {report.tickers.length > 0 && <> · {report.tickers.join(', ')}</>}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+
                     <div className="eco-cal-news-title">{t('ecoCalRelatedNews')}</div>
-                    {news?.loading && <div className="eco-cal-news-note">{t('ecoCalNewsLoading')}</div>}
-                    {news && !news.loading && news.items.length === 0 && (
+                    {detail?.newsLoading && (
+                      <div className="eco-cal-news-note">{t('ecoCalNewsLoading')}</div>
+                    )}
+                    {detail && !detail.newsLoading && detail.news.length === 0 && (
                       <div className="eco-cal-news-note">{t('ecoCalNewsEmpty')}</div>
                     )}
                     <ul className="eco-cal-news">
-                      {(news?.items ?? []).slice(0, 8).map((item) => (
+                      {(detail?.news ?? []).slice(0, 8).map((item) => (
                         <li key={item.link}>
                           <button
                             type="button"
                             // Haber uygulama içindeki okuyucuda açılır; dış
-                            // tarayıcıya çıkmak için satırdaki düğme var.
+                            // tarayıcıya çıkmak için okuyucunun araç çubuğu var.
                             onClick={() =>
-                              requestArticleReader(
+                              openInReader(
                                 documentFromNews(item, t('ecoCalNewsKind'), item.pub_date ?? ''),
                               )
                             }

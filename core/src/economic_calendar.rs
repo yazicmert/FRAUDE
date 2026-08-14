@@ -227,8 +227,11 @@ fn titlecase_event(raw: &str) -> String {
         "ppi mom" => return "Üretici Fiyatları (ÜFE) Aylık".into(),
         "unemployment rate" => return "İşsizlik Oranı".into(),
         "participation rate" => return "İşgücüne Katılım Oranı".into(),
-        "gdp growth rate" => return "GSYİH Büyümesi (Çeyreklik)".into(),
-        "gdp annual growth rate" => return "GSYİH Büyümesi (Yıllık)".into(),
+        // Kaynak aynı göstergeyi iki adla yayımlıyor: kategori "gdp growth
+        // rate" iken olay adı "gdp growth rate qoq" olabiliyor. İkisi de
+        // karşılanmazsa satır ekrana "Gdp Growth Rate Qoq" diye düşer.
+        "gdp growth rate" | "gdp growth rate qoq" => return "GSYİH Büyümesi (Çeyreklik)".into(),
+        "gdp annual growth rate" | "gdp growth rate yoy" => return "GSYİH Büyümesi (Yıllık)".into(),
         "current account" => return "Cari İşlemler Dengesi".into(),
         "balance of trade" | "balance of trade final" => return "Dış Ticaret Dengesi".into(),
         "balance of trade prel" => return "Dış Ticaret Dengesi (Öncü)".into(),
@@ -251,6 +254,7 @@ fn titlecase_event(raw: &str) -> String {
         "central government debt" => return "Merkezi Yönetim Borç Stoku".into(),
         "treasury cash balance" => return "Hazine Nakit Dengesi".into(),
         "mpc meeting summary" => return "PPK Toplantı Özeti".into(),
+        "inflation report" => return "TCMB Enflasyon Raporu".into(),
         "istanbul chamber of industry manufacturing pmi" => return "İSO İmalat PMI".into(),
         "tourism revenues" => return "Turizm Gelirleri".into(),
         "tourist arrivals yoy" => return "Turist Girişleri (Yıllık)".into(),
@@ -607,6 +611,18 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].source_url, "https://tradingeconomics.com/turkey/inflation-cpi");
         assert_eq!(events[1].source_url, FALLBACK_SOURCE_URL);
+    }
+
+    /// Ekranda görülen ham adlar: kaynak aynı göstergeyi hem kategori adıyla
+    /// hem "qoq/yoy" ekiyle yayımlıyor, faiz kategorisinde de enflasyon raporu
+    /// satırı çıkıyor. Karşılanmayan ad kullanıcıya İngilizce düşer.
+    #[test]
+    fn source_specific_event_names_are_translated() {
+        assert_eq!(titlecase_event("gdp growth rate qoq"), "GSYİH Büyümesi (Çeyreklik)");
+        assert_eq!(titlecase_event("gdp growth rate yoy"), "GSYİH Büyümesi (Yıllık)");
+        assert_eq!(titlecase_event("inflation report"), "TCMB Enflasyon Raporu");
+        // Sözlükte olmayan ad yine de okunabilir kalmalı.
+        assert_eq!(titlecase_event("housing starts"), "Housing Starts");
     }
 
     #[test]
