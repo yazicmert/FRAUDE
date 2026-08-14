@@ -1,0 +1,13 @@
+# Kaynak dosyaları her zaman METİN olarak diff'lenir.
+#
+# Gerekçe: git bir dosyanın ilk baytlarında NUL görürse onu ikili sayar ve
+# diff yerine "Binary files differ" basar — dosyadaki değişiklik incelenemez
+# hale gelir. ReportDocumentModal.tsx tam olarak bunu yaşadı: bir şablon
+# dizesinde ayraç olarak NUL kullanılıyordu, dolayısıyla o dosyaya dokunan
+# her commit inceleme dışı kalıyordu. Ayraç düzeltildi; bu kural da aynı
+# durumun sessizce tekrar etmesini önler.
+*.ts diff
+*.tsx diff
+*.rs diff
+*.css diff
+*.json diff

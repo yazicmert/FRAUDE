@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-gosterge-sayfasi-kendi-duzeniyle",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Takvimdeki gösterge sayfası artık kaynağın kendi düzeniyle açılıyor",
+        "en": "A calendar indicator page now opens with the source's own layout"
+      },
+      "summary": {
+        "tr": "Ekonomik takvimde bir satırı açıp \"Göstergenin sayfası\"na basınca, uygulama içi okuyucu sayfayı sade metne indirgiyordu. Bir haber için doğru olan bu varsayılan, bir gösterge için yanlıştı: geriye kaynağın İngilizce tanıtım paragrafları kalıyor, sayfanın asıl taşıdığı şey — başlık şeridi, dönem sekmeleri, değer tablosu, sayfanın kendi düzeni — kayboluyordu. Ekranda okunacak bir yazı vardı ama bakılacak bir veri yoktu.\n\nOkuyucu zaten iki kip taşıyor: kaynağın kendi sayfası (betiksiz, izleyicisiz bir çerçevede) ve sade metin. Eksik olan, hangi kipin hangi belgeye uygun olduğuydu — her canlı sayfa \"haber\" sayılıyor ve sade metinle açılıyordu.\n\nBelge kaydına artık üçüncü bir tür eklendi: gösterge. Aynı yoldan çekilir, aynı güvenlik sözleşmesine tabidir, ama sade metne indirgenmeden kaynağın kendi düzeniyle açılır. Haberde hiçbir şey değişmedi: metin çıkarılabiliyorsa okuyucu, çıkarılamıyorsa sayfa. Sade metin göstergede de kapanmadı, üstteki \"Okuyucu\" sekmesinde bir tık uzakta duruyor; dışarıda açma yolu da okuyucunun kendi araç çubuğunda yerinde.\n\nSınır şurada: sayfa betiksiz bir çerçevede açıldığı için kaynağın JavaScript ile çizdiği geçmiş grafiği boş kalıyor. Bu bilinçli — çerçeveye betik izni vermek reklam ve izleyici trafiğini de içeri almak demek. Sayı okumak için gereken her şey (son değer, önceki dönem, zirve/dip, veri aralığı, kaynağın tahmini) sayfanın kendi tablosunda ve o tablo görünüyor.\n\nBu arada, düzeltilen dosyada git'i yanıltan bir ayrıntı vardı: bir şablon dizesinde ayraç olarak NUL baytı kullanılıyordu, git de dosyayı ikili sayıp değişikliklerini \"Binary files differ\" diye gösteriyordu — yani o dosyaya dokunan her commit inceleme dışı kalıyordu. Ayraç okunur bir karakterle değiştirildi ve kaynak dosyaların her zaman metin olarak karşılaştırılmasını sağlayan bir kural eklendi.",
+        "en": "Opening a row in the economic calendar and pressing “Indicator page” used to reduce the page to plain text in the in-app reader. That default is right for a news article and wrong for an indicator: what remained were the source's English marketing paragraphs, while the thing the page actually carries — the title bar, the period tabs, the value table, the page's own layout — disappeared. There was something to read on screen, but nothing to look at.\n\nThe reader already had two modes: the source's own page (in a script-free, tracker-free frame) and plain text. What was missing was knowing which mode suits which document — every live page counted as “news” and opened as plain text.\n\nThe document record now has a third kind: indicator. It is fetched the same way and bound by the same security contract, but opens with the source's own layout instead of being reduced to text. Nothing changed for news: reader when text can be extracted, page when it cannot. Plain text is not closed off for indicators either — it sits one click away on the “Reader” tab, and the external-open path remains in the reader's own toolbar.\n\nOne limit: because the page opens in a script-free frame, the historical chart the source draws with JavaScript stays blank. That is deliberate — granting the frame scripts would also let ad and tracker traffic in. Everything needed to read the numbers (latest value, previous period, all-time high/low, data range, the source's own forecast) lives in the page's own table, and that table renders.\n\nAlong the way, a detail in the fixed file was misleading git: a template string used a NUL byte as a separator, so git treated the file as binary and rendered its changes as “Binary files differ” — every commit touching it fell outside review. The separator was replaced with a printable character, and a rule was added so source files are always diffed as text."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/reports/ReportDocumentModal.tsx",
+        "src/components/EconomicCalendar.tsx",
+        ".gitattributes"
+      ],
+      "agentPrompt": "Ekonomik takvimde satır açılıp \"Göstergenin sayfası\" düğmesine basılınca, uygulama içi okuyucu sayfayı SADE METNE indirgiyor. Bu bir haber için doğru varsayılan ama bir gösterge sayfası için yanlış: geriye kaynağın tanıtım paragrafları kalıyor, sayfanın asıl değeri olan tablo ve düzen kayboluyor.\n\nAmaç: gösterge sayfası kaynağın KENDİ DÜZENİYLE açılsın; haberdeki davranış hiç değişmesin.\n\nAdımlar:\n\n1. Okuyucunun belge kaydındaki 'nasıl getirilecek' alanına üçüncü bir tür ekle (ör. `indicator`). Canlı sayfa yolunu ve güvenlik sözleşmesini AYNEN paylaşsın — yeni bir getirme yolu açma, yalnız açılış kipi ayrışsın.\n\n2. Açılış kipini belgeye göre seç: gösterge doğrudan sayfa kipiyle açılsın; haber için eski kural sürsün (sade metin çıkarılabiliyorsa okuyucu, yoksa sayfa). Kipler arası geçiş düğmeleri korunsun — sade metin göstergede de bir tık uzakta kalmalı.\n\n3. Takvimdeki gösterge düğmesini yeni türle çağır. Resmi tatil satırı gösterge DEĞİLDİR; onu olduğu gibi bırak.\n\n4. Çerçevenin betiksiz kalması sözleşmenin parçası: betik izni verme. Kaynağın JavaScript ile çizdiği grafik bu yüzden boş kalır, bu kabul edilen sınırdır — sayıların bulunduğu tablo sunucudan geldiği için görünür.\n\n5. DOĞRULAMA — kaynağın gerçek HTML'ini indir ve sayfa kipinin çıktısını üretimdeki ile AYNI çerçeve ayarında (tam kısıtlı sandbox) tarayıcıda aç. Sayfanın yüklenmesi harici varlıklara bağlı olduğu için ölçmeden önce yeterince bekle: erken alınan ekran görüntüsü sayfayı boş gösterir ve yanlış teşhise götürür.\n\n6. Dosya ikili görünüyorsa (git \"Binary files differ\" diyorsa) sebebini ara: kaynakta NUL baytı olabilir. Bu, o dosyaya dokunan her değişikliği inceleme dışı bırakır; ayracı okunur bir karakterle değiştir ve kaynak uzantıları için metin diff'ini garantiye alan bir kural ekle.\n\nKabul: npx tsc --noEmit ve npm run build temiz geçmeli. Gösterge sayfası uygulama içinde kaynağın kendi düzeniyle açılmalı; haber akışındaki açılış davranışı değişmemeli.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-takvim-haberlerinde-donem-denetimi",
       "date": "2026-08-14",
       "author": "yazicmert",

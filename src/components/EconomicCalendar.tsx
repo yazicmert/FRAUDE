@@ -480,8 +480,9 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                 {expanded && !isHoliday && (
                   <div className="eco-cal-detail">
                     <div className="eco-cal-detail-actions">
-                      {/* Gösterge sayfası uygulama içindeki okuyucuda açılır;
-                          kaynağın kendi düzeni betiksiz çerçevede görünür. */}
+                      {/* Gösterge sayfası uygulama içinde, kaynağın KENDİ
+                          düzeniyle açılır: grafiği ve tablosu görünsün diye
+                          sade metne indirgenmez (bkz. `indicator` türü). */}
                       <button
                         type="button"
                         onClick={() =>
@@ -492,7 +493,7 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                             kindLabel: t('ecoCalOpenIndicator'),
                             published: event.date,
                             url: source,
-                            sourceKind: 'article',
+                            sourceKind: 'indicator',
                           })
                         }
                       >
