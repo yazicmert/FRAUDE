@@ -409,8 +409,11 @@
   padding: 8px;
 }
 
-/* Body Blur when Chatbot is Expanded & Cmd+F is NOT pressed */
-body.copilot-blurred-body #root > div:not(.copilot-container):not(.copilot-backdrop) {
+/* Body Blur when Chatbot is Expanded & Cmd+F is NOT pressed.
+   Kopilot body'ye portallandığı için #root'un tamamı bulanıklaştırılabilir;
+   `:not(.copilot-container)` istisnası işe yaramazdı çünkü filtre, eşleşen
+   ögenin kendisini değil tüm alt ağacını boyar. */
+body.copilot-blurred-body #root {
   filter: blur(8px) brightness(0.75) contrast(105%);
   transition: filter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
