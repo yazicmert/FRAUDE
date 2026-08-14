@@ -186,6 +186,72 @@ const DOMESTIC_MARKERS: &[&str] = &[
     "türkiye", "türk", "tcmb", "tüik", "merkez bankası", "turkey", "turkish",
 ];
 
+/// Başlıkta açıkça anılan yıllar (1900-2099).
+///
+/// Neden gerekli: bazı siteler eski yazıyı yeni yayın tarihiyle sunuyor.
+/// Ölçülen örnek — "2021'de otomobil üretimi yüzde 8 azaldı" haberinin Google
+/// News'teki yayın tarihi 8 Ağustos 2026'ydı. Tarih süzgeci böyle bir kaydı
+/// yakalayamaz; hangi döneme ait olduğu yalnız başlıkta yazıyor.
+fn years_in_title(title: &str) -> Vec<i32> {
+    let bytes: Vec<char> = title.chars().collect();
+    let mut years = Vec::new();
+    let mut index = 0;
+    while index + 4 <= bytes.len() {
+        if bytes[index].is_ascii_digit() {
+            let slice: String = bytes[index..index + 4].iter().collect();
+            if slice.chars().all(|c| c.is_ascii_digit()) {
+                // Dört haneli sayının solu ve sağı rakam olmamalı: "12026" yıl değil.
+                let left_ok = index == 0 || !bytes[index - 1].is_ascii_digit();
+                let right_ok = index + 4 == bytes.len() || !bytes[index + 4].is_ascii_digit();
+                if left_ok && right_ok {
+                    if let Ok(year) = slice.parse::<i32>() {
+                        if (1900..2100).contains(&year) {
+                            years.push(year);
+                        }
+                    }
+                }
+            }
+        }
+        index += 1;
+    }
+    years
+}
+
+/// Eski yılın KONU değil KIYAS NOKTASI olduğunu gösteren kalıplar.
+/// "2021'den bu yana en hızlı artış" güncel veriyi anlatır, 2021 verisini değil.
+const REFERENCE_MARKERS: &[&str] = &[
+    "den bu yana", "dan bu yana", "den beri", "dan beri",
+    "yılından", "yilindan", "sonrasında", "sonrasinda", "since ",
+];
+
+/// Başlık, takvim maddesinden DAHA ESKİ bir dönemi mi anlatıyor?
+///
+/// Başlıkta yıl geçmiyorsa karar verilemez, haber kalır. Yıl geçiyorsa ve
+/// hepsi olayın yılından eskiyse, haber başka bir dönemin verisidir — ancak
+/// eski yıl bir kıyas noktası olarak anılıyorsa haber güncel olabilir.
+fn is_about_older_period(title: &str, event_year: i32) -> bool {
+    let years = years_in_title(title);
+    if years.is_empty() || years.iter().any(|year| *year >= event_year) {
+        return false;
+    }
+    let key = fingerprint(title);
+    !REFERENCE_MARKERS.iter().any(|marker| key.contains(&fingerprint(marker)))
+}
+
+/// Yayın tarihi olayın makul çevresinde mi?
+///
+/// Sorgudaki tarih filtresine güvenilmez (konu süzgecinde olduğu gibi). Bu
+/// yalnız kaba bir emniyet kemeri: aylar öncesine ait bir kayıt listeye
+/// girmesin. Tarih okunamıyorsa haber elenmez — biçim değişikliği yüzünden
+/// liste boşalmasın.
+fn published_near_event(pub_date: &str, event: Option<chrono::NaiveDate>) -> bool {
+    let Some(event_day) = event else { return true };
+    let Ok(published) = chrono::DateTime::parse_from_rfc2822(pub_date.trim()) else {
+        return true;
+    };
+    (published.date_naive() - event_day).num_days().abs() <= 45
+}
+
 /// Başlık takvim satırının konusuyla gerçekten ilgili mi?
 ///
 /// İki kapı: (1) konunun terimi başlıkta geçmeli — Google News tırnaklı öbeği
@@ -262,6 +328,16 @@ pub async fn get_calendar_event_news(
     if let Some(topic) = topic_for(category) {
         items.retain(|item| is_relevant(topic, &item.title, item.summary.as_deref()));
     }
+
+    // Dönem denetimi: takvim satırı belli bir ayın verisidir, başka bir yılın
+    // haberini göstermek bağlamı bozar.
+    let event_day = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok();
+    if let Some(day) = event_day {
+        use chrono::Datelike;
+        let event_year = day.year();
+        items.retain(|item| !is_about_older_period(&item.title, event_year));
+    }
+    items.retain(|item| published_near_event(&item.pub_date, event_day));
 
     let items = dedupe(items);
     remember(key, &items, now);
@@ -342,6 +418,46 @@ mod tests {
         assert_eq!(dedupe(items).len(), 2, "başlık eşleşmesi büyük/küçük harfe bakmamalı");
     }
 
+    /// Ekranda görülen hatanın BİREBİR senaryosu: gelecek tarihli "Otomobil
+    /// Üretimi (Yıllık)" satırı, altında 2021 haberi gösteriyordu. O haberin
+    /// yayın tarihi güncel göründüğü için yalnız başlık süzgeci yakalar.
+    #[tokio::test]
+    #[ignore = "ağ gerektirir"]
+    async fn future_dated_car_production_row_has_no_stale_period_news() {
+        let client = reqwest::Client::new();
+        let future = (chrono::Utc::now().date_naive() + chrono::Duration::days(20)).to_string();
+        let items = get_calendar_event_news(&client, "car production", "Otomobil Üretimi (Yıllık)", &future, "tr").await;
+        println!("gelecek tarihli otomobil üretimi → {} haber", items.len());
+        for item in items.iter().take(6) {
+            println!("   [{}] {}", item.pub_date, item.title);
+        }
+        let stale: Vec<_> = items
+            .iter()
+            .filter(|i| is_about_older_period(&i.title, 2026))
+            .map(|i| i.title.clone())
+            .collect();
+        assert!(stale.is_empty(), "başka döneme ait haberler listede: {stale:?}");
+    }
+
+    /// Haber uygulama içi okuyucuda açılabiliyor mu? Google News bağlantısı
+    /// yönlendirmedir; çözülemezse okuyucu boş kalır. Ağ gerektirir.
+    #[tokio::test]
+    #[ignore = "ağ gerektirir"]
+    async fn articles_can_be_opened_in_the_in_app_reader() {
+        let client = reqwest::Client::new();
+        let today = chrono::Utc::now().date_naive();
+        let recent = (today - chrono::Duration::days(2)).to_string();
+        let items = get_calendar_event_news(&client, "current account", "", &recent, "tr").await;
+        let sample: Vec<_> = items.iter().take(3).collect();
+        assert!(!sample.is_empty(), "ölçüm için haber gerekli");
+        for item in sample {
+            match crate::services::get_news_html(&client, &item.link).await {
+                Ok(html) => println!("OK {:>7} bayt ← {}", html.len(), item.title),
+                Err(error) => println!("HATA {error} ← {}", item.title),
+            }
+        }
+    }
+
     /// Canlı ölçümde yakalanan iki gerçek hata: "TÜFE" sorgusu ABD enflasyon
     /// haberini, "dış ticaret dengesi" sorgusu cari açık haberini getiriyordu.
     /// Süzgeç ikisini de elemeli.
@@ -377,6 +493,63 @@ mod tests {
         );
     }
 
+    /// Ekranda görülen gerçek hata: 2026 takvim satırının altında "2021'de
+    /// otomobil üretimi yüzde 8 azaldı" haberi çıktı. O haberin Google News'teki
+    /// yayın tarihi 8 Ağustos 2026'ydı — yani TARİH SÜZGECİ YAKALAYAMAZ, hangi
+    /// döneme ait olduğu yalnız başlıkta yazıyor.
+    #[test]
+    fn headlines_about_an_older_period_are_dropped() {
+        assert!(
+            is_about_older_period("2021’de otomobil üretimi yüzde 8 azaldı", 2026),
+            "başka bir yılın verisi elenmeli"
+        );
+        assert!(
+            !is_about_older_period("Otomobil üretimi temmuzda arttı", 2026),
+            "yıl geçmiyorsa karar verilemez, haber kalmalı"
+        );
+        assert!(
+            !is_about_older_period("2026 otomobil üretimi hedefi güncellendi", 2026),
+            "olayın yılı geçiyorsa kalmalı"
+        );
+        assert!(
+            !is_about_older_period("2025 verilerine göre 2026 beklentisi yükseldi", 2026),
+            "yıllardan biri olayın yılıysa kalmalı"
+        );
+        // Dört haneli her sayı yıl değildir.
+        assert!(
+            !is_about_older_period("Üretim 12026 adede ulaştı", 2026),
+            "daha uzun sayının parçası yıl sayılmamalı"
+        );
+        assert!(years_in_title("Cari açık 4,19 milyar dolar").is_empty(), "tutarlar yıl değil");
+    }
+
+    /// Eski yıl kıyas noktası olarak anılıyorsa haber güncel veriyi anlatır;
+    /// elenirse gerçek haberler kaybolur.
+    #[test]
+    fn older_year_as_a_reference_point_is_kept() {
+        for title in [
+            "Sanayi üretimi 2021’den bu yana en hızlı arttı",
+            "Enflasyon 2019 yılından bu yana en düşük seviyede",
+            "İşsizlik 2020 sonrasında ilk kez geriledi",
+            "Inflation lowest since 2019",
+        ] {
+            assert!(!is_about_older_period(title, 2026), "kıyas noktası elenmemeli: {title}");
+        }
+        // Kıyas kalıbı yoksa kural aynen işler.
+        assert!(is_about_older_period("2021’de otomobil üretimi yüzde 8 azaldı", 2026));
+    }
+
+    /// Yayın tarihi emniyet kemeri: aylar öncesine ait kayıt elenmeli, ama
+    /// okunamayan tarih listeyi boşaltmamalı.
+    #[test]
+    fn publication_date_guard_drops_far_away_articles() {
+        let event = chrono::NaiveDate::from_ymd_opt(2026, 8, 10);
+        assert!(published_near_event("Thu, 13 Aug 2026 07:00:00 GMT", event), "olaya yakın kayıt kalmalı");
+        assert!(!published_near_event("Fri, 08 Jan 2021 07:00:00 GMT", event), "yıllar öncesi elenmeli");
+        assert!(published_near_event("okunamayan tarih", event), "biçim bozuksa eleme yapılmamalı");
+        assert!(published_near_event("Fri, 08 Jan 2021 07:00:00 GMT", None), "olay tarihi yoksa eleme yok");
+    }
+
     /// Küresel ikizi OLMAYAN göstergede yabancı eleme çalışmamalı: "cari açık"
     /// zaten Türkiye'ye özgü bir gündem, gereksiz eleme haberi yok eder.
     #[test]
@@ -397,12 +570,18 @@ mod tests {
         let client = reqwest::Client::new();
         let today = chrono::Utc::now().date_naive();
         let recent = (today - chrono::Duration::days(3)).to_string();
-        for category in ["inflation rate", "interest rate", "current account", "balance of trade"] {
+        for category in ["inflation rate", "interest rate", "current account", "balance of trade", "car production"] {
             let items = get_calendar_event_news(&client, category, "", &recent, "tr").await;
             println!("{category} → {} haber", items.len());
-            if let Some(first) = items.first() {
-                println!("   ör: {} [{}]", first.title, first.source);
+            for item in items.iter().take(3) {
+                println!("   [{}] {}", item.pub_date, item.title);
             }
+            // Ekranda görülen hata bir daha geçmemeli.
+            assert!(
+                !items.iter().any(|i| i.title.contains("2021")),
+                "{category}: başka döneme ait haber listede: {:?}",
+                items.iter().find(|i| i.title.contains("2021")).map(|i| &i.title)
+            );
         }
     }
 

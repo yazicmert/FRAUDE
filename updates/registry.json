@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-takvim-haberlerinde-donem-denetimi",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Takvim haberlerinde başka döneme ait yazılar çıkıyordu; her şey artık uygulama içinde okunuyor",
+        "en": "Calendar news showed articles from other periods; everything now reads inside the app"
+      },
+      "summary": {
+        "tr": "2026 tarihli \"Otomobil Üretimi (Yıllık)\" satırının altında \"2021'de otomobil üretimi yüzde 8 azaldı\" haberi çıkıyordu. Takvim satırı belli bir dönemin verisidir; başka bir yılın yazısı bağlamı bozar.\n\nSebep beklenenden ilginç. Haberin yayın tarihine bakıldığında sorun görünmüyor: Google News onu 8 Ağustos 2026 olarak veriyor, yani bir tarih süzgeci bu kaydı YAKALAYAMAZ. Site eski yazıyı güncel tarihle sunuyor. Hangi döneme ait olduğu yalnız başlığın kendisinde yazıyor.\n\nBu yüzden denetim başlığa taşındı: başlıkta açıkça anılan yılların hepsi takvim maddesinin yılından eskiyse haber eleniyor. Dört haneli her sayı yıl sayılmıyor (\"12026 adet\" yıl değil, \"4,19 milyar\" değil). Eski yıl bir kıyas noktası olarak anılıyorsa haber kalıyor — \"sanayi üretimi 2021'den bu yana en hızlı arttı\" güncel veriyi anlatır, 2021 verisini değil. Buna ek olarak yayın tarihi de kaba bir emniyet kemeri olarak denetleniyor; tarih okunamıyorsa eleme yapılmıyor ki biçim değişikliği listeyi boşaltmasın.\n\nHaber satırlarında artık yayın tarihi de yazıyor. Aynı gösterge için farklı dönemlerin yorumları dolaşımda olabiliyor; okuyucu hangisine baktığını görmeli.\n\nİkinci değişiklik okuma yolunda. Satırın altındaki \"Tarayıcıda aç\" düğmesi kaldırıldı: gösterge sayfası da haberler de uygulama içindeki okuyucuda açılıyor. Resmi tatil satırları da artık dışarı çıkmıyor. Dışarıda açmak isteyen için okuyucunun kendi araç çubuğundaki çıkış duruyor, yani hiçbir yol kapanmadı — sadece varsayılan uygulama içinde kalmak oldu.",
+        "en": "Under the 2026 \"Car Production (YoY)\" row sat an article titled \"car production fell 8% in 2021\". A calendar row is a specific period's figure; an article about another year breaks the context.\n\nThe cause is more interesting than expected. The publication date looks fine: Google News reports it as 8 August 2026, so a date filter CANNOT catch this record. The site serves an old piece under a current date. Which period it covers is stated only in the headline itself.\n\nSo the check moved to the headline: if every year named in the title is older than the calendar item's year, the article is dropped. Not every four-digit number counts as a year (\"12026 units\" is not a year, neither is \"4.19 billion\"). If the older year is named as a reference point, the article stays — \"industrial production rose at its fastest since 2021\" is about current data, not 2021 data. The publication date is also checked as a rough safety belt; if the date cannot be parsed nothing is dropped, so a format change cannot empty the list.\n\nNews rows now show the publication date too. Commentary from different periods circulates for the same indicator; the reader should see which one they are looking at.\n\nThe second change is the reading path. The \"Open in browser\" button under the row is gone: both the indicator page and the articles open in the in-app reader. Public holiday rows no longer jump out either. The reader's own toolbar still carries an external-open control, so no route is closed — the default simply became staying inside the app."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/calendar_news.rs",
+        "src/components/EconomicCalendar.tsx",
+        "src/api/i18n.ts"
+      ],
+      "agentPrompt": "Ekonomik takvimde bir satırın altında listelenen haberler arasında BAŞKA BİR DÖNEME ait yazılar çıkıyor: 2026 tarihli satırın altında 2021 verisini anlatan bir haber görünüyor. Ayrıca kullanıcı her şeyi uygulama içinde okumak istiyor, dış tarayıcıya çıkmak istemiyor.\n\nÖnemli teşhis: bu kaydı TARİH SÜZGECİ YAKALAYAMAZ. Haberin arama motorundaki yayın tarihi günceldir (site eski yazıyı yeni tarihle sunuyor); hangi döneme ait olduğu yalnız başlıkta yazar.\n\nAdımlar:\n\n1. Başlıkta açıkça anılan yılları çıkaran bir yardımcı yaz. Dört haneli her sayı yıl DEĞİLDİR: solu ya da sağı rakam olan diziyi (ör. \"12026\") ve makul aralık dışını ele. Tutarlar (\"4,19 milyar\") yıl sayılmamalı.\n\n2. \"Başlık daha eski bir dönemi mi anlatıyor\" kuralını yaz: başlıkta yıl yoksa karar verilemez, haber KALIR; yıllardan biri olayın yılına eşit ya da ondan yeniyse haber KALIR; hepsi eskiyse haber elenir.\n\n3. İstisna: eski yıl KIYAS NOKTASI olarak anılıyorsa haber güncel veriyi anlatır ve kalmalı. Türkçe ve İngilizce kalıpları tanı (\"-den bu yana\", \"-dan beri\", \"yılından\", \"sonrasında\", \"since\"). Bu istisna olmadan gerçek haberler kaybolur.\n\n4. Yayın tarihini de kaba bir emniyet kemeri olarak denetle: olay tarihinden çok uzaktaki kayıt elensin. Tarih AYRIŞTIRILAMIYORSA eleme YAPMA — biçim değişikliği listeyi boşaltmasın.\n\n5. Arayüzde haber satırına yayın tarihini ekle; kaynak adının yanında kısa biçimde görünsün. Tarih okunamıyorsa alan hiç çizilmesin.\n\n6. Satırın altındaki dış tarayıcı düğmesini kaldır; gösterge sayfası ve haberler uygulama içi okuyucuda açılsın. Resmi tatil satırı da dışarı çıkmasın, aynı okuyucuya gitsin. Okuyucunun kendi araç çubuğunda dış tarayıcı çıkışı zaten var, onu KALDIRMA — kullanıcı yine de dışarı çıkabilmeli. Kullanılmayan çeviri anahtarını sözlükten temizle.\n\nKabul: cargo test ve npx tsc --noEmit geçmeli, npx vite build temiz olmalı. Kuralı ağ gerektirmeyen testlerle sına: eski döneme ait başlık elenmeli, kıyas noktası içeren başlık kalmalı, yıl geçmeyen başlık kalmalı, dört haneli sayı yıl sanılmamalı.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-takvim-maddesine-bagli-haberler",
       "date": "2026-08-14",
       "author": "yazicmert",

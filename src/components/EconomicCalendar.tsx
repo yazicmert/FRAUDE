@@ -8,7 +8,6 @@ import {
 } from '../api/tauriClient';
 import type { NewsItem } from '../types';
 import { useTranslation } from '../api/i18n';
-import { openUrl } from '../lib/openExternal';
 import { documentFromNews, requestArticleReader } from '../features/reports/ReportDocumentModal';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -149,6 +148,19 @@ function readCache(): { savedAt: number; events: EconomicEvent[] } | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Haberin yayın tarihini kısa biçime çevirir; okunamıyorsa boş döner.
+ *
+ * Tarih listede gösteriliyor çünkü aynı gösterge için farklı dönemlerin
+ * yorumları dolaşımda olabiliyor — okuyucu hangisine baktığını görmeli.
+ */
+function newsDate(raw: string | undefined, locale: string): string {
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 /** Son güncelleme zamanını insan diline çevirir. */
@@ -395,7 +407,21 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                   className="eco-cal-row"
                   aria-expanded={isHoliday ? undefined : expanded}
                   title={isHoliday ? t('ecoCalOpenSource', { source: hostOf(source) }) : t('ecoCalDetails')}
-                  onClick={() => (isHoliday ? void openUrl(source) : toggleRow(rowKey, event))}
+                  onClick={() =>
+                    isHoliday
+                      ? // Tatilin açıklanan verisi ve haber gündemi yok; kaynak
+                        // sayfası doğrudan açılır — ama o da uygulama içinde.
+                        requestArticleReader({
+                          id: source,
+                          title: event.event,
+                          source: hostOf(source),
+                          kindLabel: t('ecoCalOpenIndicator'),
+                          published: event.date,
+                          url: source,
+                          sourceKind: 'article',
+                        })
+                      : toggleRow(rowKey, event)
+                  }
                 >
                   <span
                     className="eco-cal-dot"
@@ -472,9 +498,9 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                       >
                         {t('ecoCalOpenIndicator')}
                       </button>
-                      <button type="button" onClick={() => void openUrl(source)}>
-                        {t('ecoCalOpenExternal')}
-                      </button>
+                      {/* Dış tarayıcı düğmesi burada YOK: her şey uygulama
+                          içinde okunur. Çıkmak isteyen için okuyucunun kendi
+                          araç çubuğunda "↗ Dışarıda aç" duruyor. */}
                     </div>
 
                     <div className="eco-cal-news-title">{t('ecoCalRelatedNews')}</div>
@@ -496,7 +522,14 @@ export default function EconomicCalendar({ open, onClose, onCount }: Props) {
                             }
                           >
                             <span className="eco-cal-news-headline">{item.title}</span>
-                            <span className="eco-cal-news-source">{item.source}</span>
+                            <span className="eco-cal-news-source">
+                              {item.source}
+                              {/* Tarih bağlamın parçası: aynı göstergenin
+                                  farklı dönemlere ait yorumları karışmasın. */}
+                              {newsDate(item.pub_date, locale) && (
+                                <> · {newsDate(item.pub_date, locale)}</>
+                              )}
+                            </span>
                           </button>
                         </li>
                       ))}

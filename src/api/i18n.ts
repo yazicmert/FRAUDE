@@ -616,7 +616,6 @@ export const translations = {
     ecoCalNewsEmpty: 'Bu veri için haber bulunamadı.',
     ecoCalNewsKind: 'Haber',
     ecoCalOpenIndicator: 'Göstergenin sayfası',
-    ecoCalOpenExternal: 'Tarayıcıda aç',
     // ── Hisse detayı ──
     inWatchlist: 'Portföyümde',
     addToWatchlist: 'Portföye Ekle',
@@ -1747,7 +1746,6 @@ export const translations = {
     ecoCalNewsEmpty: 'No news found for this release.',
     ecoCalNewsKind: 'News',
     ecoCalOpenIndicator: 'Indicator page',
-    ecoCalOpenExternal: 'Open in browser',
     // ── Ticker detail ──
     inWatchlist: 'In Portfolio',
     addToWatchlist: 'Add to Portfolio',
