@@ -30,6 +30,33 @@
       "notes": null
     },
     {
+      "id": "2026-08-14-kopilot-kendi-yazisini-bulaniklastiriyordu",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "FRAUDE AI açılınca kendi yazıları da bulanıklaşıyordu",
+        "en": "Opening FRAUDE AI blurred its own text too"
+      },
+      "summary": {
+        "tr": "Kopilot kapsülü açıldığında arka plandaki terminalin bulanıklaşması bilinçli bir tasarım: dikkat sohbete toplanıyor. Ama bulanıklık panelin kendisine de vuruyordu. Yazılan soru ve gelen yanıt 8 piksel bulanıklık ve %75 parlaklık altında kalıyor, koyu zeminde okunamaz hale geliyordu — yani sohbet açılıyor ama sohbet okunmuyordu.\n\nKural, kopilotu dışarıda bırakmak için zaten bir istisna taşıyordu: bulanıklık `#root`un doğrudan çocuklarına uygulanıyor, kopilot kapsülü ve arka plan katmanı `:not()` ile ayrı tutuluyordu. İstisna hiçbir zaman çalışmadı, çünkü iki ayrı varsayım birbirini tutmuyordu. Kural kopilotun `#root`un doğrudan çocuğu olduğunu varsayıyor; kopilot ise uygulama kabuğunun (`.app-shell`) içine, yani bir kat daha derine takılıyordu. Seçici bu yüzden kabuğun kendisiyle eşleşiyordu ve CSS'te `filter`, eşleşen ögeyi değil onun TÜM ALT AĞACINI tek parça olarak boyar. Kopilot da o alt ağacın içinde olduğu için kaçacak yeri yoktu; `:not()` istisnası hiçbir şeyi kurtarmıyordu.\n\nAynı kural görünmeyen ikinci bir arıza daha üretiyordu. Bulanıklaştırılan kabuk arka planla etkileşimi kesmek için `pointer-events: none` alıyor ve bu değer alt ağaca miras kalıyor. Kopilot kabuğun içinde olduğundan panel açıkken küçült düğmesi, model seçicileri ve ipucu çipleri tıklanamıyordu. Ayrıca `filter`, sabit konumlu ögeler için yeni bir referans çerçevesi kurar; kapsülün ekrana göre değil kabuğa göre konumlanması da buradan geliyordu.\n\nKopilot artık doğrudan `body` altına taşınıyor, yani bulanıklaştırılan ağacın tamamen dışında duruyor. Bulanıklık da dolambaçlı istisnalar yerine düpedüz `#root`a uygulanıyor. Arka plan eskisi gibi bulanık ve tıklanamaz; panel net, okunur ve tıklanabilir. Cmd+F basılıyken bulanıklığın kalkması davranışı aynen korunuyor.",
+        "en": "Blurring the terminal behind the copilot when its capsule opens is deliberate: it pulls attention to the conversation. But the blur was landing on the panel itself. The question you typed and the answer that came back sat under 8px of blur at 75% brightness, unreadable against the dark background — the chat opened, but the chat could not be read.\n\nThe rule already carried an exception meant to spare the copilot: the blur applied to the direct children of `#root`, with the copilot capsule and its backdrop excluded via `:not()`. That exception never fired, because two assumptions disagreed. The rule assumed the copilot was a direct child of `#root`; the copilot was actually mounted inside the app shell (`.app-shell`), one level deeper. So the selector matched the shell itself — and in CSS, `filter` paints not the matched element alone but its ENTIRE SUBTREE as one unit. The copilot lived in that subtree, so it had nowhere to escape to, and the `:not()` exception saved nothing.\n\nThe same rule produced a second, less visible failure. The blurred shell takes `pointer-events: none` to block interaction with the background, and that value is inherited down the subtree. Because the copilot sat inside the shell, the minimize button, the model selectors and the prompt chips were unclickable while the panel was open. `filter` also establishes a new reference frame for fixed-position elements, which is why the capsule was positioning against the shell rather than the viewport.\n\nThe copilot is now mounted directly under `body`, entirely outside the blurred tree, and the blur applies plainly to `#root` instead of relying on exceptions. The background stays blurred and click-through-proof as before; the panel is sharp, readable and clickable. Holding Cmd+F still lifts the blur exactly as it did."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/ai/GlobalAiCopilot.tsx",
+        "src/features/ai/GlobalAiCopilot.css"
+      ],
+      "agentPrompt": "Kopilot (FRAUDE AI kapsülü) açıldığında arka planın bulanıklaşması istenen davranış, ancak bulanıklık panelin KENDİSİNE de uygulanıyor: sohbet metni okunamıyor. Ayrıca panel açıkken paneldeki düğme ve seçiciler tıklanmıyor.\n\nKök sebep iki varsayımın uyuşmamasıdır. Bulanıklık kuralı kopilotun kök kapsayıcının DOĞRUDAN çocuğu olduğunu varsayıp onu `:not()` ile dışarıda bırakmaya çalışıyor; kopilot bileşeni ise uygulama kabuğunun içine, bir kat daha derine render ediliyor. Seçici bu yüzden kabukla eşleşiyor ve CSS'te `filter` eşleşen ögeyi değil tüm alt ağacını boyadığı için kopilot da bulanıklaşıyor. Aynı kuraldaki `pointer-events: none` de alt ağaca miras kalıp paneli tıklanamaz yapıyor.\n\nAdımlar:\n\n1. Kopilot bileşeninin gerçekte NEREYE render edildiğini doğrula (uygulama kökündeki bileşen ağacında hangi kapsayıcının içinde). Kuralın varsaydığı yerle karşılaştır. Varsayımı değil gerçeği esas al.\n\n2. Kopilotu (hem kapsül hem arka plan katmanı, ikisi birlikte) `createPortal` ile doğrudan `document.body` altına taşı. Böylece bulanıklaştırılan ağacın tamamen dışında kalır. Portal hedefi kök kapsayıcı OLMAMALI — sorun tam olarak budur.\n\n3. Bulanıklık kuralını sadeleştir: dolambaçlı `:not()` istisnaları yerine doğrudan kök kapsayıcıya uygula. `filter` alt ağacı tek parça boyadığı için `:not()` ile içeriden öge kurtarmak ZATEN mümkün değildir; bunu yorum olarak da yaz ki kural bir daha aynı biçimde kurulmasın.\n\n4. Kök kapsayıcının bulanıkken tam ekranı kapladığını doğrula (yükseklik/genişlik %100). Bulanıklığın hedefi değiştiği için kaplama alanı da değişmiş olabilir.\n\n5. Portal taşımasının başka bir stili bozmadığını kontrol et: kopilotu eski ata kapsayıcısı üzerinden hedefleyen (`.kabuk .kopilot` gibi) bir CSS kuralı ya da o kapsayıcıya bağlı bir düzen varsayımı kalmamalı.\n\n6. Kopilotu `body`ye taşımak z-index sıralamasını değiştirir. Body'ye portallanan başka açılır katmanlar varsa (menü, açılır liste) kopilotun onlarla sırasını gözden geçir.\n\n7. Bulanıklığı geçici olarak kaldıran kısayol davranışı (Cmd+F basılıyken bulanıklık kalkar) aynen korunmalı.\n\nKabul: npx tsc --noEmit ve npx vite build temiz geçmeli. Görsel doğrulama: panel açıkken sohbet metni NET okunmalı, arka plan bulanık ve tıklanamaz kalmalı, paneldeki düğme/seçiciler tıklanabilmeli.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-takvim-haberlerinde-donem-denetimi",
       "date": "2026-08-14",
       "author": "yazicmert",

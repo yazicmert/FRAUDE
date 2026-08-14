@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { askAi, listAiKeys } from '../../api/tauriClient';
 import { useTranslation } from '../../api/i18n';
 import { getCopilotContext, setCopilotActivePayload, subscribeCopilot, type GlobalUserContext } from './userContext';
@@ -429,7 +430,10 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
 
   const showBackdrop = (isExpanded || isHovered) && !isCmdFPressed;
 
-  return (
+  // body'ye portallıyoruz: arka plan bulanıklığı #root'a uygulanıyor ve `filter`
+  // tüm alt ağacı boyadığı için kopilot #root içinde kalsaydı kendi metni de
+  // bulanıklaşır, üstelik `pointer-events: none` mirasıyla tıklanamaz olurdu.
+  return createPortal(
     <>
       {/* Chatbot Büyüdüğünde Arka Planı Bulanıklaştıran Glassmorphic Overlay (Cmd+F Basılınca Ortadan Kalkar) */}
       {showBackdrop && (
@@ -639,6 +643,7 @@ Sen FRAUDE Borsa ve Finans Terminali'nin entegre AI Asistanısın. Soruları bel
         )}
       </div>
     </div>
-  </>
-);
+  </>,
+    document.body,
+  );
 }
