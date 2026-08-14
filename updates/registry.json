@@ -2,6 +2,38 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-14-takvim-maddesine-bagli-haberler",
+      "date": "2026-08-14",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "Takvim maddesine tıklayınca o verinin haberleri uygulama içinde açılıyor",
+        "en": "Clicking a calendar item opens that release's news inside the app"
+      },
+      "summary": {
+        "tr": "Ekonomik takvim rakamı gösteriyordu ama rakamın piyasada nasıl karşılandığını göstermiyordu. Satıra tıklamak kullanıcıyı dış tarayıcıya, göstergenin sayfasına atıyordu; oradan geri dönüş yolu yoktu ve haber aramak ayrı bir işti.\n\nArtık satır yerinde açılıyor. Altında iki şey var: göstergenin kendi sayfasını uygulama içindeki okuyucuda açan düğme ve o veriyle ilgili haberlerin listesi. Haber başlığına tıklayınca haber yine uygulama içinde, haber akışının ve KAP bildirimlerinin kullandığı okuyucuda açılıyor — kaynağın kendi düzeni betiksiz bir çerçevede ya da sade metin olarak. Dış tarayıcıya çıkmak isteyen için ayrı bir düğme duruyor.\n\nHaber sorgusu satırın görünen adından değil KATEGORİSİNDEN üretiliyor. Sebep: görünen ad kaynağın İngilizce etiketidir (\"Inflation Rate YoY\") ve Türk basınında bu ada rastlanmaz. Kategori ise sabit bir anahtar; \"inflation rate\" görülünce \"TÜFE\" ve \"yıllık enflasyon\" aranıyor. 33 kategori için iki dilde terim yazıldı; sözlükte olmayan kategori olay adına düşüyor, sonuç zayıflar ama akış kırılmıyor.\n\nAsıl iş süzmede. Google News tırnaklı öbekleri gevşek eşleştiriyor: canlı ölçümde \"TÜFE\" sorgusu ilk sırada ABD enflasyon haberini, \"dış ticaret dengesi\" sorgusu ise cari açık haberini döndürdü. Bu yüzden sonuç ikinci bir kapıdan geçiriliyor — konunun terimi başlıkta gerçekten geçmeli, ve küresel karşılığı olan göstergelerde (enflasyon, faiz, büyüme…) yurt dışını işaret eden başlık yurt içi işareti taşımıyorsa eleniyor. Ölçüm: enflasyonda 93 sonuç 21'e, dış ticarette 17 sonuç 1'e indi ve kalanlar gerçekten Türkiye verisine ait.\n\nTarih penceresi olayın etrafına kuruluyor. Açıklanmış veri için açıklama günü ve sonrası taranıyor; henüz açıklanmamış veride tarih filtresi sonuç döndürmeyeceği için son iki haftanın beklenti akışına bakılıyor. Resmi tatiller eskisi gibi doğrudan tatil listesine çıkıyor: orada açıklanan bir veri ya da haber gündemi yok.",
+        "en": "The economic calendar showed the number but not how the market took it. Clicking a row threw you out to an external browser on the indicator page, with no way back, and finding news was a separate errand.\n\nThe row now opens in place. Underneath it are two things: a button that opens the indicator's own page in the in-app reader, and a list of news about that release. Clicking a headline opens the article inside the app too, in the same reader the news feed and KAP filings use — either the source's own layout in a script-free frame, or as plain text. A separate button remains for anyone who wants the external browser.\n\nThe news query is built from the row's CATEGORY, not its visible name. The reason: the visible name is the source's English label (\"Inflation Rate YoY\"), which the Turkish press never uses. The category is a stable key; seeing \"inflation rate\" searches for \"TÜFE\" and \"yıllık enflasyon\". Terms were written in both languages for 33 categories; an unknown category falls back to the event name, which is weaker but does not break the flow.\n\nThe real work is in the filtering. Google News matches quoted phrases loosely: in a live measurement the \"TÜFE\" query returned a US inflation story first, and the \"trade balance\" query returned a current-account story. Results now pass a second gate — the topic term must actually appear in the headline, and for indicators with a global twin (inflation, rates, growth…) a headline pointing abroad is dropped unless it also carries a domestic marker. Measured: inflation went from 93 results to 21, trade balance from 17 to 1, and what remains is genuinely about Turkey.\n\nThe date window is built around the event. For a released figure the day of release and its aftermath are searched; for one not yet released a date filter would return nothing, so the last two weeks of anticipation coverage are used instead. Public holidays still open the holiday list directly: there is no released figure or news agenda there."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/calendar_news.rs",
+        "core/src/api.rs",
+        "src-tauri/src/commands.rs",
+        "src/components/EconomicCalendar.tsx",
+        "src/api/tauriClient.ts",
+        "src/api/i18n.ts",
+        "src/App.css"
+      ],
+      "agentPrompt": "Ekonomik takvim satırı bir rakam gösteriyor ama o rakamın piyasada nasıl karşılandığını göstermiyor; satıra tıklamak kullanıcıyı dış tarayıcıya atıyor. Amaç: satır yerinde açılsın, altında göstergenin sayfasını uygulama içi okuyucuda açan bir düğme ve o veriyle ilgili haberlerin listesi olsun; haber başlığına tıklayınca haber de uygulama içinde açılsın.\n\nAdımlar:\n\n1. Arka uçta yeni bir modül aç: takvim kategorisinden haber araması. Kategori → arama terimleri sözlüğü yaz (iki dilde). Sorguyu satırın GÖRÜNEN ADINDAN üretme — görünen ad kaynağın İngilizce etiketidir ve yerel basında geçmez; kategori sabit bir anahtardır. Sözlükte olmayan kategori için olay adına düş, akış kırılmasın.\n\n2. Tarih penceresi: açıklanmış (geçmiş tarihli) veri için pencereyi olayın etrafına kur — bir gün öncesinden birkaç gün sonrasına, üst sınır bugünü aşmasın. Gelecek tarihli veride tarih filtresi sonuç döndürmez; orada son iki haftanın beklenti akışına bak. Bu mantığı ayrı ve sınanabilir bir fonksiyona koy.\n\n3. KRİTİK — sonucu istemci tarafında yeniden süz. Haber arama motoru tırnaklı öbekleri gevşek eşleştirir; sorguya güvenme. İki kapı kur: (a) konunun terimlerinden biri başlıkta (ya da özette) GERÇEKTEN geçmeli; (b) küresel karşılığı olan göstergelerde (enflasyon, faiz, büyüme, işsizlik…) yurt dışını işaret eden başlık, yurt içi işareti taşımıyorsa elenmeli. Yurt içi işareti yabancı işaretini geçersiz kılmalı ki \"ABD verisi sonrası Türkiye'de faiz beklentisi\" gibi başlıklar kalsın.\n\n4. Başlık karşılaştırmasında düz küçük-harfe çevirme YETMEZ: Türkçe'de noktalı/noktasız i farkı yüzünden aynı başlık iki kez görünür. Karşılaştırma anahtarını bu farkı silecek şekilde üret ve tekilleştirmede onu kullan.\n\n5. Sonucu kategori+tarih+dil anahtarıyla önbelleğe al ve önbelleği sınırlı boyutta tut; takvimde onlarca satır var.\n\n6. Komutu uçtan uca bağla (çekirdek api → tauri komutu → komut kaydı → istemci sarmalayıcı).\n\n7. Arayüzde satırı açılır panele çevir. Satır şu an bir <button>; iç içe düğme geçersiz olduğu için satırı ve paneli saran bir kapsayıcıya al. Panelde: göstergenin sayfasını uygulama içi okuyucuda açan düğme, dış tarayıcı düğmesi, ve haber listesi. Haber satırı tıklanınca haberi de aynı okuyucuya gönder — uygulamada zaten kaynaktan bağımsız bir okuyucu var, onu kullan, yenisini yazma. Yükleniyor ve boş durumlarını yaz.\n\n8. Resmi tatil satırları eski davranışta kalsın (doğrudan tatil listesine çıksın): orada açıklanan veri ya da haber gündemi yok.\n\n9. Metinleri arayüz sözlüğüne TR ve EN olarak ekle.\n\nKabul: cargo test ve npx tsc --noEmit geçmeli, npx vite build temiz olmalı. Süzme kurallarını ağ gerektirmeyen testlerle sına: yurt dışı başlığı elenmeli, konu dışı başlık elenmeli, yurt içi işaretli başlık kalmalı.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-takvim-onbellegi-sema-damgasi",
       "date": "2026-08-14",
       "author": "yazicmert",

@@ -237,6 +237,7 @@ pub fn run() {
             commands::get_news_feed,
             commands::get_news_preview,
             commands::get_news_html,
+            commands::get_calendar_event_news,
             commands::get_bist_indices,
             commands::update_bist_indices,
             commands::get_financial_statements,
