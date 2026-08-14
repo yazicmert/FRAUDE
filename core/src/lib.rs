@@ -16,6 +16,7 @@ pub mod capital_store;
 pub mod company_match;
 pub mod corporate_actions;
 pub mod domain;
+pub mod calendar_impact;
 pub mod calendar_news;
 pub mod economic_calendar;
 pub mod fql;

@@ -32,6 +32,17 @@ export function dispatchOpenForum(ticker?: string) {
   window.dispatchEvent(new CustomEvent('fraude-open-forum', { detail: { ticker } }));
 }
 
+/**
+ * Sembolün kendi sayfasını açar.
+ *
+ * Hisse mi endeks mi olduğuna App karar verir (katalogda endeks karşılığı olan
+ * semboller endeks sekmesine gider): şerit tıklamasıyla aynı yol kullanılır,
+ * böylece "GC=F" ya da "^GDAXI" gibi semboller de doğru ekrana düşer.
+ */
+export function dispatchOpenSymbol(symbol: string) {
+  window.dispatchEvent(new CustomEvent('fraude-open-symbol', { detail: { symbol } }));
+}
+
 /** Araştırma listesini yeniden çektirir (yeni iş gönderildikten sonra). */
 export function dispatchResearchRefresh() {
   window.dispatchEvent(new CustomEvent('fraude-research-refresh'));

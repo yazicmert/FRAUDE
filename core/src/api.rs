@@ -506,6 +506,25 @@ pub async fn get_calendar_event_news(
     Ok(crate::calendar_news::get_calendar_event_news(&state.http, &category, &event, &date, &lang).await)
 }
 
+/// Takvim maddesinin piyasa karşılığı: etkilenebilecek paylar ve o konudaki
+/// analiz raporları.
+///
+/// Ağa çıkmaz. Etiketler sabit tablodan, raporlar diskteki kurum arşivinden
+/// gelir; arşiv `get_analyst_reports` tarafından besleniyor, takvim onu
+/// yalnızca okur — bir takvim satırını açmak 12 kurumu taramayı başlatmamalı.
+pub async fn get_calendar_event_impact(
+    category: String,
+    lang: String,
+) -> Result<crate::calendar_impact::CalendarImpact, String> {
+    // Arşiv 6 MB'ı aşabiliyor; ayrıştırması çalışan iş parçacığını meşgul
+    // etmesin diye bloklayan havuza verilir.
+    let archive = tokio::task::spawn_blocking(crate::research_reports::load)
+        .await
+        .map_err(|error| format!("rapor arşivi okunamadı: {error}"))?;
+    let today = chrono::Utc::now().date_naive();
+    Ok(crate::calendar_impact::build(&category, &lang, &archive, today))
+}
+
 pub async fn get_bist_indices(
     state: &AppState,
 ) -> Result<
