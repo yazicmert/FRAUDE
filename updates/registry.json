@@ -16,7 +16,7 @@
         "en": "Under the 2026 \"Car Production (YoY)\" row sat an article titled \"car production fell 8% in 2021\". A calendar row is a specific period's figure; an article about another year breaks the context.\n\nThe cause is more interesting than expected. The publication date looks fine: Google News reports it as 8 August 2026, so a date filter CANNOT catch this record. The site serves an old piece under a current date. Which period it covers is stated only in the headline itself.\n\nSo the check moved to the headline: if every year named in the title is older than the calendar item's year, the article is dropped. Not every four-digit number counts as a year (\"12026 units\" is not a year, neither is \"4.19 billion\"). If the older year is named as a reference point, the article stays — \"industrial production rose at its fastest since 2021\" is about current data, not 2021 data. The publication date is also checked as a rough safety belt; if the date cannot be parsed nothing is dropped, so a format change cannot empty the list.\n\nNews rows now show the publication date too. Commentary from different periods circulates for the same indicator; the reader should see which one they are looking at.\n\nThe second change is the reading path. The \"Open in browser\" button under the row is gone: both the indicator page and the articles open in the in-app reader. Public holiday rows no longer jump out either. The reader's own toolbar still carries an external-open control, so no route is closed — the default simply became staying inside the app."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.32",
       "security": {
         "reviewed": false,
         "reviewer": null
