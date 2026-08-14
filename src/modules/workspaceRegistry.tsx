@@ -35,7 +35,7 @@ const PublishView = lazy(() => import('../features/publish/PublishView'));
 const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 
-export const CORE_VERSION = '0.1.31';
+export const CORE_VERSION = '0.1.32';
 
 /** A single open workspace tab. `data` carries per-tab payloads. */
 export interface WorkspaceTab {
