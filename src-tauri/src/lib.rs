@@ -270,6 +270,7 @@ pub fn run() {
             commands::get_bridge_info,
             commands::regenerate_bridge_token,
             commands::set_bridge_identity,
+            commands::restart_app,
             module_updater::activate_module_release,
             module_updater::rollback_module_release,
             publisher::publish_config_status,

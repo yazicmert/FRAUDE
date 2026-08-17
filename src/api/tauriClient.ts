@@ -569,3 +569,9 @@ export interface BridgeAccount {
 export function setBridgeIdentity(account: BridgeAccount | null) {
   return invoke<void>('set_bridge_identity', { account });
 }
+
+/** Uygulamayı yeniden başlatır (güncelleme sonrası). */
+export function restartApp() {
+  return invoke<void>('restart_app');
+}
+
