@@ -2,6 +2,39 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-supabase-24-7-bulut-ve-eposta-alarmlari",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "24/7 Supabase Bulut Alarmları ve E-posta Bildirim Entegrasyonu",
+        "en": "24/7 Supabase Cloud Alerts & Email Notification Integration"
+      },
+      "summary": {
+        "tr": "Kullanıcı alarmları Supabase bulutuna entegre edildi:\n\n1. 24/7 BULUT GÖZCÜSÜ: Masaüstü uygulaması kapalıyken bile Supabase her 10 dakikada bir fiyat kırılımlarını, yeni KAP bildirimlerini, SPK bülten kararlarını ve haber akışlarını kontrol eder.\n\n2. E-POSTA BİLDİRİMİ: Koşul sağlandığında kullanıcıya Brevo/SMTP üzerinden anlık detaylı HTML alarm maili gönderilir.\n\n3. ÇİFT YÖNLÜ EŞİTLEME: Grafikten veya alarm panelinden kurulan kurallar anında bulut veritabanına aktarılır.",
+        "en": "User alerts are now fully synced with Supabase cloud:\n\n1. 24/7 CLOUD WATCHDOG: Evaluates price thresholds, KAP announcements, SPK bulletins, and news feeds every 10 minutes even when desktop app is closed.\n\n2. EMAIL NOTIFICATIONS: Instant branded HTML alert emails delivered via Brevo/SMTP upon condition trigger.\n\n3. BI-DIRECTIONAL SYNC: Local alerts automatically replicate to Supabase user_alerts table."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "docs/supabase-user-alerts.sql",
+        "supabase/functions/market-watch/index.ts",
+        "src/features/alerts/cloudAlertsSync.ts",
+        "src/features/alerts/useAlerts.ts",
+        "src/features/alerts/AlertsModal.tsx",
+        "src/features/alerts/alertTypes.ts",
+        "src/features/ticker/DrawingAlertModal.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "şimdi uygulamaya alarm atıyoruz ya bir hisse için bu alarm fiyat, spk, kap , haber vs için de olabilir bu haber conditionları supabase de saklansa ve uygulama kapalıyken de supabase de her 10 dk bir sorgulama yapılsa ve mail atılsa nasıl olur",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-cizim-uzerinden-fiyat-ve-pozisyon-alarmi",
       "date": "2026-08-18",
       "author": "yazicmert",

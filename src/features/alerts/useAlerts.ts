@@ -57,12 +57,42 @@ function uid(): string {
  * bir kez (App) monte edilmeli; yönetim panelleri motorsuz çağırıp aynı
  * localStorage + olay üzerinden senkron kalır.
  */
+import {
+  syncRuleToCloud,
+  deleteRuleFromCloud,
+  fetchCloudRules,
+} from './cloudAlertsSync';
+
 export function useAlerts(options: { engine?: boolean } = {}) {
   const [rules, setRules] = useState<AlertRule[]>(() => loadRules());
   const [log, setLog] = useState<TriggeredAlert[]>(() => loadLog());
   const evaluatingRef = useRef(false);
   const rulesRef = useRef(rules);
   rulesRef.current = rules;
+
+  // Başlangıçta buluttan kuralları çek ve birleştir
+  useEffect(() => {
+    let cancelled = false;
+    void fetchCloudRules().then((cloudRules) => {
+      if (cancelled || !cloudRules || cloudRules.length === 0) return;
+      const current = loadRules();
+      const map = new Map<string, AlertRule>();
+      // Önce yerel olanları koy
+      for (const r of current) map.set(r.id, r);
+      // Buluttakileri ekle / güncelle
+      for (const cr of cloudRules) {
+        if (!map.has(cr.id)) {
+          map.set(cr.id, cr);
+        }
+      }
+      const merged = Array.from(map.values());
+      setRules(merged);
+      saveRules(merged);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Diğer bileşenlerin yaptığı değişiklikleri dinle.
   useEffect(() => {
@@ -83,15 +113,25 @@ export function useAlerts(options: { engine?: boolean } = {}) {
       createdAt: new Date().toISOString(),
       lastTriggeredAt: null,
       lastMet: null,
+      emailNotify: rule.emailNotify !== false,
     };
     const merged = [next, ...rulesRef.current];
     setRules(merged);
     saveRules(merged);
+    // Buluta asenkron kaydet
+    void syncRuleToCloud(next);
     return next;
   }, []);
 
   const updateRule = useCallback((id: string, patch: Partial<AlertRule>) => {
-    const merged = rulesRef.current.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    const merged = rulesRef.current.map((r) => {
+      if (r.id === id) {
+        const updated = { ...r, ...patch };
+        void syncRuleToCloud(updated);
+        return updated;
+      }
+      return r;
+    });
     setRules(merged);
     saveRules(merged);
   }, []);
@@ -100,6 +140,7 @@ export function useAlerts(options: { engine?: boolean } = {}) {
     const merged = rulesRef.current.filter((r) => r.id !== id);
     setRules(merged);
     saveRules(merged);
+    void deleteRuleFromCloud(id);
   }, []);
 
   const markLogRead = useCallback(() => {

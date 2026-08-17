@@ -40,7 +40,17 @@ const inputStyle: React.CSSProperties = {
   fontSize: '0.8rem',
 };
 
-const METRICS: AlertMetric[] = ['price', 'change_pct', 'rsi', 'sma50', 'week_52_high', 'week_52_low'];
+const METRICS: AlertMetric[] = [
+  'price',
+  'change_pct',
+  'rsi',
+  'sma50',
+  'week_52_high',
+  'week_52_low',
+  'kap',
+  'spk',
+  'news',
+];
 
 export default function AlertsModal({
   open,
@@ -57,7 +67,9 @@ export default function AlertsModal({
   const [metric, setMetric] = useState<AlertMetric>('price');
   const [op, setOp] = useState<AlertOp>('above');
   const [threshold, setThreshold] = useState('');
+  const [keywords, setKeywords] = useState('');
   const [repeat, setRepeat] = useState(false);
+  const [emailNotify, setEmailNotify] = useState(true);
   const [note, setNote] = useState('');
   const [tab, setTab] = useState<'rules' | 'log'>('rules');
 
@@ -90,16 +102,24 @@ export default function AlertsModal({
 
   const submit = () => {
     if (!canSubmit) return;
+    const parsedKeywords = keywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+
     addRule({
       ticker: ticker.trim().toUpperCase(),
       metric,
       op,
       threshold: needsThreshold ? Number(threshold) : 0,
+      keywords: parsedKeywords,
       note: note.trim() || undefined,
       enabled: true,
       repeat,
+      emailNotify,
     });
     setThreshold('');
+    setKeywords('');
     setNote('');
   };
 
@@ -107,7 +127,7 @@ export default function AlertsModal({
     <div style={overlay} onClick={onClose}>
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <strong style={{ fontSize: '1.05rem' }}>🔔 Fiyat & Teknik Alarmlar</strong>
+          <strong style={{ fontSize: '1.05rem' }}>🔔 Fiyat & Bülten Alarmları (24/7 Bulut & E-posta)</strong>
           <button type="button" onClick={onClose} style={{ ...inputStyle, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
         </div>
 
@@ -125,7 +145,7 @@ export default function AlertsModal({
                 <option key={m} value={m}>{ALERT_METRIC_LABELS[m]}</option>
               ))}
             </select>
-            {metric !== 'week_52_high' && metric !== 'week_52_low' && (
+            {needsThreshold && (
               <select style={{ ...inputStyle }} value={op} onChange={(e) => setOp(e.target.value as AlertOp)}>
                 <option value="above">{metric === 'sma50' ? 'yukarı keser' : 'üzerine çıkar'}</option>
                 <option value="below">{metric === 'sma50' ? 'aşağı keser' : 'altına iner'}</option>
@@ -141,6 +161,18 @@ export default function AlertsModal({
                 onChange={(e) => setThreshold(e.target.value)}
               />
             )}
+            {(metric === 'kap' || metric === 'news') && (
+              <input
+                style={{ ...inputStyle, flex: 1, minWidth: '130px' }}
+                placeholder="Anahtar kelimeler (örn: temettü, ihale)"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+              />
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#58a6ff' }}>
+              <input type="checkbox" checked={emailNotify} onChange={(e) => setEmailNotify(e.target.checked)} />
+              📧 E-posta
+            </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               <input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} />
               tekrarla
@@ -152,8 +184,8 @@ export default function AlertsModal({
               style={{
                 ...inputStyle,
                 cursor: canSubmit ? 'pointer' : 'not-allowed',
-                background: canSubmit ? 'var(--accent-primary)' : 'var(--bg-panel)',
-                color: canSubmit ? '#000' : 'var(--text-muted)',
+                background: canSubmit ? '#238636' : 'var(--bg-panel)',
+                color: canSubmit ? '#fff' : 'var(--text-muted)',
                 fontWeight: 'bold',
               }}
             >
@@ -206,8 +238,9 @@ export default function AlertsModal({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.82rem' }}>{describeRule(r)}</div>
                     {r.note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>{r.note}</div>}
-                    <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {r.repeat ? 'Tekrarlı' : 'Tek seferlik'}
+                    <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>{r.repeat ? 'Tekrarlı' : 'Tek seferlik'}</span>
+                      {r.emailNotify !== false && <span style={{ color: '#58a6ff' }}>📧 24/7 E-posta</span>}
                       {r.lastTriggeredAt ? ` · son tetik: ${new Date(r.lastTriggeredAt).toLocaleString('tr-TR')}` : ''}
                     </div>
                   </div>

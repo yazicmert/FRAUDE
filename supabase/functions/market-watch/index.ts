@@ -1,25 +1,15 @@
-// FRAUDE — piyasa gözcüsü: KAP + SPK + haber akışlarını yoklar, Qwen ile
-// önceliklendirir ve kullanıcıya Brevo ile mailler. Uygulama kapalıyken çalışır.
+// FRAUDE — piyasa gözcüsü: KAP + SPK + haber akışlarını ve kullanıcı fiyat alarmlarını
+// yoklar, Qwen ile önceliklendirir ve kullanıcıya Brevo/SMTP ile mailler. Uygulama kapalıyken çalışır.
 //
 // Akış (pg_cron ile ~10 dk'da bir tetiklenir):
 //   1) notify_seen imleçlerinden sonra gelen yeni KAP bildirimleri + NTV haberleri
 //      + yeni SPK bülteni çekilir.
 //   2) KAP/haber öğeleri Qwen'e verilir; model her öğe için ilgili BIST kodlarını,
-//      1-5 önem puanını ve tek satır Türkçe özet döndürür (sağlayıcıdan bağımsız,
-//      OpenAI-uyumlu chat/completions — app'teki katmanla aynı desen).
-//   3) Her kullanıcı için: takip ettiği kod/anahtar kelimeyle eşleşen ve
-//      min_priority eşiğini geçen öğeler markalı bir dijest mailinde gönderilir.
-//      Yeni SPK bülteni, spk_enabled kullanıcılara düz bildirim olarak gider.
-//   4) İmleçler en yeni öğeye ilerletilir.
-//
-// Kurulum (pano; CLI erişemez):
-//   supabase functions deploy market-watch --no-verify-jwt --use-api
-//   Secrets: LLM_API_KEY (Qwen/DashScope anahtarı, zorunlu),
-//            LLM_BASE_URL (ops., varsayılan DashScope compatible-mode),
-//            LLM_MODEL (ops., varsayılan qwen-plus),
-//            CRON_SECRET (pg_cron ile paylaşılan gizli; header ile doğrulanır),
-//            BREVO_API_KEY + MAIL_FROM (lisans maili ile ortak).
-// Zamanlama pg_cron + pg_net ile kurulur (docs/supabase-site.sql sonundaki blok).
+//      1-5 önem puanını ve tek satır Türkçe özet döndürür.
+//   3) user_alerts tablosundaki aktif özel alarmlar (fiyat kırılımları, özel KAP/haber anahtarları)
+//      değerlendirilir ve eşleşenlere anında alarm maili gönderilir.
+//   4) notify_prefs tercihine sahip kullanıcılara dijest maili iletilir.
+//   5) İmleçler en yeni öğeye ilerletilir.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -41,6 +31,21 @@ interface FeedItem {
   tickers: string[];    // Qwen doldurur
   priority: number;     // Qwen doldurur (1-5)
   summary: string;      // Qwen doldurur (TR)
+}
+
+interface CustomAlertRow {
+  id: string;
+  user_id: string;
+  ticker: string;
+  metric: string;
+  op: string;
+  threshold: number | null;
+  keywords: string[] | null;
+  note: string | null;
+  enabled: boolean;
+  repeat: boolean;
+  email_notify: boolean;
+  is_triggered: boolean;
 }
 
 function escapeHtml(v: string): string {
@@ -98,7 +103,7 @@ async function fetchNews(lastKey: string | null): Promise<FeedItem[]> {
       const link = pick('link') || pick('guid');
       const title = pick('title');
       if (!link || !title) continue;
-      if (lastKey && link === lastKey) break; // en yeniden eskiye — imlece varınca dur
+      if (lastKey && link === lastKey) break;
       items.push({
         source: 'news',
         key: link,
@@ -140,10 +145,27 @@ async function fetchSpk(lastKey: string | null): Promise<{ no: string; url: stri
   }
 }
 
-// ── Qwen önceliklendirme (OpenAI-uyumlu) ────────────────────────────────────
+/** Tek hisse için son anlık fiyatı çeker (Yahoo / BIST). */
+async function fetchTickerPrice(ticker: string): Promise<number | null> {
+  try {
+    const norm = ticker.toUpperCase().trim();
+    const yahooSymbol = norm.includes('=') || norm.includes('-') ? norm : `${norm}.IS`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=1d`;
+    const res = await fetch(url, { headers: { 'User-Agent': UA } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const meta = json?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    return typeof price === 'number' && Number.isFinite(price) ? price : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Qwen önceliklendirme ───────────────────────────────────────────────────
 async function enrich(items: FeedItem[]): Promise<FeedItem[]> {
   const apiKey = Deno.env.get('LLM_API_KEY');
-  if (!apiKey || items.length === 0) return items; // anahtar yoksa ham geç (priority varsayılan)
+  if (!apiKey || items.length === 0) return items;
 
   const numbered = items.map((it, i) => `#${i} [${it.source}] ${it.title}\n${it.body}`.slice(0, 600)).join('\n\n');
   const sys =
@@ -188,64 +210,7 @@ async function enrich(items: FeedItem[]): Promise<FeedItem[]> {
   return items;
 }
 
-// ── Kullanıcı eşleştirme + mail ─────────────────────────────────────────────
-interface Pref {
-  user_id: string;
-  email: string;
-  kap_enabled: boolean;
-  news_enabled: boolean;
-  spk_enabled: boolean;
-  tickers: string[];
-  keywords: string[];
-  min_priority: number;
-}
-
-function matches(pref: Pref, item: FeedItem): boolean {
-  if (item.source === 'kap' && !pref.kap_enabled) return false;
-  if (item.source === 'news' && !pref.news_enabled) return false;
-  const tickers = pref.tickers.map((t) => t.toUpperCase());
-  if (tickers.length === 0 && pref.keywords.length === 0) return item.priority >= pref.min_priority;
-  if (item.tickers.some((t) => tickers.includes(t))) return true;
-  const hay = `${item.title} ${item.body}`.toLowerCase();
-  if (tickers.some((t) => hay.includes(t.toLowerCase()))) return true;
-  if (pref.keywords.some((k) => k.trim() && hay.includes(k.toLowerCase()))) return true;
-  return false;
-}
-
-function renderDigest(items: FeedItem[], spk: { no: string; url: string } | null): string {
-  const sorted = [...items].sort((a, b) => b.priority - a.priority);
-  const rows = sorted
-    .map((it) => {
-      const dot = it.priority >= 5 ? '#ff6a5e' : it.priority >= 4 ? '#f5c542' : '#00e896';
-      const tk = it.tickers.length ? `<span style="color:#00e896;font-weight:700;">${it.tickers.map(escapeHtml).join(', ')}</span> · ` : '';
-      const link = it.url ? `<a href="${it.url}" style="color:#00c3ff;text-decoration:none;">Detay →</a>` : '';
-      return `<tr><td style="padding:12px 0;border-bottom:1px solid #232a33;font-family:-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.6;color:#b7c2cc;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:8px;"></span>
-        ${tk}<span style="color:#e8f0f7;">${escapeHtml(it.summary || it.title)}</span> ${link}
-      </td></tr>`;
-    })
-    .join('');
-  const spkRow = spk
-    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #232a33;font-family:-apple-system,'Segoe UI',sans-serif;font-size:14px;color:#b7c2cc;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#00c3ff;margin-right:8px;"></span>
-        <span style="color:#e8f0f7;">Yeni SPK bülteni yayımlandı (${escapeHtml(spk.no)})</span>
-        <a href="${spk.url}" style="color:#00c3ff;text-decoration:none;"> Aç →</a></td></tr>`
-    : '';
-  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"></head>
-<body style="margin:0;padding:0;background-color:#0a0d12;" bgcolor="#0a0d12">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0a0d12" style="background-color:#0a0d12;"><tr><td align="center" style="padding:40px 16px;">
-    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
-      <tr><td align="center" style="padding-bottom:22px;font-family:'SF Mono',Menlo,monospace;font-size:20px;font-weight:800;letter-spacing:5px;color:#e8f0f7;"><span style="color:#00e896;">F</span>RAUDE</td></tr>
-      <tr><td bgcolor="#10151d" style="background-color:#10151d;border:1px solid #232a33;border-radius:14px;padding:32px 30px;">
-        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:19px;font-weight:700;color:#e8f0f7;margin-bottom:6px;">Takip bildirimlerin</div>
-        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:13px;color:#8b949e;margin-bottom:14px;">AI önem sırasına göre dizildi.</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${spkRow}${rows}</table>
-      </td></tr>
-      <tr><td align="center" style="padding-top:22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-        FRAUDE Terminal — finansal dostunuz<br>Bildirim tercihlerini hesabından değiştirebilirsin.</td></tr>
-    </table></td></tr></table></body></html>`;
-}
-
+// ── Mail Gönderimi ─────────────────────────────────────────────────────────
 async function sendMail(to: string, subject: string, html: string): Promise<void> {
   const brevoKey = Deno.env.get('BREVO_API_KEY');
   const fromRaw = Deno.env.get('MAIL_FROM') ?? '';
@@ -260,9 +225,29 @@ async function sendMail(to: string, subject: string, html: string): Promise<void
   if (!res.ok) console.error('brevo-failed', res.status, await res.text().catch(() => ''));
 }
 
+function renderSingleAlertHtml(title: string, ticker: string, details: string, url?: string | null): string {
+  const linkHtml = url
+    ? `<div style="margin-top:16px;"><a href="${url}" style="display:inline-block;padding:8px 16px;background:#238636;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:13px;">Detayı İncele →</a></div>`
+    : '';
+
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark"></head>
+<body style="margin:0;padding:0;background-color:#0a0d12;" bgcolor="#0a0d12">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0a0d12" style="background-color:#0a0d12;"><tr><td align="center" style="padding:40px 16px;">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+      <tr><td align="center" style="padding-bottom:22px;font-family:'SF Mono',Menlo,monospace;font-size:20px;font-weight:800;letter-spacing:5px;color:#e8f0f7;"><span style="color:#00e896;">F</span>RAUDE</td></tr>
+      <tr><td bgcolor="#10151d" style="background-color:#10151d;border:1px solid #232a33;border-radius:14px;padding:32px 30px;">
+        <div style="display:inline-block;padding:3px 8px;border-radius:4px;background:#1f6feb22;color:#58a6ff;font-family:'SF Mono',Menlo,monospace;font-size:12px;font-weight:bold;margin-bottom:12px;">${escapeHtml(ticker)} · ALARM TETİKLENDİ</div>
+        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:18px;font-weight:700;color:#e8f0f7;margin-bottom:10px;">${escapeHtml(title)}</div>
+        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:14px;color:#b7c2cc;line-height:1.6;background:#0d1117;padding:14px;border-radius:8px;border:1px solid #21262d;">${escapeHtml(details)}</div>
+        ${linkHtml}
+      </td></tr>
+      <tr><td align="center" style="padding-top:22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
+        FRAUDE Terminal — 24/7 Bulut Gözcüsü<br>Bu alarmı FRAUDE grafik veya alarm panelinden yönetebilirsiniz.</td></tr>
+    </table></td></tr></table></body></html>`;
+}
+
 // ── Ana akış ────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
-  // pg_cron paylaşılan gizli ile doğrulanır (fonksiyon --no-verify-jwt deploy edilir)
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (cronSecret && req.headers.get('x-cron-secret') !== cronSecret) {
     return new Response(JSON.stringify({ ok: false, error: 'unauthorized' }), { status: 401 });
@@ -281,64 +266,118 @@ Deno.serve(async (req) => {
   ]);
 
   let feed = [...kapItems, ...newsItems];
-  if (feed.length > 40) feed = feed.slice(0, 40); // tek turda üst sınır (maliyet + gürültü)
+  if (feed.length > 40) feed = feed.slice(0, 40);
   feed = await enrich(feed);
 
+  // 1. Kullanıcı e-postalarını çek
   const { data: prefs } = await supabase
     .from('notify_prefs')
     .select('user_id, email, kap_enabled, news_enabled, spk_enabled, tickers, keywords, min_priority')
     .eq('enabled', true);
 
-  // Chrome eklentisi (notify-feed) için kullanıcı başına teslim kayıtları.
-  const deliveries: Array<Record<string, unknown>> = [];
-  let sent = 0;
-  for (const pref of (prefs ?? []) as Pref[]) {
-    const mine = feed.filter((it) => matches(pref, it));
-    const spkForUser = pref.spk_enabled ? spkNew : null;
-    if (mine.length === 0 && !spkForUser) continue;
-    const subject =
-      mine.length > 0
-        ? `FRAUDE — ${mine.length} yeni bildirim`
-        : 'FRAUDE — yeni SPK bülteni';
-    await sendMail(pref.email, subject, renderDigest(mine, spkForUser));
-    sent++;
+  const userEmailMap = new Map<string, string>();
+  for (const p of prefs ?? []) {
+    if (p.email) userEmailMap.set(p.user_id, p.email);
+  }
 
-    for (const it of mine) {
-      deliveries.push({
-        user_id: pref.user_id,
-        source: it.source,
-        priority: it.priority,
-        title: it.title.slice(0, 300),
-        summary: (it.summary || it.title).slice(0, 500),
-        tickers: it.tickers,
-        url: it.url,
-      });
+  let customAlertsSent = 0;
+
+  // 2. KULLANICI ÖZEL ALARMLARINI İŞLE (user_alerts)
+  const { data: activeCustomAlerts } = await supabase
+    .from('user_alerts')
+    .select('*')
+    .eq('enabled', true)
+    .eq('email_notify', true);
+
+  if (activeCustomAlerts && activeCustomAlerts.length > 0) {
+    // A) Fiyat Alarmları için gerekli hisseleri topla ve fiyat çek
+    const priceAlerts = (activeCustomAlerts as CustomAlertRow[]).filter((a) => a.metric === 'price' && typeof a.threshold === 'number');
+    const uniqueTickers = Array.from(new Set(priceAlerts.map((a) => a.ticker)));
+    const pricesMap = new Map<string, number>();
+
+    await Promise.all(
+      uniqueTickers.map(async (t) => {
+        const p = await fetchTickerPrice(t);
+        if (p !== null) pricesMap.set(t, p);
+      })
+    );
+
+    // Fiyat kurallarını test et
+    for (const alert of priceAlerts) {
+      const curPrice = pricesMap.get(alert.ticker);
+      if (curPrice === undefined || alert.threshold === null) continue;
+
+      const isMet = alert.op === 'above' ? curPrice >= alert.threshold : curPrice <= alert.threshold;
+      if (isMet) {
+        const userEmail = userEmailMap.get(alert.user_id);
+        if (userEmail) {
+          const subject = `🎯 FRAUDE Fiyat Alarmı: ${alert.ticker} (${curPrice.toFixed(2)} TL)`;
+          const desc = `${alert.ticker} hedef fiyat seviyesine ulaştı! Hedef Eşik: ${alert.threshold} TL (${alert.op === 'above' ? 'Üzeri' : 'Altı'}), Güncel Fiyat: ${curPrice.toFixed(2)} TL.${alert.note ? `\nNot: ${alert.note}` : ''}`;
+          await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, desc));
+          customAlertsSent++;
+        }
+
+        // Güncelle
+        await supabase
+          .from('user_alerts')
+          .update({
+            is_triggered: true,
+            triggered_at: new Date().toISOString(),
+            enabled: alert.repeat,
+            last_value: curPrice,
+          })
+          .eq('id', alert.id);
+      }
     }
-    if (spkForUser) {
-      deliveries.push({
-        user_id: pref.user_id,
-        source: 'spk',
-        priority: 4,
-        title: `Yeni SPK bülteni (${spkForUser.no})`,
-        summary: `SPK haftalık bülteni yayımlandı: ${spkForUser.no}`,
-        tickers: [],
-        url: spkForUser.url,
-      });
+
+    // B) KAP / SPK / Haber Özel Alarmlarını test et
+    const feedAlerts = (activeCustomAlerts as CustomAlertRow[]).filter((a) => a.metric === 'kap' || a.metric === 'news' || a.metric === 'spk');
+    for (const alert of feedAlerts) {
+      const userEmail = userEmailMap.get(alert.user_id);
+      if (!userEmail) continue;
+
+      // KAP / Haber Eşleşmesi
+      if (alert.metric === 'kap' || alert.metric === 'news') {
+        const matchedItems = feed.filter((it) => {
+          if (it.source !== alert.metric) return false;
+          const matchTicker = it.tickers.includes(alert.ticker) || it.title.toUpperCase().includes(alert.ticker) || it.body.toUpperCase().includes(alert.ticker);
+          if (!matchTicker) return false;
+
+          if (alert.keywords && alert.keywords.length > 0) {
+            const hay = `${it.title} ${it.body}`.toLowerCase();
+            return alert.keywords.some((k) => hay.includes(k.toLowerCase()));
+          }
+          return true;
+        });
+
+        for (const item of matchedItems) {
+          const subject = `📢 FRAUDE ${alert.metric === 'kap' ? 'KAP' : 'Haber'} Alarmı: ${alert.ticker}`;
+          const details = `${item.summary || item.title}\n\nKaynak: ${item.source.toUpperCase()}`;
+          await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, details, item.url));
+          customAlertsSent++;
+
+          await supabase
+            .from('user_alerts')
+            .update({
+              is_triggered: true,
+              triggered_at: new Date().toISOString(),
+              enabled: alert.repeat,
+            })
+            .eq('id', alert.id);
+        }
+      }
+
+      // SPK Eşleşmesi
+      if (alert.metric === 'spk' && spkNew) {
+        const subject = `🏛️ FRAUDE SPK Bülteni: ${alert.ticker}`;
+        const details = `Yeni SPK Bülteni (${spkNew.no}) yayımlandı.`;
+        await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, details, spkNew.url));
+        customAlertsSent++;
+      }
     }
   }
 
-  // Teslimleri yaz (parça parça) ve eski kayıtları buda (30 günden eski).
-  if (deliveries.length > 0) {
-    for (let i = 0; i < deliveries.length; i += 500) {
-      await supabase.from('notify_deliveries').insert(deliveries.slice(i, i + 500));
-    }
-    await supabase
-      .from('notify_deliveries')
-      .delete()
-      .lt('created_at', new Date(Date.now() - 30 * 864e5).toISOString());
-  }
-
-  // İmleçleri en yeniye ilerlet (eşleşme olsun olmasın, tekrar işlenmesin)
+  // 3. İmleçleri ilerlet
   const advance: Array<{ source: string; last_key: string }> = [];
   if (kapItems.length > 0) {
     const maxKap = Math.max(...kapItems.map((i) => Number(i.key)));
@@ -358,8 +397,7 @@ Deno.serve(async (req) => {
       ok: true,
       new_items: feed.length,
       spk: spkNew?.no ?? null,
-      mails_sent: sent,
-      deliveries: deliveries.length,
+      custom_alerts_sent: customAlertsSent,
     }),
     { headers: { 'Content-Type': 'application/json' } },
   );
