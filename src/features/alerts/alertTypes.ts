@@ -10,9 +10,12 @@ export type AlertMetric =
   | 'rsi'          // RSI(14)
   | 'sma50'        // fiyatın 50 günlük SMA'yı kesmesi
   | 'week_52_high' // 52 hafta zirvesi kırılımı
-  | 'week_52_low'; // 52 hafta dibi kırılımı
+  | 'week_52_low'  // 52 hafta dibi kırılımı
+  | 'kap'          // yeni KAP bildirimi
+  | 'spk'          // SPK bülten kararı
+  | 'news';        // önemli haber akışı
 
-export type AlertOp = 'above' | 'below';
+export type AlertOp = 'above' | 'below' | 'contains' | 'any';
 
 export interface AlertRule {
   id: string;
@@ -21,10 +24,13 @@ export interface AlertRule {
   op: AlertOp;
   /** price / change_pct / rsi için gerekli eşik. Diğer metrikler için yok sayılır. */
   threshold: number;
+  keywords?: string[];
   note?: string;
   enabled: boolean;
   /** true ise tetiklendikten sonra da aktif kalır; false ise bir kez tetiklenip pasifleşir. */
   repeat: boolean;
+  /** Bulut üzerinde 10 dk'da bir kontrol edilip e-posta gönderilsin mi? */
+  emailNotify?: boolean;
   createdAt: string;
   lastTriggeredAt: string | null;
   /** Son değerlendirmede koşulun durumu; kenar tetikleme için tutulur. */
@@ -48,6 +54,9 @@ export const ALERT_METRIC_LABELS: Record<AlertMetric, string> = {
   sma50: '50 Günlük Ortalama Kesişimi',
   week_52_high: '52 Hafta Zirvesi Kırılımı',
   week_52_low: '52 Hafta Dibi Kırılımı',
+  kap: 'Yeni KAP Bildirimi',
+  spk: 'SPK Bülten Kararı',
+  news: 'Haber & Gelişme',
 };
 
 /** Bu metrik kullanıcıdan sayısal eşik ister mi? */
@@ -55,14 +64,19 @@ export function metricNeedsThreshold(metric: AlertMetric): boolean {
   return metric === 'price' || metric === 'change_pct' || metric === 'rsi';
 }
 
-const OP_TEXT: Record<AlertOp, string> = { above: 'üzerine çıkarsa', below: 'altına inerse' };
+const OP_TEXT: Record<AlertOp, string> = {
+  above: 'üzerine çıkarsa',
+  below: 'altına inerse',
+  contains: 'içeren bildirim gelirse',
+  any: 'herhangi bir bildirim gelirse',
+};
 
 /** Kuralın insan-okur özeti (liste ve bildirim başlığı için). */
 export function describeRule(rule: AlertRule): string {
-  const { metric, op, threshold, ticker } = rule;
+  const { metric, op, threshold, ticker, keywords } = rule;
   switch (metric) {
     case 'price':
-      return `${ticker} fiyatı ${threshold} ${OP_TEXT[op]}`;
+      return `${ticker} fiyatı ${threshold} ${OP_TEXT[op] || 'seviyesine ulaşırsa'}`;
     case 'change_pct':
       return `${ticker} günlük değişim %${threshold} ${OP_TEXT[op]}`;
     case 'rsi':
@@ -73,6 +87,16 @@ export function describeRule(rule: AlertRule): string {
       return `${ticker} 52 hafta zirvesini kırarsa`;
     case 'week_52_low':
       return `${ticker} 52 hafta dibini kırarsa`;
+    case 'kap':
+      return keywords && keywords.length > 0
+        ? `${ticker} için [${keywords.join(', ')}] içeren yeni KAP bildirimi gelirse`
+        : `${ticker} için yeni KAP bildirimi gelirse`;
+    case 'spk':
+      return `${ticker} ile ilgili SPK bülten kararı yayımlanırsa`;
+    case 'news':
+      return keywords && keywords.length > 0
+        ? `${ticker} için [${keywords.join(', ')}] içeren haber çıkarsa`
+        : `${ticker} için önemli haber çıkarsa`;
     default:
       return `${ticker} alarmı`;
   }
