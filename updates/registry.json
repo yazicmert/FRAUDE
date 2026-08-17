@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-bilanco-radari-ve-is-yatirim-dogrulamasi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Bilanço Radarı (Son Açıklananlar Listesi) ve İş Yatırım UFRS Doğrulaması",
+        "en": "Earnings Radar (Latest Disclosed Financials) & İş Yatırım UFRS Verification"
+      },
+      "summary": {
+        "tr": "1. BİLANÇO RADARI (VARSAYILAN LİSTE GÖRÜNÜMÜ): Bilanço modülü açıldığında Borsa İstanbul'da en son bilanço açıklayan şirketlerden geriye doğru kapsamlı bir radar tablosu sunar. Net Kar Büyümesi, Ciro Büyümesi, ROE, F/K, PD/DD, Net Borç/FAVÖK ve dönem filtreleri ile şirket seçilip tek tıkla detaylı DuPont analizi ve tablolara geçilebilir.\n\n2. DOĞRULANMIŞ İŞ YATIRIM UFRS MOTORU: Mali tablolar doğrudan İş Yatırım UFRS / XI_29 veri motoru üzerinden çekilir. Kümülatif çeyrekler saf çeyreğe indirgenir (4 çeyrek toplamı yıllık rakama %100 eşittir) ve UMS 21 standartlarında TRY/USD kur dönüşümü uygulanır.",
+        "en": "1. EARNINGS RADAR (DEFAULT LIST VIEW): Financials module opens with a live BIST earnings radar sorted by latest disclosed financials with YoY profit growth, sales growth, ROE, P/E, P/B, Net Debt/EBITDA, and 1-click drill-down.\n\n2. VERIFIED İŞ YATIRIM UFRS ENGINE: Financial statements are sourced directly from İş Yatırım UFRS / XI_29 engine with de-cumulated quarterly accuracy and UMS 21 compliant TRY/USD translations."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/financials/FinancialsView.tsx",
+        "src/features/financials/FinancialsView.css",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "bilanço kısmı ilk başta bir liste olsun en son bilanço açıklanandan itibaren listele sonra detayına inelim fakat bu veriler iş yatırımdan mı çekiliyor bir kontrol etmek lazım veri sağlam olması lazım çünkü bunlar küçük sayılar ama dikkat etmemiz lazım",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-bilanco-modulu-ve-kurumsal-aksiyonlar-hover-menu",
       "date": "2026-08-18",
       "author": "yazicmert",
