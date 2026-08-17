@@ -1,0 +1,567 @@
+/* FRAUDE — Financials & Balance Sheet Module Styles */
+
+.financials-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1300px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+  user-select: text;
+  animation: fin-fade 0.2s ease;
+}
+
+@keyframes fin-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Header Bar */
+.fin-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.fin-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fin-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fin-page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.fin-title-icon {
+  color: #3fb950;
+}
+
+.fin-page-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Search and Controls Row */
+.fin-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fin-search-container {
+  position: relative;
+  width: 260px;
+}
+
+.fin-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.fin-search-input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  transition: border-color 0.15s;
+}
+
+.fin-search-input:focus {
+  outline: none;
+  border-color: #3fb950;
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.2);
+}
+
+.fin-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.fin-search-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px solid #21262d;
+  transition: background 0.1s;
+}
+
+.fin-search-dropdown-item:hover {
+  background: #21262d;
+}
+
+.fin-dropdown-ticker {
+  font-weight: bold;
+  color: #58a6ff;
+  font-family: var(--font-mono);
+  min-width: 55px;
+}
+
+.fin-dropdown-name {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fin-toggle-group {
+  display: inline-flex;
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.fin-toggle-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fin-toggle-btn.active {
+  background: #238636;
+  color: #fff;
+}
+
+/* Active Ticker Hero Banner */
+.fin-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 20px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.fin-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fin-hero-badge {
+  background: #238636;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgba(35, 134, 54, 0.3);
+}
+
+.fin-hero-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.fin-hero-sector {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.fin-hero-metrics {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.fin-hero-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fin-kpi-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+}
+
+.fin-kpi-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.fin-kpi-change {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.fin-kpi-change.up { color: #3fb950; }
+.fin-kpi-change.down { color: #f85149; }
+
+.fin-hero-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #21262d;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: #58a6ff;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fin-hero-action-btn:hover {
+  background: #30363d;
+  border-color: #58a6ff;
+  transform: translateY(-1px);
+}
+
+/* Quick Chips */
+.fin-quick-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fin-chips-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.fin-chip-btn {
+  padding: 4px 10px;
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.fin-chip-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.fin-chip-btn.active {
+  background: rgba(88, 166, 255, 0.15);
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+/* Navigation Tabs */
+.fin-nav-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.fin-nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.fin-nav-tab:hover {
+  color: var(--text-primary);
+  background: #161b22;
+}
+
+.fin-nav-tab.active {
+  background: #21262d;
+  color: #fff;
+  border-color: var(--border-color);
+  box-shadow: inset 0 -2px 0 #3fb950;
+}
+
+/* Tab Content & Cards */
+.fin-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fin-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.fin-card {
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.fin-card.full-width {
+  grid-column: span 2;
+}
+
+.fin-card.half-width {
+  grid-column: span 1;
+}
+
+.fin-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.fin-card-header h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* DuPont Analysis Component */
+.fin-dupont-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fin-dupont-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 12px 18px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  min-width: 140px;
+}
+
+.fin-dupont-box.highlight {
+  border-color: #3fb950;
+  background: rgba(35, 134, 54, 0.15);
+}
+
+.fin-dupont-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.fin-dupont-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.fin-dupont-sub {
+  font-size: 0.65rem;
+  color: #8b949e;
+  margin-top: 4px;
+}
+
+.fin-dupont-sign {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #8b949e;
+}
+
+/* Metric List Rows */
+.fin-metrics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fin-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #0d1117;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.fin-metric-row span {
+  color: var(--text-muted);
+}
+
+.fin-metric-row strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* Table Scroll and Data Tables */
+.fin-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.fin-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.fin-data-table th {
+  text-align: left;
+  padding: 10px 14px;
+  background: #0d1117;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fin-data-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #21262d;
+  color: var(--text-primary);
+}
+
+.fin-data-table .num-col {
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.fin-data-table .highlight-row {
+  background: rgba(88, 166, 255, 0.05);
+}
+
+.fin-data-table .bold-row {
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fin-data-table td.pos { color: #3fb950; font-weight: 600; }
+.fin-data-table td.neg { color: #f85149; font-weight: 600; }
+
+.fin-peer-select-btn {
+  padding: 4px 10px;
+  background: #21262d;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: #58a6ff;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fin-peer-select-btn:hover {
+  background: #30363d;
+  border-color: #58a6ff;
+}
+
+/* Loading & Error States */
+.fin-loading-state, .fin-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 12px;
+  background: #161b22;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.fin-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #21262d;
+  border-top-color: #3fb950;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

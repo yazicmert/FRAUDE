@@ -24,14 +24,20 @@ import {
   SparklesIcon,
   BellIcon,
   UserIcon,
-  ForumIcon
+  ForumIcon,
+  FinancialsIcon,
+  DividendsIcon,
+  CapitalIcon,
 } from './icons';
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
   dashboard: <DashboardIcon size={15} />,
   screener: <SearchIcon size={15} />,
+  financials: <FinancialsIcon size={15} />,
   kap: <RadioIcon size={15} />,
   corporate: <BuildingIcon size={15} />,
+  dividends: <DividendsIcon size={15} />,
+  capital: <CapitalIcon size={15} />,
   ipo: <IpoIcon size={15} />,
   reports: <ReportIcon size={15} />,
   monitor: <MonitorIcon size={15} />,
@@ -217,12 +223,29 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
         </button>
       );
     }
-    return (
-      <div key={entry.id} className="navmenu-dd-group">
-        <div className="navmenu-dd-header" style={{ paddingLeft: 14 + depth * 12 }}>{t(entry.labelKey)}</div>
-        {entry.children.map((c) => renderPanelEntry(c, depth + 1))}
-      </div>
-    );
+    if (entry.type === 'group') {
+      if (depth >= 1) {
+        return (
+          <NavMenuFlyoutGroup
+            key={entry.id}
+            entry={entry}
+            depth={depth}
+            activeTabId={activeTabId}
+            installedModules={installedModules}
+            onOpen={openModule}
+            moduleLabel={moduleLabel}
+            t={t}
+          />
+        );
+      }
+      return (
+        <div key={entry.id} className="navmenu-dd-group">
+          <div className="navmenu-dd-header" style={{ paddingLeft: 14 + depth * 12 }}>{t(entry.labelKey)}</div>
+          {entry.children.map((c) => renderPanelEntry(c, depth + 1))}
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -277,3 +300,94 @@ export default function NavMenu({ activeTabId, installedModules, host, onOpen, t
     </div>
   );
 }
+
+function NavMenuFlyoutGroup({
+  entry,
+  depth,
+  activeTabId,
+  installedModules,
+  onOpen,
+  moduleLabel,
+  t,
+}: {
+  entry: Extract<NavEntry, { type: 'group' }>;
+  depth: number;
+  activeTabId: string;
+  installedModules: InstalledModule[];
+  onOpen: (kind: string) => void;
+  moduleLabel: (kind: string) => string;
+  t: (key: string) => string;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const hasActiveChild = entry.children.some((c) => entryContainsActive(c, activeTabId));
+
+  return (
+    <div
+      ref={flyoutRef}
+      className="navmenu-flyout-parent"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{ position: 'relative' }}
+    >
+      <div
+        className={`navmenu-dd-item navmenu-flyout-trigger${hasActiveChild ? ' active' : ''}`}
+        style={{ paddingLeft: 14 + depth * 12 }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {entry.icon && <span className="navmenu-icon" style={{ display: 'inline-flex', alignItems: 'center' }}>{entry.icon}</span>}
+          <span>{t(entry.labelKey)}</span>
+        </span>
+        <span className="navmenu-flyout-arrow" style={{ fontSize: '0.75rem', color: '#8b949e', marginLeft: 'auto' }}>▸</span>
+      </div>
+
+      {isHovered && (
+        <div
+          className="navmenu-flyout-dropdown"
+          style={{
+            position: 'absolute',
+            left: 'calc(100% + 4px)',
+            top: 0,
+            minWidth: '200px',
+            padding: '8px',
+            background: 'rgba(13, 17, 23, 0.98)',
+            backdropFilter: 'blur(24px)',
+            border: '1px solid rgba(0, 195, 255, 0.35)',
+            borderRadius: '12px',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.9), 0 0 25px rgba(0, 195, 255, 0.18)',
+            zIndex: 10000000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            animation: 'navmenuSlideDown 0.14s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          {entry.children.map((c) => {
+            if (!isEntryVisible(c, installedModules)) return null;
+            if (c.type === 'module') {
+              const m = getWorkspaceModule(c.kind);
+              if (!m) return null;
+              const icon = MODULE_ICONS[c.kind];
+              return (
+                <button
+                  type="button"
+                  key={c.kind}
+                  className={`navmenu-dd-item${activeTabId === c.kind ? ' active' : ''}`}
+                  onClick={() => onOpen(c.kind)}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {icon && <span className="navmenu-icon" style={{ display: 'inline-flex', alignItems: 'center' }}>{icon}</span>}
+                    <span>{moduleLabel(c.kind)}</span>
+                  </span>
+                  {activeTabId === c.kind && <span style={{ fontSize: '0.75rem', color: '#00c3ff', fontWeight: 800 }}>✓</span>}
+                </button>
+              );
+            }
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
