@@ -35,6 +35,7 @@ const PublishView = lazy(() => import('../features/publish/PublishView'));
 const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 const UpdatesView = lazy(() => import('../features/updates/UpdatesView'));
+const FinancialsView = lazy(() => import('../features/financials/FinancialsView'));
 
 export const CORE_VERSION = '0.1.34';
 
@@ -350,6 +351,19 @@ export const workspaceModules: WorkspaceModule[] = [
     render: () => <NotificationsView />,
   },
   {
+    kind: 'financials',
+    titleKey: 'financials',
+    manifest: manifest(
+      'fraude.financials',
+      { tr: 'Bilanço & Finansallar', en: 'Financial Statements' },
+      { tr: 'Şirketlerin bilanço, gelir tablosu, rasyo ve DuPont analizi.', en: 'Balance sheet, income statement, ratio and DuPont analysis.' },
+      ['network:yahoo', 'network:isyatirim'],
+      'financials',
+      'financials',
+    ),
+    render: (_tab, host) => <FinancialsView onSelectTicker={host.openTicker} />,
+  },
+  {
     kind: 'corporate',
     titleKey: 'corporateActions',
     manifest: manifest(
@@ -361,6 +375,16 @@ export const workspaceModules: WorkspaceModule[] = [
       'corporateActions',
     ),
     render: (_tab, host) => <CorporateActionsView onSelectTicker={host.openTicker} />,
+  },
+  {
+    kind: 'dividends',
+    titleKey: 'caDividends',
+    render: (_tab, host) => <CorporateActionsView initialTab="dividends" onSelectTicker={host.openTicker} />,
+  },
+  {
+    kind: 'capital',
+    titleKey: 'caCapital',
+    render: (_tab, host) => <CorporateActionsView initialTab="capital" onSelectTicker={host.openTicker} />,
   },
   {
     kind: 'ipo',
@@ -544,7 +568,8 @@ import {
   StockIcon,
   FundIcon,
   CommodityIcon,
-  CryptoIcon
+  CryptoIcon,
+  BuildingIcon,
 } from '../components/icons';
 
 export const NAV_TREE: NavSection[] = [
@@ -570,9 +595,19 @@ export const NAV_TREE: NavSection[] = [
             defaultOpen: true,
             children: [
               { type: 'module', kind: 'screener' },
+              { type: 'module', kind: 'financials' },
               { type: 'module', kind: 'kap' },
-              { type: 'module', kind: 'corporate' },
-              { type: 'module', kind: 'ipo' },
+              {
+                type: 'group',
+                id: 'corporate-actions-group',
+                labelKey: 'corporateActions',
+                icon: <BuildingIcon size={14} />,
+                children: [
+                  { type: 'module', kind: 'dividends' },
+                  { type: 'module', kind: 'capital' },
+                  { type: 'module', kind: 'ipo' },
+                ],
+              },
               { type: 'module', kind: 'monitor' },
             ],
           },

@@ -2,6 +2,38 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-bilanco-modulu-ve-kurumsal-aksiyonlar-hover-menu",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Bilanço & Mali Tablolar Modülü ve Kurumsal Aksiyonlar Hover Açılır Menüsü",
+        "en": "Financial Statements Module & Corporate Actions Hover Flyout Submenu"
+      },
+      "summary": {
+        "tr": "1. YENİ BİLANÇO & FİNANSALLAR MODÜLÜ: Hisse menüsüne birinci sınıf bağımsız Bilanço (Financials) modülü eklendi. DuPont analizi (ROE çarpanları), çeyreklik gelir/kar grafikleri, bilanço, nakit akımı, çarpanlar ve sektörel akran kıyaslaması sunar.\n\n2. KURUMSAL AKSİYONLAR HOVER ALT MENÜSÜ: Hisse menüsü sadeleştirilip kompakt hale getirildi. Kurumsal Aksiyonlar üzerine gelindiğinde (hover) yana doğru 3 alt dal açılır: Temettü Takvimi, Sermaye Artırımları (Bedelli/Bedelsiz) ve Halka Arz.",
+        "en": "1. FINANCIAL STATEMENTS MODULE: Added dedicated standalone Financials module with DuPont analysis, quarterly revenue/profit charts, balance sheet, cash flow, multiples, and peer comparison.\n\n2. CORPORATE ACTIONS HOVER SUBMENU: Streamlined Hisse dropdown navigation. Hovering over Corporate Actions opens a compact flyout submenu with 3 branches: Dividends, Capital Increases, and IPOs."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/financials/FinancialsView.tsx",
+        "src/features/financials/FinancialsView.css",
+        "src/components/NavMenu.tsx",
+        "src/components/icons.tsx",
+        "src/modules/workspaceRegistry.tsx",
+        "src/api/i18n.ts",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "panodan önce bilanço modülü ekleyelim bu kısma ama bilanço sayfası nasıl olmalı önce /plan yapalım. Buna ek olarak kurumsal aksiyonlar var bir de halka arz var bu yanlış çünkü halka arz kurumsal aksiyonların içinde. kurumsal aksiyonun üstüne fare gelince 3 dala ayrılsın daha kompakt dursun yani",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-updates-workspace-modul-kaydi-duzeltmesi",
       "date": "2026-08-18",
       "author": "yazicmert",

@@ -344,3 +344,36 @@ export function IpoIcon({ size = 15 }: IconProps) {
     </svg>
   );
 }
+
+/** Bilanço ve Mali Tablolar (Tablo / Finansal Sayfa). */
+export function FinancialsIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="9" y1="21" x2="9" y2="9" />
+    </svg>
+  );
+}
+
+/** Temettü (Kazanç / Para / Dağıtım). */
+export function DividendsIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 6v12" />
+      <path d="M15 9.5c-.8-1-2-1.5-3-1.5-1.7 0-3 1-3 2.5s1.3 2.5 3 2.5 3 1 3 2.5-1.3 2.5-3 2.5c-1.2 0-2.3-.5-3-1.5" />
+    </svg>
+  );
+}
+
+/** Sermaye Artırımları (Büyüme / Sermaye). */
+export function CapitalIcon({ size = 15 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
