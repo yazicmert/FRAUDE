@@ -7,6 +7,7 @@ import type { HistoricalQuote } from '../../types';
 import { useChartDrawings } from '../../hooks/useChartDrawings';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import ChartDrawingOverlay from './ChartDrawingOverlay';
+import DrawingManagerModal from './DrawingManagerModal';
 
 interface PriceChartProps {
   ticker: string;
@@ -135,6 +136,7 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const [activeSeriesApi, setActiveSeriesApi] = useState<ISeriesApi<SeriesType> | null>(null);
   const [chartWidth, setChartWidth] = useState<number>(800);
   const [showDrawingTools, setShowDrawingTools] = useState<boolean>(true);
+  const [showDrawingManager, setShowDrawingManager] = useState<boolean>(false);
 
   const [kind, setKind] = useState<ChartKind>('candles');
   const [showSMA20, setShowSMA20] = useState(true);
@@ -452,9 +454,28 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
             selectedId={selectedId}
             onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
             onClearAll={clearDrawings}
+            onOpenManager={() => setShowDrawingManager(true)}
+            drawingsCount={drawings.length}
           />
         </div>
       )}
+
+      {/* Çizim Yöneticisi ve Katman Ağacı Modalı */}
+      <DrawingManagerModal
+        ticker={ticker}
+        drawings={drawings}
+        isOpen={showDrawingManager}
+        onClose={() => setShowDrawingManager(false)}
+        onUpdateDrawing={updateDrawing}
+        onDeleteDrawing={deleteDrawing}
+        onClearAll={clearDrawings}
+        onImportDrawings={(imported) => {
+          for (const item of imported) {
+            addDrawing(item);
+          }
+          setShowDrawingManager(false);
+        }}
+      />
 
       <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
         <div

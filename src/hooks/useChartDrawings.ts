@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: DrawingToolSettings = {
   color: '#58a6ff',
   lineWidth: 2,
   lineStyle: 'solid',
+  fillOpacity: 0.15,
   magnetEnabled: false,
   isVisible: true,
 };

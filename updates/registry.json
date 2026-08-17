@@ -2,6 +2,40 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-profesyonel-grafik-cizim-ve-risk-odul-araclari",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Gelişmiş Grafik Çizim Araçları, Risk/Ödül Hesaplayıcı ve Çizim Yöneticisi",
+        "en": "Advanced Chart Drawing Toolkit, Risk/Reward Calculators & Object Manager"
+      },
+      "summary": {
+        "tr": "FRAUDE yerel grafik motoruna dünya standardında profesyonel teknik analiz yetenekleri eklendi:\n\n1. RİSK/ÖDÜL POZİSYON HESAPLAYICILARI: Long ve Short işlemler için Giriş, Kâr Al (TP) ve Zarar Kes (SL) seviyelerini otomatik R:R oranıyla (ör. 1:2.85) hesaplayan pozisyon kutuları.\n\n2. GELİŞMİŞ ÇİZİM ARAÇLARI: Paralel Trend Kanalları (3 noktalı), Fibonacci Genişlemesi (3 noktalı hedef projeksiyonu), İki Yöne Sonsuz Uzatılmış Çizgiler, Yatay Işınlar, Alış/Satış Sinyal Okları, Açıklama Baloncukları ve Pürüzsüz Fırça.\n\n3. YÜZEN HIZLI İŞLEM ÇUBUĞU: Çizimlere tıklandığında açılan mini çubuk ile anında renk, çizgi kalınlığı (1-4px), çizgi stili (düz/kesikli/noktalı) değiştirme, kilitleme ve klonlama (Ctrl+D).\n\n4. ÇİZİM YÖNETİCİSİ & YEDEKLEME: Grafikteki tüm çizimleri listeleyen, tek tek gizleyip kilitleyen ve JSON formatında dışa/içe aktaran (Export/Import) katman yöneticisi.",
+        "en": "FRAUDE chart now features professional-grade technical analysis drawing tools:\n\n1. RISK/REWARD POSITION CALCULATORS: Long and Short position boxes with automatic entry, TP (+%), SL (-%), and R:R ratios.\n\n2. ADVANCED TOOLS: Parallel Trend Channels, 3-point Fibonacci Extensions, Infinite Lines, Horizontal Rays, Signal Arrows, Callouts, and Smooth Spline Brush.\n\n3. FLOATING ACTION BAR: Quick color, stroke, style, lock, and clone actions on selection.\n\n4. OBJECT MANAGER: Full layer tree modal with visibility toggles, locking, and JSON export/import."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/ticker/drawingTypes.ts",
+        "src/features/ticker/drawingCoordinates.ts",
+        "src/features/ticker/ChartDrawingToolbar.tsx",
+        "src/features/ticker/ChartDrawingOverlay.tsx",
+        "src/features/ticker/DrawingManagerModal.tsx",
+        "src/features/ticker/PriceChart.tsx",
+        "src/hooks/useChartDrawings.ts",
+        "src/api/i18n.ts",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "peki bu çizim yeteneklerini geliştirelim çünkü kaynak : yahoo yazıyor ama herhalde grafik tradingview den o yüzden oldukça çizim yeteneği gelişmesi laızm",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-tradingview-gelismis-grafik-ve-cizim-araclari-entegrasyonu",
       "date": "2026-08-18",
       "author": "yazicmert",

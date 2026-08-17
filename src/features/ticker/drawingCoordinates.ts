@@ -58,7 +58,7 @@ export function pointToScreen(
   series: ISeriesApi<SeriesType> | null,
   sortedQuotes?: HistoricalQuote[]
 ): { x: number; y: number } | null {
-  if (!chart || !series) return null;
+  if (!chart || !series || !point) return null;
 
   // 1. X Koordinatı (Zaman -> Piksel)
   let x: number | null = chart.timeScale().timeToCoordinate(point.time as Time);
@@ -212,4 +212,48 @@ export function distanceToSegment(
     x: v.x + t * (w.x - v.x),
     y: v.y + t * (w.y - v.y),
   });
+}
+
+/**
+ * Bir noktanın sonsuz doğruya olan en kısa mesafesi
+ */
+export function distanceToInfiniteLine(
+  p: { x: number; y: number },
+  v: { x: number; y: number },
+  w: { x: number; y: number }
+): number {
+  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+  if (l2 === 0) return distanceBetween(p, v);
+  const t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  return distanceBetween(p, {
+    x: v.x + t * (w.x - v.x),
+    y: v.y + t * (w.y - v.y),
+  });
+}
+
+/**
+ * Serbest çizim noktalarını pürüzsüz Catmull-Rom SVG path dizesine dönüştürür.
+ */
+export function pointsToSmoothSvgPath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y} L ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+
+  return d;
 }
