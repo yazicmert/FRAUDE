@@ -451,6 +451,7 @@ export default function ChartDrawingOverlay({
         left: 0,
         width: '100%',
         height: '100%',
+        zIndex: 25,
         pointerEvents: isDrawingActive ? 'auto' : 'none',
       }}
     >
@@ -468,6 +469,7 @@ export default function ChartDrawingOverlay({
           width: '100%',
           height: '100%',
           overflow: 'visible',
+          zIndex: 25,
           pointerEvents: isDrawingActive ? 'auto' : 'none',
           cursor: isDrawingActive ? 'crosshair' : 'default',
         }}
