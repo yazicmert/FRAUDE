@@ -1,0 +1,159 @@
+.sidebar-update-card {
+  margin: 12px 8px 8px 8px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(35, 134, 54, 0.15), rgba(88, 166, 255, 0.1));
+  border: 1px solid rgba(63, 185, 80, 0.4);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+}
+
+.sidebar-update-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sidebar-update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #3fb950;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.sidebar-update-link {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.sidebar-update-link:hover {
+  color: #58a6ff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-update-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.sidebar-update-btn.primary {
+  background: #238636;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sidebar-update-btn.primary:hover {
+  background: #2ea043;
+  box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+}
+
+.sidebar-update-btn.success {
+  background: #1f6feb;
+  color: #fff;
+}
+
+.sidebar-update-btn.success:hover {
+  background: #388bfd;
+}
+
+.sidebar-update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-update-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: #58a6ff;
+  font-family: var(--font-mono, monospace);
+}
+
+.sidebar-update-progress-bar {
+  width: 100%;
+  height: 5px;
+  background: #21262d;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sidebar-update-progress-fill {
+  height: 100%;
+  background: #3fb950;
+  transition: width 0.2s ease;
+}
+
+/* Up-to-date footer */
+.sidebar-version-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  margin-top: auto;
+  border-top: 1px solid var(--border-color, #30363d);
+  font-size: 0.72rem;
+  color: var(--text-muted, #8b949e);
+  font-family: var(--font-mono, monospace);
+}
+
+.sidebar-version-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-version-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3fb950;
+  box-shadow: 0 0 5px rgba(63, 185, 80, 0.6);
+}
+
+.sidebar-version-text {
+  letter-spacing: 0.3px;
+}
+
+.sidebar-check-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.sidebar-check-btn:hover:not(:disabled) {
+  color: #58a6ff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-check-btn.checking {
+  opacity: 0.6;
+  cursor: default;
+}

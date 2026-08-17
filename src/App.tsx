@@ -45,6 +45,9 @@ import type { InstalledModule, ModuleManifest } from './modules/types';
 import './App.css';
 import GlobalAiCopilot from './features/ai/GlobalAiCopilot';
 import { setCopilotModule } from './features/ai/userContext';
+import AppUpdateBanner from './features/updates/AppUpdateBanner';
+import SidebarUpdateWidget from './features/updates/SidebarUpdateWidget';
+import { useAppUpdateChecker } from './features/updates/useAppUpdateChecker';
 
 // The right-hand AI panel is always available regardless of the AI Research
 // workspace module, so it is imported directly rather than through the registry.
@@ -89,6 +92,7 @@ function staticTitle(tab: WorkspaceTab, t: (key: string) => string): string {
 
 export default function App() {
   const { t, lang, setLanguage } = useTranslation();
+  const { hasUpdate, latestVersion } = useAppUpdateChecker();
   const { modules, installedModules, toggleModule, replaceInstalledModules } = useModuleRegistry();
   const { state: monitorState, setState: setMonitorState } = useMonitor();
   const research = useResearch();
@@ -651,6 +655,7 @@ export default function App() {
             }}
             t={t}
           />
+          <SidebarUpdateWidget onOpenUpdatesTab={() => openModuleTab('updates')} />
         </aside>
       )}
       <header className="topbar">
@@ -702,6 +707,20 @@ export default function App() {
               {isSyncing ? t('syncing') : formatSyncTime(lastSyncTime, t)}
             </button>
           </HotkeyTip>
+
+          {/* Yeni sürüm güncelleme rozeti */}
+          {hasUpdate && latestVersion && (
+            <HotkeyTip label={t('updNewVersionBadge')}>
+              <button
+                type="button"
+                className="topbar-update-chip"
+                onClick={() => openModuleTab('updates')}
+              >
+                <span className="update-dot-pulse" />
+                <span>v{latestVersion} {t('updUpdateApp')}</span>
+              </button>
+            </HotkeyTip>
+          )}
 
           <span className="topbar-sep" />
 
@@ -963,6 +982,7 @@ export default function App() {
       />
       <ToastHost />
       <GlobalAiCopilot />
+      <AppUpdateBanner onOpenUpdatesTab={() => openModuleTab('updates')} />
     </div>
   );
 }

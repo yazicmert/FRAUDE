@@ -6,6 +6,8 @@ import { submitUpdateViaPr, type PrStep } from './githubSubmit';
 import { supabase } from '../auth/supabaseClient';
 import { askAi } from '../../api/tauriClient';
 import { GithubIcon } from '../../components/icons';
+import { useAppUpdateChecker } from './useAppUpdateChecker';
+import { formatBytes } from './appUpdaterEngine';
 import './UpdatesView.css';
 
 // Topluluk güncellemeleri deponun main dalındaki updates/registry.json'dan
@@ -434,6 +436,8 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
   const visible = (updates ?? []).filter((u) => filter === 'all' || u.kind === filter);
   const busyPr = prStep !== null && prStep !== 'done';
 
+  const { downloadProgress, startInAppUpdate } = useAppUpdateChecker();
+
   return (
     <div className="upd-view">
       <div className="upd-head">
@@ -472,14 +476,43 @@ Sadece oluşturduğun AI Uygulama Promptunu yanıt olarak ver. Başka açıklama
       </div>
 
       {newVersionAvailable && (
-        <div className="upd-banner">
-          <div className="upd-banner-text">
-            <p className="upd-banner-title">⬆ {t('updNewVersion').replace('{v}', latestTag as string)}</p>
-            <p className="upd-banner-sub">{t('updBannerSub')}</p>
+        <div className="upd-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div className="upd-banner-text" style={{ flex: '1 1 300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ background: '#23863633', border: '1px solid #23863688', color: '#3fb950', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
+                ✨ {t('updNewVersionBadge')}
+              </span>
+              <p className="upd-banner-title" style={{ margin: 0 }}>⬆ {t('updNewVersion').replace('{v}', latestTag as string)}</p>
+            </div>
+            <p className="upd-banner-sub">{t('updDirectDesc')}</p>
           </div>
-          <button className="upd-btn primary" onClick={downloadInstaller}>
-            {t('updUpdateApp')}
-          </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '220px' }}>
+            {downloadProgress.status === 'downloading' || downloadProgress.status === 'verifying' ? (
+              <div style={{ background: '#0d1117', padding: '8px 12px', borderRadius: '6px', border: '1px solid #30363d' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#58a6ff', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                  <span>{downloadProgress.status === 'verifying' ? t('updVerifying') : `${t('updDownloading')} %${downloadProgress.percentage}`}</span>
+                  <span>{formatBytes(downloadProgress.loadedBytes)} / {formatBytes(downloadProgress.totalBytes)}</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: '#21262d', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${downloadProgress.percentage}%`, height: '100%', background: '#238636', transition: 'width 0.2s' }} />
+                </div>
+              </div>
+            ) : downloadProgress.status === 'completed' ? (
+              <button className="upd-btn primary" onClick={startInAppUpdate} style={{ background: '#1f6feb' }}>
+                ✓ {t('updReinstallBtn')}
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="upd-btn primary" onClick={startInAppUpdate} style={{ background: '#238636' }}>
+                  🚀 {t('updDirectBtn')}
+                </button>
+                <button className="upd-btn" onClick={downloadInstaller} title={t('updBannerSub')}>
+                  🌐 {t('updUpdateApp')} (Web)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {downloadNote && <p className="upd-chip ok" style={{ display: 'inline-block', marginTop: 10 }}>{t('updDownloadStarted')}</p>}

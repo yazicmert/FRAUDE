@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { AreaSeries, CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, PriceScaleMode, type Time } from 'lightweight-charts';
+import { AreaSeries, CandlestickSeries, ColorType, createChart, HistogramSeries, LineSeries, PriceScaleMode, type IChartApi, type ISeriesApi, type SeriesType, type Time } from 'lightweight-charts';
 // Grafik kurulumu efekt bağımlılıklarına t eklenirse her render'da yeniden
 // çizilirdi; bu yüzden i18next örneği doğrudan kullanılır.
 import i18n from '../../i18n';
 import type { HistoricalQuote } from '../../types';
+import { useChartDrawings } from '../../hooks/useChartDrawings';
+import ChartDrawingToolbar from './ChartDrawingToolbar';
+import ChartDrawingOverlay from './ChartDrawingOverlay';
 
 interface PriceChartProps {
   ticker: string;
@@ -65,7 +68,7 @@ function calculateRSI(data: Point[], period = 14): Point[] {
     const diff = data[i].value - data[i - 1].value;
     avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period;
     avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
-    result.push({ time: data[i].time, value: avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss) });
+    result.push({ time: data[period].time, value: avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss) });
   }
   return result;
 }
@@ -130,6 +133,11 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const lastBarRef = useRef<{ time: Time; open: number; high: number; low: number; close: number } | null>(null);
   const kindRef = useRef<ChartKind>('candles');
 
+  const [chartApi, setChartApi] = useState<IChartApi | null>(null);
+  const [activeSeriesApi, setActiveSeriesApi] = useState<ISeriesApi<SeriesType> | null>(null);
+  const [chartWidth, setChartWidth] = useState<number>(800);
+  const [showDrawingTools, setShowDrawingTools] = useState<boolean>(true);
+
   const [kind, setKind] = useState<ChartKind>('candles');
   const [showSMA20, setShowSMA20] = useState(true);
   const [showSMA50, setShowSMA50] = useState(true);
@@ -140,12 +148,36 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const [showMACD, setShowMACD] = useState(false);
   const [logScale, setLogScale] = useState(false);
 
+  const {
+    drawings,
+    selectedId,
+    setSelectedId,
+    settings: drawingSettings,
+    setActiveTool,
+    toggleMagnet,
+    toggleVisibility,
+    setColor,
+    setLineWidth,
+    setLineStyle,
+    addDrawing,
+    updateDrawing,
+    deleteDrawing,
+    clearDrawings,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useChartDrawings(ticker);
+
   const baseHeight = 400;
   const paneHeight = 110;
   const totalHeight = baseHeight + (showRSI ? paneHeight : 0) + (showMACD ? paneHeight : 0);
 
   useEffect(() => {
     if (!chartContainerRef.current || data.length === 0) return;
+    const initialWidth = chartContainerRef.current.clientWidth || 800;
+    setChartWidth(initialWidth);
+
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: '#161b22' },
@@ -153,7 +185,7 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
         panes: { separatorColor: '#30363d', separatorHoverColor: '#58a6ff55', enableResize: true },
       },
       grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
-      width: chartContainerRef.current.clientWidth,
+      width: initialWidth,
       height: totalHeight,
       timeScale: {
         borderColor: '#30363d',
@@ -279,10 +311,13 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
       chart.timeScale().fitContent();
     }
 
-    // Canlı tik için erişim noktaları
+    // Canlı tik ve çizim için erişim noktaları
     activeSeriesRef.current = activeSeries;
     kindRef.current = effectiveKind;
     lastBarRef.current = chartData.length > 0 ? { ...chartData[chartData.length - 1] } : null;
+
+    setChartApi(chart);
+    setActiveSeriesApi(activeSeries);
 
     // Önceki kapanışa göre değişim için hızlı erişim
     const prevCloseByTime = new Map<number, number>();
@@ -341,13 +376,19 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     });
 
     const handleResize = () => {
-      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      if (chartContainerRef.current) {
+        const newWidth = chartContainerRef.current.clientWidth;
+        setChartWidth(newWidth);
+        chart.applyOptions({ width: newWidth });
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
       activeSeriesRef.current = null;
       lastBarRef.current = null;
+      setChartApi(null);
+      setActiveSeriesApi(null);
       chart.remove();
     };
   }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
@@ -370,23 +411,58 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '4px', marginRight: '10px' }}>
-          {(['candles', 'line', 'area'] as const).map((k) => (
-            <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
-              {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
-            </button>
-          ))}
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '4px', marginRight: '6px' }}>
+            {(['candles', 'line', 'area'] as const).map((k) => (
+              <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
+                {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
+              </button>
+            ))}
+          </div>
+          <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
+          <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
+          <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
+          <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
+          <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
+          <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
+          <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
+          <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
         </div>
-        <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
-        <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
-        <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
-        <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
-        <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
-        <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
-        <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
-        <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
+
+        {/* Çizim Araçları Açma / Kapatma Butonu */}
+        <button
+          type="button"
+          style={toggleStyle(showDrawingTools)}
+          onClick={() => setShowDrawingTools(!showDrawingTools)}
+          title={i18n.t('drawTools')}
+        >
+          ✏️ {i18n.t('drawTools')}
+        </button>
       </div>
+
+      {/* Çizim Araç Çubuğu */}
+      {showDrawingTools && (
+        <div style={{ marginBottom: '8px' }}>
+          <ChartDrawingToolbar
+            settings={drawingSettings}
+            onSelectTool={setActiveTool}
+            onToggleMagnet={toggleMagnet}
+            onToggleVisibility={toggleVisibility}
+            onSetColor={setColor}
+            onSetLineWidth={setLineWidth}
+            onSetLineStyle={setLineStyle}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            selectedId={selectedId}
+            onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
+            onClearAll={clearDrawings}
+          />
+        </div>
+      )}
+
       <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
         <div
           ref={legendRef}
@@ -407,6 +483,25 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
           }}
         />
         <div ref={chartContainerRef} style={{ width: '100%', height: '100%', border: '1px solid #30363d', borderRadius: 4, overflow: 'hidden' }} />
+
+        {/* Grafik Üzeri İnteraktif Çizim Katmanı */}
+        <ChartDrawingOverlay
+          chart={chartApi}
+          series={activeSeriesApi}
+          quotes={data}
+          drawings={drawings}
+          selectedId={selectedId}
+          settings={drawingSettings}
+          onSelectId={setSelectedId}
+          onAddDrawing={addDrawing}
+          onUpdateDrawing={updateDrawing}
+          onDeleteDrawing={deleteDrawing}
+          onSelectTool={setActiveTool}
+          onUndo={undo}
+          onRedo={redo}
+          width={chartWidth}
+          height={totalHeight}
+        />
       </div>
     </div>
   );

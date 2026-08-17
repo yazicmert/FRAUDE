@@ -2,6 +2,75 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-tek-tikla-uygulamadan-guncelleme-ve-dinamik-bildirim",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Tek tıkla doğrudan uygulamadan güncelleme ve dinamik bildirim sistemi eklendi",
+        "en": "Added one-click in-app update and dynamic update notification system"
+      },
+      "summary": {
+        "tr": "FRAUDE güncelleme deneyimi baştan sona modernize edilerek kullanıcıların harici indirme sayfalarına gitmesine gerek kalmadan doğrudan uygulama içerisinden güncellenebilmesi sağlandı:\n\n1. TEK TIKLA DOĞRUDAN UYGULAMADAN GÜNCELLEME: Yeni bir sürüm çıktığında kullanıcıyı harici indirme sayfalarına göndermek yerine, doğrudan uygulama içerisinden işletim sistemine uygun kurulum paketini (macOS .dmg / Windows .exe) canlı hız, kalan süre ve yüzde ilerleme çubuğuyla (%0 -> %100) indiren ve anında başlatan yerleşik indirme motoru (`appUpdaterEngine`) entegre edildi.\n\n2. DİNAMİK YÜZEN BİLDİRİM KARTI (`AppUpdateBanner`): Uygulama açılışında ve arka planda çalışan akıllı denetleyici yeni bir sürüm tespit ettiğinde ekranın sağ alt köşesinde şık, cam efektli ve animasyonlu bir bildirim kartı açılır. Kullanıcı tek tıkla doğrudan güncellemeyi başlatabilir veya sürüm notlarını inceleyebilir.\n\n3. ÜST ÇUBUK VE AYARLAR ENTEGRASYONU: Yeni sürüm hazır olduğunda üst gezinti çubuğunda ve Ayarlar modülünde parlayan yeşil durum rozeti (`v0.1.x Güncelle`) görüntülenir.\n\n4. ARKA PLAN PERİYODİK DENETİMİ (`useAppUpdateChecker`): Her 30 dakikada bir ve uygulama açılışında arka planda sessizce GitHub Releases ve registry kontrolü yapılarak kullanıcı her zaman en güncel terminal özelliklerine anında ulaştırılır.",
+        "en": "FRAUDE update experience has been completely modernized with one-click direct in-app updating and responsive notification toasts:\n\n1. ONE-CLICK IN-APP UPDATER: When a new release is available, the built-in update engine (`appUpdaterEngine`) downloads the OS-specific installer package (macOS .dmg / Windows .exe) directly within the app, featuring live streaming progress bars (%0 to %100), downloaded byte counters, and automatic installer launch.\n\n2. DYNAMIC FLOATING NOTIFICATION BANNER (`AppUpdateBanner`): A sleek, animated glassmorphism notification card appears automatically when a new release is detected. Users can trigger the in-app update with a single click or review release notes.\n\n3. TOPBAR & SETTINGS INTEGRATION: Glowing status chip badge (`v0.1.x Update`) in the header actions bar and updates tab indicator.\n\n4. PERIODIC BACKGROUND CHECKING (`useAppUpdateChecker`): Automated periodic background checks every 30 minutes without causing any UI lag."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/updates/appUpdaterEngine.ts",
+        "src/features/updates/useAppUpdateChecker.ts",
+        "src/features/updates/AppUpdateBanner.tsx",
+        "src/features/updates/AppUpdateBanner.css",
+        "src/features/updates/UpdatesView.tsx",
+        "src/features/settings/SettingsView.tsx",
+        "src/App.tsx",
+        "src/App.css",
+        "src/api/i18n.ts"
+      ],
+      "agentPrompt": "şimdi uygulamayı tekrar tekrar indirmeye gerek kalmadan güncelleme gelince direkt uygulamadan güncelle butonu gelsin. Zaten güncelleme denetleme olayı var ama bunu daha responsive ve dinamik hale gelsin",
+      "notes": null
+    },
+    {
+      "id": "2026-08-18-grafik-cizim-araclari-ve-bulut-kaliciligi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Grafikler üzerine profesyonel çizim araçları eklendi ve bulut kalıcılığı sağlandı",
+        "en": "Added professional chart drawing tools with persistent cloud sync"
+      },
+      "summary": {
+        "tr": "FRAUDE grafiklerine kapsamlı teknik analiz çizim araçları ve çok katmanlı kalıcılık mimarisi eklendi:\n\n1. KAPSAMLI ÇİZİM ARAÇLARI: Trend Çizgisi, Işın (Ray), Yatay Destek/Direnç Seviyeleri (fiyat rozetli), Dikey Zaman Çizgileri, Dikdörtgen Arz/Talep Bölgeleri, Fibonacci Düzeltmesi (0%, 23.6%, 38.2%, 50%, 61.8% Altın Oran, 78.6%, 100%), Serbest Kalem, Grafik Metin/Notları ve Fiyat-Yüzde-Bar Ölçüm Cetveli entegre edildi.\n\n2. MIKNATIS (MAGNET SNAP): Çizim yaparken fare imlecini en yakın mumun açılış, en yüksek, en düşük veya kapanış fiyatlarına ve seans zamanına otomatik olarak yapıştıran akıllı mıknatıs modu eklendi.\n\n3. KUSURSUZ BULUT & YEREL KALICILIK: Çizimler piksel yerine sembol bazında (zaman, fiyat) veri uzayı koordinatlarıyla saklanır. `localStorage` ile sıfır gecikmeli yerel önbelleğe ve Supabase `user_chart_drawings` tablosuyla kullanıcı hesabına anında senkronize edilir. Uygulama güncellense, tamamen silinip baştan yüklense veya başka cihazdan giriş yapılsa dahi kullanıcının en son çizdiği grafikler eksiksiz korunur.\n\n4. İNTERAKTİF DÜZENLEME & GEÇMİŞ: Çizimleri tıklayarak seçme, köşe tutamaçlarından veya gövdesinden sürükleyerek taşıma, renk/kalınlık/stil değiştirme, geri al (undo), ileri al (redo), gizle/göster ve seçileni/tümünü silme yetenekleri sunuldu.",
+        "en": "Added comprehensive technical analysis drawing tools and multi-layer cloud persistence to FRAUDE charts:\n\n1. FULL DRAWING TOOLKIT: Integrated Trendline, Ray Line, Horizontal Support/Resistance (with price badges), Vertical Time Lines, Rectangle Zones, Fibonacci Retracement (0%, 23.6%, 38.2%, 50%, 61.8% Golden Ratio, 78.6%, 100%), Freehand Brush, Chart Text/Notes, and Price/Percent/Bar Measurement Ruler.\n\n2. MAGNET SNAP: Smart magnet mode automatically snaps cursor to nearest candlestick Open, High, Low, or Close levels and exact bar timestamps.\n\n3. SEAMLESS CLOUD & LOCAL PERSISTENCE: Drawings are stored in data coordinates (time, price) and synced two-way between instant `localStorage` and Supabase cloud (`user_chart_drawings`). Even across app updates, clean reinstalls, or device switches, user drawings remain completely intact upon sign-in.\n\n4. INTERACTIVE EDITING & HISTORY: Full support for selection, vertex and body dragging, color palette, line width/style customization, undo/redo stacks, hide/show toggles, and deletion."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/ticker/PriceChart.tsx",
+        "src/features/ticker/ChartDrawingToolbar.tsx",
+        "src/features/ticker/ChartDrawingOverlay.tsx",
+        "src/features/ticker/chartDrawingStorage.ts",
+        "src/features/ticker/drawingTypes.ts",
+        "src/features/ticker/drawingCoordinates.ts",
+        "src/hooks/useChartDrawings.ts",
+        "supabase/migrations/20260818000001_chart_drawings.sql",
+        "docs/supabase-chart-drawings.sql",
+        "src/api/i18n.ts"
+      ],
+      "agentPrompt": "fraude içinde grafikler üzerine çizim ekleme özelliği ekleyelim ve kullanıcının en son çizdiği grafikler güncelleme olursa olsun uygulamayı silerse silsin tekrar girdiğinde en son çizdiği gibi kalmalı",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-kripto-piyasasi-ux-yeniden-tasarimi",
       "date": "2026-08-18",
       "author": "yazicmert",
