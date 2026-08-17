@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-kripto-piyasasi-ux-yeniden-tasarimi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Kripto para piyasası görünümü profesyonel terminal standartlarıyla baştan tasarlandı",
+        "en": "Crypto market view redesigned from scratch with pro terminal standards"
+      },
+      "summary": {
+        "tr": "FRAUDE Kripto Para Piyasası (`CryptoView`) modern finans ve Web3 terminallerinin en üst düzey UX standartlarıyla baştan inşa edildi:\n\n1. KÜRESEL PİYASA NABZI & DUYARLILIK: Toplam kripto piyasa değeri, 24s küresel değişim, BTC ve ETH dominasyon payları ile gerçek zamanlı Kripto Korku & Açgözlülük (Fear & Greed) endeksi eklendi. USD ($), TRY (₺) ve EUR (€) para birimi seçicisiyle tüm fiyat ve hacimler anında seçilen para biriminde hesaplanabiliyor.\n\n2. İNTERAKTİF DERİNLEMESİNE İNCELEME & GRAFİK: Isı haritasından veya tablodan bir kripto seçildiğinde sayfadan ayrılmadan açılan profesyonel analiz modülü; mum grafik, çizgi ve alan modları (`PriceChart`), 1A-TÜMÜ zaman aralıkları, teknik göstergeler (SMA, EMA, RSI, MACD, Bollinger), 52 haftalık fiyat aralık çubuğu ve teknik özet sinyal kadranı sunuyor.\n\n3. ANLATI & KATEGORİ SÜZGEÇLERİ: Katman 1, DeFi, Yapay Zekâ (AI & Data), Meme ve Ödeme kategorileri ile hızlı canlı arama eklendi.\n\n4. CANLI ÇOKLU KUR DÖNÜŞTÜRÜCÜSÜ: Kripto ve itibari para birimleri (USD, TRY, EUR) arasında anlık çeviri yapan, hızlı miktar çipleri ve seçili varlığı tek tıkla yükleme imkânı tanıyan araç eklendi.\n\n5. GENİŞLETİLMİŞ LİKİT EVREN: Bitcoin, Ethereum ve Solana'nın yanı sıra BNB, Dogecoin, NEAR, TRON, Litecoin, Shiba Inu gibi önde gelen varlıklar kanonik veri evrenine dahil edildi.",
+        "en": "FRAUDE Crypto Market view has been rebuilt from scratch with modern terminal UX standards:\n\n1. GLOBAL MARKET PULSE & SENTIMENT: Integrated total crypto market cap, 24h global volume change, BTC and ETH dominance metrics, and a real-time Fear & Greed sentiment gauge. Multi-currency switcher (USD $, TRY ₺, EUR €) recalculates all prices and market caps instantly.\n\n2. INTERACTIVE DEEP DIVE & CHARTING: Selecting any crypto opens an inline deep dive panel featuring candlestick / line / area charts (`PriceChart`), multi-timeframe controls (1M to MAX), technical indicators (SMA, EMA, RSI, MACD, Bollinger), a 52-week range bar, and summary signal badges (Strong Buy, Buy, Neutral, Sell).\n\n3. NARRATIVE & CATEGORY FILTERS: Added filter tabs for Layer 1, DeFi, AI & Data, Meme, and Payments along with instant live search.\n\n4. LIVE MULTI-CURRENCY CONVERTER: Real-time converter calculating cross-rates between crypto and fiat currencies (USD, TRY, EUR) with quick preset chips and one-click active asset loading.\n\n5. EXPANDED LIQUID UNIVERSE: In addition to Bitcoin, Ethereum, and Solana, top liquid assets like BNB, Dogecoin, NEAR, TRON, Litecoin, and Shiba Inu have been added to the canonical market universe."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/yahoo.rs",
+        "src/features/crypto/CryptoView.tsx",
+        "src/features/crypto/CryptoView.css"
+      ],
+      "agentPrompt": "Kripto piyasası kısmını baştan tasarla ve UX olarak yenilikler ekle.",
+      "notes": null
+    },
+    {
       "id": "2026-08-17-haber-etiket-esleme-ve-makale-okuyucu-iyilestirmesi",
       "date": "2026-08-17",
       "author": "yazicmert",

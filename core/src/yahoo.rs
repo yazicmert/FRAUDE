@@ -31,10 +31,16 @@ pub const CRYPTO_TICKERS: &[(&str, &str)] = &[
     ("ETH-USD", "Ethereum ($)"),
     ("SOL-USD", "Solana ($)"),
     ("XRP-USD", "Ripple ($)"),
-    ("AVAX-USD", "Avalanche ($)"),
+    ("BNB-USD", "BNB ($)"),
+    ("DOGE-USD", "Dogecoin ($)"),
     ("ADA-USD", "Cardano ($)"),
+    ("AVAX-USD", "Avalanche ($)"),
     ("LINK-USD", "Chainlink ($)"),
+    ("NEAR-USD", "NEAR Protocol ($)"),
     ("DOT-USD", "Polkadot ($)"),
+    ("LTC-USD", "Litecoin ($)"),
+    ("SHIB-USD", "Shiba Inu ($)"),
+    ("TRX-USD", "TRON ($)"),
 ];
 
 /// Global hisselerin `index_memberships` grup etiketi. Frontend BIST'e özel
@@ -1637,6 +1643,17 @@ mod group_tests {
             assert!(
                 groups.contains(&GLOBAL_GROUP.to_string()),
                 "{ticker} Global grubuna girmeli, bulunan: {groups:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn crypto_group_covers_every_configured_crypto_ticker() {
+        for (ticker, _) in CRYPTO_TICKERS {
+            let groups = get_ticker_memberships(ticker);
+            assert!(
+                groups.contains(&CRYPTO_GROUP.to_string()),
+                "{ticker} Kriptolar grubuna girmeli, bulunan: {groups:?}"
             );
         }
     }
