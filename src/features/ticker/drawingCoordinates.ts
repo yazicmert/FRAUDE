@@ -3,8 +3,54 @@ import type { HistoricalQuote } from '../../types';
 import type { DrawingPoint } from './drawingTypes';
 
 /**
+ * Fiyat ölçeği görünür sınırlarını ve ana panel yüksekliğini alır.
+ */
+function getPriceScaleMetrics(
+  series: ISeriesApi<SeriesType> | null,
+  sortedQuotes?: HistoricalQuote[]
+): { minPrice: number; maxPrice: number; paneHeight: number } | null {
+  if (!series) return null;
+
+  try {
+    const visibleRange = series.priceScale().getVisibleRange();
+    let paneHeight = 440;
+    try {
+      const h = series.getPane().getHeight();
+      if (typeof h === 'number' && h > 0) paneHeight = h;
+    } catch {
+      // fallback
+    }
+
+    if (visibleRange && Number.isFinite(visibleRange.from) && Number.isFinite(visibleRange.to)) {
+      const minPrice = Math.min(visibleRange.from, visibleRange.to);
+      const maxPrice = Math.max(visibleRange.from, visibleRange.to);
+      if (maxPrice > minPrice) {
+        return { minPrice, maxPrice, paneHeight };
+      }
+    }
+  } catch {
+    // getVisibleRange fail safe
+  }
+
+  // Fallback: quotes üzerinden min / max fiyat
+  if (sortedQuotes && sortedQuotes.length > 0) {
+    let minP = Infinity;
+    let maxP = -Infinity;
+    for (const q of sortedQuotes) {
+      if (q.low < minP) minP = q.low;
+      if (q.high > maxP) maxP = q.high;
+    }
+    if (Number.isFinite(minP) && Number.isFinite(maxP) && maxP > minP) {
+      const padding = (maxP - minP) * 0.08;
+      return { minPrice: minP - padding, maxPrice: maxP + padding, paneHeight: 440 };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Veri uzayındaki (time, price) noktasını ekran koordinatlarına (x, y) dönüştürür.
- * Lightweight Charts zaman ölçeği ve mantıksal indeksleri üzerinden kesintisiz çalışır.
  */
 export function pointToScreen(
   point: DrawingPoint,
@@ -19,7 +65,6 @@ export function pointToScreen(
 
   if ((x === null || Number.isNaN(x)) && sortedQuotes && sortedQuotes.length > 0) {
     const targetTime = point.time;
-    // Sıralı veri içinde tam veya en yakın mum indeksini bul
     let bestIdx = 0;
     let minDiff = Math.abs((sortedQuotes[0].time as number) - targetTime);
 
@@ -31,7 +76,6 @@ export function pointToScreen(
       }
     }
 
-    // Mantıksal indeks üzerinden x koordinatını al (kesintisiz ve pürüzsüz)
     const logicalCoord = chart.timeScale().logicalToCoordinate(bestIdx as any);
     if (logicalCoord !== null && Number.isFinite(logicalCoord)) {
       x = logicalCoord;
@@ -39,7 +83,13 @@ export function pointToScreen(
   }
 
   // 2. Y Koordinatı (Fiyat -> Piksel)
-  let y: number | null = series.priceToCoordinate(point.price);
+  const metrics = getPriceScaleMetrics(series, sortedQuotes);
+  let y: number | null = null;
+
+  if (metrics) {
+    const { minPrice, maxPrice, paneHeight } = metrics;
+    y = ((maxPrice - point.price) / (maxPrice - minPrice)) * paneHeight;
+  }
 
   if (x === null || y === null || Number.isNaN(x) || Number.isNaN(y)) {
     return null;
@@ -62,23 +112,13 @@ export function screenToPoint(
   if (!chart || !series) return null;
 
   // 1. Fiyat Hesaplama
-  let rawPrice = series.coordinateToPrice(y);
-  if (rawPrice === null || rawPrice === undefined || Number.isNaN(rawPrice)) {
-    // Eğer fiyat aralık dışıysa en yakın fiyat sınırını hesapla
-    if (sortedQuotes && sortedQuotes.length > 0) {
-      let minP = Infinity;
-      let maxP = -Infinity;
-      for (const q of sortedQuotes) {
-        if (q.low < minP) minP = q.low;
-        if (q.high > maxP) maxP = q.high;
-      }
-      if (Number.isFinite(minP) && Number.isFinite(maxP)) {
-        rawPrice = (y < 0 ? maxP : minP) as any;
-      }
-    }
-  }
+  const metrics = getPriceScaleMetrics(series, sortedQuotes);
+  if (!metrics) return null;
 
-  if (rawPrice === null || rawPrice === undefined || Number.isNaN(rawPrice)) {
+  const { minPrice, maxPrice, paneHeight } = metrics;
+  let rawPrice = maxPrice - (y / paneHeight) * (maxPrice - minPrice);
+
+  if (!Number.isFinite(rawPrice)) {
     return null;
   }
 
