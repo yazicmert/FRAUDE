@@ -16,7 +16,7 @@
         "en": "FRAUDE update experience has been completely modernized with one-click direct in-app updating and responsive notification toasts:\n\n1. ONE-CLICK IN-APP UPDATER: When a new release is available, the built-in update engine (`appUpdaterEngine`) downloads the OS-specific installer package (macOS .dmg / Windows .exe) directly within the app, featuring live streaming progress bars (%0 to %100), downloaded byte counters, and automatic installer launch.\n\n2. DYNAMIC FLOATING NOTIFICATION BANNER (`AppUpdateBanner`): A sleek, animated glassmorphism notification card appears automatically when a new release is detected. Users can trigger the in-app update with a single click or review release notes.\n\n3. TOPBAR & SETTINGS INTEGRATION: Glowing status chip badge (`v0.1.x Update`) in the header actions bar and updates tab indicator.\n\n4. PERIODIC BACKGROUND CHECKING (`useAppUpdateChecker`): Automated periodic background checks every 30 minutes without causing any UI lag."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.34",
       "security": {
         "reviewed": false,
         "reviewer": null
@@ -50,7 +50,7 @@
         "en": "Added comprehensive technical analysis drawing tools and multi-layer cloud persistence to FRAUDE charts:\n\n1. FULL DRAWING TOOLKIT: Integrated Trendline, Ray Line, Horizontal Support/Resistance (with price badges), Vertical Time Lines, Rectangle Zones, Fibonacci Retracement (0%, 23.6%, 38.2%, 50%, 61.8% Golden Ratio, 78.6%, 100%), Freehand Brush, Chart Text/Notes, and Price/Percent/Bar Measurement Ruler.\n\n2. MAGNET SNAP: Smart magnet mode automatically snaps cursor to nearest candlestick Open, High, Low, or Close levels and exact bar timestamps.\n\n3. SEAMLESS CLOUD & LOCAL PERSISTENCE: Drawings are stored in data coordinates (time, price) and synced two-way between instant `localStorage` and Supabase cloud (`user_chart_drawings`). Even across app updates, clean reinstalls, or device switches, user drawings remain completely intact upon sign-in.\n\n4. INTERACTIVE EDITING & HISTORY: Full support for selection, vertex and body dragging, color palette, line width/style customization, undo/redo stacks, hide/show toggles, and deletion."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.34",
       "security": {
         "reviewed": false,
         "reviewer": null
@@ -85,7 +85,7 @@
         "en": "FRAUDE Crypto Market view has been rebuilt from scratch with modern terminal UX standards:\n\n1. GLOBAL MARKET PULSE & SENTIMENT: Integrated total crypto market cap, 24h global volume change, BTC and ETH dominance metrics, and a real-time Fear & Greed sentiment gauge. Multi-currency switcher (USD $, TRY ₺, EUR €) recalculates all prices and market caps instantly.\n\n2. INTERACTIVE DEEP DIVE & CHARTING: Selecting any crypto opens an inline deep dive panel featuring candlestick / line / area charts (`PriceChart`), multi-timeframe controls (1M to MAX), technical indicators (SMA, EMA, RSI, MACD, Bollinger), a 52-week range bar, and summary signal badges (Strong Buy, Buy, Neutral, Sell).\n\n3. NARRATIVE & CATEGORY FILTERS: Added filter tabs for Layer 1, DeFi, AI & Data, Meme, and Payments along with instant live search.\n\n4. LIVE MULTI-CURRENCY CONVERTER: Real-time converter calculating cross-rates between crypto and fiat currencies (USD, TRY, EUR) with quick preset chips and one-click active asset loading.\n\n5. EXPANDED LIQUID UNIVERSE: In addition to Bitcoin, Ethereum, and Solana, top liquid assets like BNB, Dogecoin, NEAR, TRON, Litecoin, and Shiba Inu have been added to the canonical market universe."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.34",
       "security": {
         "reviewed": false,
         "reviewer": null
@@ -113,7 +113,7 @@
         "en": "Two significant news logic and reading issues have been resolved:\n\n1. TAG MATCHING LOGIC: Macro and sector keywords like \"dollar\", \"export\", \"interest rate\", \"inflation\", \"tourism\", \"aviation\" used to directly inject specific stock tickers, causing unrelated THYAO, FROTO, GARAN badges on almost every general economy or FX article. Additionally, substring matching for short company names like \"thy\", \"koç\", \"bim\", \"tav\" produced false matches inside English and Turkish words like \"anything\", \"everything\", \"python\", \"healthy\", \"iskoçya\", \"kombine\". Sector keywords now exclusively populate sector tags (`#döviz`, `#faiz`, `#ihracat`, `#havacılık`, etc.), while company tags (`item.tags`) require exact whole-word matches. Support for global equities (AAPL, MSFT, NVDA, TSLA, etc.) and crypto assets (BTC-USD, ETH-USD, etc.) has also been integrated.\n\n2. US & CRYPTO ARTICLE READER: HTTP links from GDELT and RSS are now upgraded to HTTPS, full browser navigation headers and Yahoo consent cookies were added to prevent 403 Forbidden and consent-wall redirects. A fallback article extractor was introduced for modern news and crypto pages where Readability yields minimal content, lazy-loaded images are automatically resolved, and polished Safari Reader-like dark theme typography has been applied to the in-app reader."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.34",
       "security": {
         "reviewed": false,
         "reviewer": null
@@ -144,7 +144,7 @@
         "en": "The economic calendar showed a number: \"Car Production (YoY) 15.5%\". Working out who that number concerns was left to the reader — you had to leave the calendar and go searching to learn which shares are exposed to it.\n\nExpanding a row now brings three things at once. First the CHANNEL: one sentence on how the release reaches the market (output volume and supplier orders for car production; the energy bill and tourism revenue for the current account). Then the TAGS: the BIST shares most exposed to that channel and the related world instruments — for car production FROTO, TOASO, TTRAK, OTKAR, KARSN, ASUZU, EGEEN alongside Ford Motor, Stellantis, Toyota and the DAX. Every badge carries the reason it is there. Finally RELATED RESEARCH: macro notes brokers devoted to that topic plus company research on the tagged shares, newest first.\n\nA tag makes NO CLAIM ABOUT DIRECTION. It does not say \"this share rises when the data lands\"; it says which share the data concerns — the same reason the surprise arrow in the calendar carries no good/bad judgement. The mapping lives in a fixed table rather than being asked of an AI: the calendar opens offline too, and hanging it off a key-gated provider would make the panel fragile. The table is also testable; a test pins that all 28 categories seen in the live calendar have an entry.\n\nReal measured noise was removed from the research matching: daily bulletins (\"Piyasalarda Bugün\", \"Günlük Bülten\", \"Pay Geri Alımları\") mention every topic in one sentence, so they carry both the topic term and the ticker and used to fill the list. The search now runs on the report TITLE and drops these recurring publications, leaving the row's real counterparts — \"Cari İşlemler Dengesi - Temmuz 2026\", \"Otomotiv Sektör Raporu\", \"TCMB Enflasyon Raporu\". When the archive is empty the list does not go quietly blank, it says the archive is not built yet — \"no research\" and \"no archive\" are not the same thing.\n\nTwo fixes came with it. The calendar panel now closes when an indicator page or an article opens: left open, it sat directly on top of the page to be read and hid it. And rows the source publishes under a second name are translated — records that read \"Gdp Growth Rate Yoy\" and \"Inflation Report\" on screen now read \"GSYİH Büyümesi (Yıllık)\" and \"TCMB Enflasyon Raporu\"."
       },
       "commit": null,
-      "includedIn": null,
+      "includedIn": "0.1.34",
       "security": {
         "reviewed": false,
         "reviewer": null
