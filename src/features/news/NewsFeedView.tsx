@@ -6,6 +6,7 @@ import { useTranslation } from '../../api/i18n';
 // Haber, analiz raporu ve SPK bülteni aynı okuyucuda açılır: araç çubuğu,
 // yakınlaştırma, sağa sabitleme ve yapay zekâ bağlamı tek yerde yaşar.
 import { documentFromNews, requestArticleReader } from '../reports/ReportDocumentModal';
+import { getReadArticlesSet, markArticleAsRead } from '../../lib/userPreferencesStorage';
 // Modül düzeyi yardımcılar bileşen dışı çalıştığından hook yerine i18next
 // örneği kullanılır.
 import i18n from '../../i18n';
@@ -38,8 +39,20 @@ export function NewsList({ news }: { news: NewsItem[] }) {
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const [readSet, setReadSet] = useState<Set<string>>(() => getReadArticlesSet());
+
+  useEffect(() => {
+    const handleReadEvent = () => {
+      setReadSet(getReadArticlesSet());
+    };
+    window.addEventListener('fraude-article-read', handleReadEvent);
+    return () => window.removeEventListener('fraude-article-read', handleReadEvent);
+  }, []);
 
   const toggleArticle = async (item: NewsItem) => {
+    markArticleAsRead(item.link);
+    setReadSet((prev) => new Set([...prev, item.link]));
+
     if (expandedLink === item.link) {
       setExpandedLink(null);
       return;
@@ -68,47 +81,71 @@ export function NewsList({ news }: { news: NewsItem[] }) {
 
   return (
     <div className="kap-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {news.map((item) => (
-        <article
-          className="news-article"
-          key={`${item.source}-${item.link}`}
-          onClick={() => void toggleArticle(item)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              void toggleArticle(item);
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          aria-expanded={expandedLink === item.link}
-          style={{
-            cursor: 'pointer',
-            background: '#0d1117',
-            border: `1px solid ${item.is_kap ? 'rgba(255, 184, 0, 0.45)' : '#21262d'}`,
-            padding: '16px',
-            borderRadius: '6px',
-          }}
-        >
-          <div className="news-article-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-            <strong style={{ fontSize: '1.05rem', color: '#fff', lineHeight: '1.4' }}>{item.title}</strong>
-            <span
-              style={{
-                fontSize: '0.7rem',
-                background: item.is_kap ? 'rgba(255, 184, 0, 0.14)' : 'rgba(0, 255, 157, 0.12)',
-                color: item.is_kap ? '#ffb800' : 'var(--accent-primary)',
-                padding: '3px 8px',
-                borderRadius: '10px',
-                fontWeight: 'bold',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {item.is_kap ? 'KAP' : item.source}
+      {news.map((item) => {
+        const isRead = readSet.has(item.link);
+
+        return (
+          <article
+            className="news-article"
+            key={`${item.source}-${item.link}`}
+            onClick={() => void toggleArticle(item)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                void toggleArticle(item);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={expandedLink === item.link}
+            style={{
+              cursor: 'pointer',
+              background: isRead ? '#090d13' : '#0d1117',
+              border: `1px solid ${item.is_kap ? 'rgba(255, 184, 0, 0.45)' : isRead ? '#1b1f27' : '#21262d'}`,
+              padding: '16px',
+              borderRadius: '6px',
+              opacity: isRead && expandedLink !== item.link ? 0.78 : 1,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <div className="news-article-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                <strong style={{ fontSize: '1.05rem', color: isRead ? '#8b949e' : '#fff', lineHeight: '1.4' }}>{item.title}</strong>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {isRead && (
+                  <span
+                    style={{
+                      fontSize: '0.65rem',
+                      color: '#8b949e',
+                      background: 'rgba(139, 148, 158, 0.12)',
+                      border: '1px solid rgba(139, 148, 158, 0.25)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    ✓ Okundu
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    background: item.is_kap ? 'rgba(255, 184, 0, 0.14)' : 'rgba(0, 255, 157, 0.12)',
+                    color: item.is_kap ? '#ffb800' : 'var(--accent-primary)',
+                    padding: '3px 8px',
+                    borderRadius: '10px',
+                    fontWeight: 'bold',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {item.is_kap ? 'KAP' : item.source}
+                </span>
+              </div>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '8px', display: 'block' }}>
+              {formatDate(item.pub_date)}
             </span>
-          </div>
-          <span style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '8px', display: 'block' }}>
-            {formatDate(item.pub_date)}
-          </span>
           {((item.tags && item.tags.length > 0) || (item.sector_tags && item.sector_tags.length > 0)) && (
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
               {item.tags?.map((t, idx) => {
@@ -179,9 +216,9 @@ export function NewsList({ news }: { news: NewsItem[] }) {
               </div>
             </div>
           )}
-        </article>
-      ))}
-
+          </article>
+        );
+      })}
     </div>
   );
 }
