@@ -7,7 +7,6 @@ import type { HistoricalQuote } from '../../types';
 import { useChartDrawings } from '../../hooks/useChartDrawings';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import ChartDrawingOverlay from './ChartDrawingOverlay';
-import TradingViewChart from './TradingViewChart';
 
 interface PriceChartProps {
   ticker: string;
@@ -18,7 +17,6 @@ interface PriceChartProps {
 }
 
 type ChartKind = 'candles' | 'line' | 'area';
-type ChartEngine = 'tradingview' | 'fraude';
 
 /** Aralık butonu → görünür pencere (saniye). 'max' ve bilinmeyenler tam sığdırır. */
 const RANGE_SECONDS: Record<string, number> = {
@@ -116,16 +114,14 @@ function calculateBollinger(data: Point[], period = 20, mult = 2): { upper: Poin
 }
 
 const toggleStyle = (active: boolean): React.CSSProperties => ({
-  padding: '4px 10px',
-  fontSize: '0.72rem',
+  padding: '3px 9px',
+  fontSize: '0.7rem',
   fontFamily: 'var(--font-mono)',
-  fontWeight: active ? 'bold' : 'normal',
   background: active ? '#1f6feb33' : 'transparent',
   color: active ? '#58a6ff' : '#8b949e',
   border: `1px solid ${active ? '#1f6feb66' : '#30363d'}`,
   borderRadius: '4px',
   cursor: 'pointer',
-  transition: 'all 0.15s ease',
 });
 
 export default function PriceChart({ ticker, data, range = '6mo', livePrice }: PriceChartProps) {
@@ -134,10 +130,6 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const activeSeriesRef = useRef<any>(null);
   const lastBarRef = useRef<{ time: Time; open: number; high: number; low: number; close: number } | null>(null);
   const kindRef = useRef<ChartKind>('candles');
-
-  const [chartEngine, setChartEngine] = useState<ChartEngine>(() => {
-    return (localStorage.getItem('fraude-chart-engine') as ChartEngine) || 'tradingview';
-  });
 
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
   const [activeSeriesApi, setActiveSeriesApi] = useState<ISeriesApi<SeriesType> | null>(null);
@@ -153,11 +145,6 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
   const [logScale, setLogScale] = useState(false);
-
-  const handleSelectEngine = (engine: ChartEngine) => {
-    setChartEngine(engine);
-    localStorage.setItem('fraude-chart-engine', engine);
-  };
 
   const {
     drawings,
@@ -180,12 +167,11 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     canRedo,
   } = useChartDrawings(ticker);
 
-  const baseHeight = 520;
-  const paneHeight = 110;
+  const baseHeight = 440;
+  const paneHeight = 90;
   const totalHeight = baseHeight + (showRSI ? paneHeight : 0) + (showMACD ? paneHeight : 0);
 
   useEffect(() => {
-    if (chartEngine !== 'fraude') return;
     if (!chartContainerRef.current || data.length === 0) return;
     const initialWidth = chartContainerRef.current.clientWidth || 800;
     setChartWidth(initialWidth);
@@ -196,7 +182,7 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
         textColor: '#c9d1d9',
         panes: { separatorColor: '#30363d', separatorHoverColor: '#58a6ff55', enableResize: true },
       },
-      grid: { vertLines: { color: '#30363d' }, horzLines: { color: '#30363d' } },
+      grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
       width: initialWidth,
       height: totalHeight,
       timeScale: {
@@ -400,10 +386,9 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
       setActiveSeriesApi(null);
       chart.remove();
     };
-  }, [chartEngine, data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
+  }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
 
   useEffect(() => {
-    if (chartEngine !== 'fraude') return;
     const series = activeSeriesRef.current;
     const last = lastBarRef.current;
     if (!series || !last || !livePrice || livePrice <= 0) return;
@@ -415,133 +400,102 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     } else {
       series.update({ time: last.time, value: livePrice });
     }
-  }, [chartEngine, livePrice]);
+  }, [livePrice]);
 
   return (
     <div>
-      {/* Üst Grafik Motoru ve Araç Başlığı */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
-        {/* Grafik Motoru Seçimi (TradingView Pro vs FRAUDE Temel) */}
-        <div style={{ display: 'flex', gap: '4px', background: '#0d1117', padding: '3px 4px', borderRadius: '6px', border: '1px solid #30363d' }}>
-          <button
-            type="button"
-            style={toggleStyle(chartEngine === 'tradingview')}
-            onClick={() => handleSelectEngine('tradingview')}
-            title="TradingView Gelişmiş Grafik & Tüm Çizim Araçları"
-          >
-            📊 TradingView Pro
-          </button>
-          <button
-            type="button"
-            style={toggleStyle(chartEngine === 'fraude')}
-            onClick={() => handleSelectEngine('fraude')}
-            title="Hızlı Yerel Grafik (Lightweight Charts)"
-          >
-            ⚡ FRAUDE Temel
-          </button>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '4px', marginRight: '6px' }}>
+            {(['candles', 'line', 'area'] as const).map((k) => (
+              <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
+                {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
+              </button>
+            ))}
+          </div>
+          <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
+          <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
+          <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
+          <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
+          <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
+          <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
+          <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
+          <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
         </div>
 
-        {/* FRAUDE Temel Modunda Göstergeler */}
-        {chartEngine === 'fraude' && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '4px', marginRight: '6px' }}>
-              {(['candles', 'line', 'area'] as const).map((k) => (
-                <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
-                  {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
-                </button>
-              ))}
-            </div>
-            <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
-            <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
-            <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
-            <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
-            <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
-            <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
-            <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
-            <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
-
-            <button
-              type="button"
-              style={toggleStyle(showDrawingTools)}
-              onClick={() => setShowDrawingTools(!showDrawingTools)}
-              title={i18n.t('drawTools')}
-            >
-              ✏️ {i18n.t('drawTools')}
-            </button>
-          </div>
-        )}
+        {/* Çizim Araçları Açma / Kapatma Butonu */}
+        <button
+          type="button"
+          style={toggleStyle(showDrawingTools)}
+          onClick={() => setShowDrawingTools(!showDrawingTools)}
+          title={i18n.t('drawTools')}
+        >
+          ✏️ {i18n.t('drawTools')}
+        </button>
       </div>
 
-      {/* 1. TRADINGVIEW GELİŞMİŞ GRAFİK MOTORU (Varsayılan) */}
-      {chartEngine === 'tradingview' && (
-        <TradingViewChart ticker={ticker} height={baseHeight} />
+      {/* Çizim Araç Çubuğu */}
+      {showDrawingTools && (
+        <div style={{ marginBottom: '8px' }}>
+          <ChartDrawingToolbar
+            settings={drawingSettings}
+            onSelectTool={setActiveTool}
+            onToggleMagnet={toggleMagnet}
+            onToggleVisibility={toggleVisibility}
+            onSetColor={setColor}
+            onSetLineWidth={setLineWidth}
+            onSetLineStyle={setLineStyle}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            selectedId={selectedId}
+            onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
+            onClearAll={clearDrawings}
+          />
+        </div>
       )}
 
-      {/* 2. FRAUDE YEREL GRAFİK MOTORU */}
-      {chartEngine === 'fraude' && (
-        <>
-          {showDrawingTools && (
-            <div style={{ marginBottom: '8px' }}>
-              <ChartDrawingToolbar
-                settings={drawingSettings}
-                onSelectTool={setActiveTool}
-                onToggleMagnet={toggleMagnet}
-                onToggleVisibility={toggleVisibility}
-                onSetColor={setColor}
-                onSetLineWidth={setLineWidth}
-                onSetLineStyle={setLineStyle}
-                onUndo={undo}
-                onRedo={redo}
-                canUndo={canUndo}
-                canRedo={canRedo}
-                selectedId={selectedId}
-                onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
-                onClearAll={clearDrawings}
-              />
-            </div>
-          )}
+      <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
+        <div
+          ref={legendRef}
+          style={{
+            position: 'absolute',
+            top: '12px',
+            left: '12px',
+            zIndex: 10,
+            background: 'rgba(22, 27, 34, 0.90)',
+            border: '1px solid #30363d',
+            padding: '10px 14px',
+            borderRadius: '6px',
+            color: '#c9d1d9',
+            display: 'none',
+            pointerEvents: 'none',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            minWidth: '150px',
+          }}
+        />
+        <div ref={chartContainerRef} style={{ width: '100%', height: '100%', border: '1px solid #30363d', borderRadius: 4, overflow: 'hidden' }} />
 
-          <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
-            <div
-              ref={legendRef}
-              style={{
-                position: 'absolute',
-                top: '12px',
-                left: '12px',
-                zIndex: 10,
-                background: 'rgba(22, 27, 34, 0.90)',
-                border: '1px solid #30363d',
-                padding: '10px 14px',
-                borderRadius: '6px',
-                color: '#c9d1d9',
-                display: 'none',
-                pointerEvents: 'none',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                minWidth: '150px',
-              }}
-            />
-            <div ref={chartContainerRef} style={{ width: '100%', height: '100%', border: '1px solid #30363d', borderRadius: 4, overflow: 'hidden' }} />
-
-            <ChartDrawingOverlay
-              chart={chartApi}
-              series={activeSeriesApi}
-              quotes={data}
-              drawings={drawings}
-              selectedId={selectedId}
-              settings={drawingSettings}
-              onSelectId={setSelectedId}
-              onAddDrawing={addDrawing}
-              onUpdateDrawing={updateDrawing}
-              onDeleteDrawing={deleteDrawing}
-              onSelectTool={setActiveTool}
-              onUndo={undo}
-              onRedo={redo}
-              width={chartWidth}
-              height={totalHeight}
-            />
-          </div>
-        </>
-      )}
+        {/* Grafik Üzeri İnteraktif Çizim Katmanı */}
+        <ChartDrawingOverlay
+          chart={chartApi}
+          series={activeSeriesApi}
+          quotes={data}
+          drawings={drawings}
+          selectedId={selectedId}
+          settings={drawingSettings}
+          onSelectId={setSelectedId}
+          onAddDrawing={addDrawing}
+          onUpdateDrawing={updateDrawing}
+          onDeleteDrawing={deleteDrawing}
+          onSelectTool={setActiveTool}
+          onUndo={undo}
+          onRedo={redo}
+          width={chartWidth}
+          height={totalHeight}
+        />
+      </div>
     </div>
   );
 }

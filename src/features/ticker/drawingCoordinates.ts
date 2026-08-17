@@ -4,6 +4,7 @@ import type { DrawingPoint } from './drawingTypes';
 
 /**
  * Veri uzayındaki (time, price) noktasını ekran koordinatlarına (x, y) dönüştürür.
+ * Lightweight Charts zaman ölçeği ve mantıksal indeksleri üzerinden kesintisiz çalışır.
  */
 export function pointToScreen(
   point: DrawingPoint,
@@ -13,28 +14,37 @@ export function pointToScreen(
 ): { x: number; y: number } | null {
   if (!chart || !series) return null;
 
+  // 1. X Koordinatı (Zaman -> Piksel)
   let x: number | null = chart.timeScale().timeToCoordinate(point.time as Time);
 
-  // Eğer timeToCoordinate null döndüyse (ör. seans dışı veya aralık dışı),
-  // sıralı veriden en yakın zamanı bularak x koordinatını tahmin et.
-  if (x === null && sortedQuotes && sortedQuotes.length > 0) {
-    const target = point.time;
-    let closestQuote = sortedQuotes[0];
-    let minDiff = Math.abs((closestQuote.time as number) - target);
+  if ((x === null || Number.isNaN(x)) && sortedQuotes && sortedQuotes.length > 0) {
+    const targetTime = point.time;
+    // Sıralı veri içinde tam veya en yakın mum indeksini bul
+    let bestIdx = 0;
+    let minDiff = Math.abs((sortedQuotes[0].time as number) - targetTime);
 
     for (let i = 1; i < sortedQuotes.length; i++) {
-      const diff = Math.abs((sortedQuotes[i].time as number) - target);
+      const diff = Math.abs((sortedQuotes[i].time as number) - targetTime);
       if (diff < minDiff) {
         minDiff = diff;
-        closestQuote = sortedQuotes[i];
+        bestIdx = i;
       }
     }
-    x = chart.timeScale().timeToCoordinate(closestQuote.time as Time);
+
+    // Mantıksal indeks üzerinden x koordinatını al (kesintisiz ve pürüzsüz)
+    const logicalCoord = chart.timeScale().logicalToCoordinate(bestIdx as any);
+    if (logicalCoord !== null && Number.isFinite(logicalCoord)) {
+      x = logicalCoord;
+    }
   }
 
-  const y: number | null = series.priceToCoordinate(point.price);
+  // 2. Y Koordinatı (Fiyat -> Piksel)
+  let y: number | null = series.priceToCoordinate(point.price);
 
-  if (x === null || y === null) return null;
+  if (x === null || y === null || Number.isNaN(x) || Number.isNaN(y)) {
+    return null;
+  }
+
   return { x, y };
 }
 
@@ -51,17 +61,36 @@ export function screenToPoint(
 ): DrawingPoint | null {
   if (!chart || !series) return null;
 
+  // 1. Fiyat Hesaplama
+  let rawPrice = series.coordinateToPrice(y);
+  if (rawPrice === null || rawPrice === undefined || Number.isNaN(rawPrice)) {
+    // Eğer fiyat aralık dışıysa en yakın fiyat sınırını hesapla
+    if (sortedQuotes && sortedQuotes.length > 0) {
+      let minP = Infinity;
+      let maxP = -Infinity;
+      for (const q of sortedQuotes) {
+        if (q.low < minP) minP = q.low;
+        if (q.high > maxP) maxP = q.high;
+      }
+      if (Number.isFinite(minP) && Number.isFinite(maxP)) {
+        rawPrice = (y < 0 ? maxP : minP) as any;
+      }
+    }
+  }
+
+  if (rawPrice === null || rawPrice === undefined || Number.isNaN(rawPrice)) {
+    return null;
+  }
+
+  // 2. Zaman Hesaplama
+  let finalTime: number | null = null;
   const rawTime = chart.timeScale().coordinateToTime(x) as number | null;
-  const rawPrice = series.coordinateToPrice(y);
 
-  if (rawPrice === null || rawPrice === undefined) return null;
-
-  let finalTime = rawTime;
-
-  // Eğer zaman doğrudan çözülemediyse en yakın mumu bul
-  if (finalTime === null && sortedQuotes && sortedQuotes.length > 0) {
+  if (typeof rawTime === 'number' && Number.isFinite(rawTime)) {
+    finalTime = rawTime;
+  } else if (sortedQuotes && sortedQuotes.length > 0) {
     const logical = chart.timeScale().coordinateToLogical(x);
-    if (logical !== null) {
+    if (logical !== null && Number.isFinite(logical)) {
       const idx = Math.max(0, Math.min(sortedQuotes.length - 1, Math.round(logical)));
       finalTime = sortedQuotes[idx].time as number;
     } else {
@@ -69,9 +98,11 @@ export function screenToPoint(
     }
   }
 
-  if (finalTime === null) return null;
+  if (finalTime === null || !Number.isFinite(finalTime)) {
+    return null;
+  }
 
-  // Mıknatıs (Magnet) Modu: En yakın mumun O, H, L, C seviyesine yapış
+  // 3. Mıknatıs (Magnet) Modu: En yakın mumun O, H, L, C seviyesine yapış
   if (magnetEnabled && sortedQuotes && sortedQuotes.length > 0) {
     let closestQuote = sortedQuotes[0];
     let minTimeDiff = Math.abs((closestQuote.time as number) - finalTime);
