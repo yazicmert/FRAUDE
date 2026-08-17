@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-updates-workspace-modul-kaydi-duzeltmesi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Güncellemeler Sekmesi Modül Kaydı ve Görünüm Düzeltmesi",
+        "en": "Updates Tab Module Registration & View Fix"
+      },
+      "summary": {
+        "tr": "Güncellemeler (updates) sekmesi çalışma alanı modül sistemine (workspaceRegistry) tak-çıkar modül olarak kaydedildi. Sekme açıldığında içeriğin boş kalma sorunu giderildi ve tam sayfa düzeni optimize edildi.",
+        "en": "Registered updates view in the workspace registry as a standalone tab module, resolving blank screen when opening the updates view."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/modules/workspaceRegistry.tsx",
+        "src/features/updates/UpdatesView.css",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "sürümü güncelle deyince böyle oldu bir eksiklik olmasın",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-sade-guncelle-butonu-ve-karsilama-ekrani",
       "date": "2026-08-18",
       "author": "yazicmert",

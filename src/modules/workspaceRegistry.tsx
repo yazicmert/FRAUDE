@@ -34,6 +34,7 @@ const GuideView = lazy(() => import('../features/guide/GuideView'));
 const PublishView = lazy(() => import('../features/publish/PublishView'));
 const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesView'));
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
+const UpdatesView = lazy(() => import('../features/updates/UpdatesView'));
 
 export const CORE_VERSION = '0.1.34';
 
@@ -434,6 +435,14 @@ export const workspaceModules: WorkspaceModule[] = [
       'settings',
     ),
     render: () => <SettingsView />,
+  },
+  {
+    kind: 'updates',
+    titleKey: 'updates',
+    nav: false,
+    defaultTab: false,
+    transient: true,
+    render: () => <UpdatesView />,
   },
   // Always-on core view: the control panel that enables/disables everything
   // else. Has no manifest, so it is never itself removable — the way back in.

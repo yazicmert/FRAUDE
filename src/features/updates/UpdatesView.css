@@ -3,8 +3,10 @@
    --bg-panel, --bg-hover, --border-color, --font-mono. Tek koyu tema. */
 
 .upd-view {
-  max-width: 940px;
-  padding: 8px 0 48px;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
   user-select: text;
   animation: upd-fade 0.25s ease;
 }
