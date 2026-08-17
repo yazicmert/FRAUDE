@@ -19,6 +19,7 @@ import { supabase } from '../auth/supabaseClient';
 import { checkLicense, licenseOverview, releaseDevice, type LicenseOverview } from '../auth/license';
 import { GithubIcon } from '../../components/icons';
 import UpdatesView from '../updates/UpdatesView';
+import { useAppUpdateChecker } from '../updates/useAppUpdateChecker';
 import './SettingsView.css';
 
 const emptyForm: SaveAiKeyRequest = {
@@ -395,6 +396,8 @@ export default function SettingsView() {
     }
   };
 
+  const { hasUpdate } = useAppUpdateChecker();
+
   return (
     <div className="view settings-view">
       <div className="view-header">
@@ -430,6 +433,9 @@ export default function SettingsView() {
             onClick={() => setActiveTab(tab)}
           >
             {label}
+            {tab === 'updates' && hasUpdate && (
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#3fb950', marginLeft: 6, boxShadow: '0 0 6px #3fb950' }} />
+            )}
           </button>
         ))}
       </div>
