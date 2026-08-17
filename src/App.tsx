@@ -48,6 +48,14 @@ import { setCopilotModule } from './features/ai/userContext';
 import AppUpdateBanner from './features/updates/AppUpdateBanner';
 import SidebarUpdateWidget from './features/updates/SidebarUpdateWidget';
 import { useAppUpdateChecker } from './features/updates/useAppUpdateChecker';
+import {
+  saveOpenTabs,
+  loadOpenTabs,
+  saveActiveTabId,
+  loadActiveTabId,
+  recordTickerSearch,
+  getTickerHistory,
+} from './lib/userPreferencesStorage';
 
 // The right-hand AI panel is always available regardless of the AI Research
 // workspace module, so it is imported directly rather than through the registry.
@@ -112,14 +120,35 @@ export default function App() {
   // Rozet: bugünün yüksek etkili makro duyuru sayısı (takvim bileşeni bildirir).
   const [calendarHighToday, setCalendarHighToday] = useState(0);
 
-  const [openTabs, setOpenTabs] = useState<WorkspaceTab[]>(() => initialOpenTabs(installedModules));
-  const [activeTabId, setActiveTabId] = useState('dashboard');
-  const [visitedTabIds, setVisitedTabIds] = useState<Set<string>>(() => new Set(['dashboard']));
+  const [openTabs, setOpenTabs] = useState<WorkspaceTab[]>(() => {
+    const saved = loadOpenTabs(installedModules);
+    return saved && saved.length > 0 ? saved : initialOpenTabs(installedModules);
+  });
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const savedActive = loadActiveTabId();
+    const savedTabs = loadOpenTabs(installedModules);
+    if (savedActive && savedTabs && savedTabs.some((t) => t.id === savedActive)) {
+      return savedActive;
+    }
+    return savedTabs && savedTabs.length > 0 ? savedTabs[0].id : 'dashboard';
+  });
+  const [visitedTabIds, setVisitedTabIds] = useState<Set<string>>(() => new Set([activeTabId || 'dashboard']));
   const [terminalHistory, setTerminalHistory] = useState<TerminalEntry[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(() => {
     const saved = localStorage.getItem('fraude-terminal-height');
     return saved ? Math.max(80, Math.min(600, parseInt(saved, 10))) : 176;
   });
+
+  // Çalışma alanı sekme düzenini ve aktif sekmeyi kalıcılaştır
+  useEffect(() => {
+    saveOpenTabs(openTabs);
+  }, [openTabs]);
+
+  useEffect(() => {
+    if (activeTabId) {
+      saveActiveTabId(activeTabId);
+    }
+  }, [activeTabId]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -256,17 +285,13 @@ export default function App() {
   const marqueeMode: MarqueeMode = activeTab?.kind === 'dashboard' ? 'indices' : 'movers';
 
   const upsertTickerTab = useCallback((ticker: string) => {
+    const upper = ticker.toUpperCase().trim();
     setOpenTabs((current) => {
       const filtered = current.filter((tab) => tab.kind !== 'ticker');
-      return [...filtered, { id: `ticker-${ticker}`, kind: 'ticker', title: ticker, data: { ticker } }];
+      return [...filtered, { id: `ticker-${upper}`, kind: 'ticker', title: upper, data: { ticker: upper } }];
     });
-    setActiveTabId(`ticker-${ticker}`);
-
-    try {
-      const history = JSON.parse(localStorage.getItem('fraude-ticker-history') || '[]');
-      const newHistory = [ticker, ...history.filter((item: string) => item !== ticker)].slice(0, 50);
-      localStorage.setItem('fraude-ticker-history', JSON.stringify(newHistory));
-    } catch (e) {}
+    setActiveTabId(`ticker-${upper}`);
+    recordTickerSearch(upper);
   }, []);
 
   const upsertIndexTab = useCallback((symbol: string) => {
@@ -612,12 +637,7 @@ export default function App() {
 
   const recentTickers = useMemo<string[]>(() => {
     if (!paletteOpen) return [];
-    try {
-      const h = JSON.parse(localStorage.getItem('fraude-ticker-history') || '[]');
-      return Array.isArray(h) ? h : [];
-    } catch {
-      return [];
-    }
+    return getTickerHistory();
   }, [paletteOpen]);
 
   // Şerit sembolü katalogda bir endekse karşılık geliyorsa endeks sekmesi,

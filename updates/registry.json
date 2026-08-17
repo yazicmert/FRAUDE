@@ -2,6 +2,36 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-oturum-ve-calisma-alani-kaliciligi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Çalışma Alanı Sekmeleri, Arama Geçmişi ve Okunan Haberlerin Kalıcılaştırılması",
+        "en": "Workspace Layout, Search History & Read Articles Persistence"
+      },
+      "summary": {
+        "tr": "Kullanıcının uygulama deneyiminin çıkış yapıp tekrar girildiğinde korunması sağlandı:\n\n1. ÇALIŞMA ALANI & AÇIK SEKME KALICILIĞI: Açık bırakılan tüm hisse, endeks ve modül sekmeleri ile son odaklanılan aktif sekme çıkışta kaydedilir; uygulama yeniden açıldığında sıfırlanmadan kaldığı yerden açılır.\n\n2. EN SON ARANAN HİSSELER & VARLIKLAR: Kullanıcının son arattığı hisse senetleri ve komutlar kaydedilir; üst arama kutusuna tıklandığında son ziyaret edilen hisseler hızlı erişim etiketleri olarak anında sunulur.\n\n3. OKUNAN HABER VE KAP BİLDİRİMLERİ TAKİBİ: Okunan veya detayına bakılan haberler \"✓ Okundu\" rozeti ile işaretlenir ve geçmişi hafızada tutulur.",
+        "en": "User workspace layout, search queries, and read news are now persistently retained across app restarts:\n\n1. WORKSPACE TABS PERSISTENCE: All open ticker, index, and module tabs along with the exact active tab are restored on app launch.\n\n2. RECENT SEARCHES: Last searched and visited tickers are displayed as quick-action pills in the top search bar.\n\n3. READ NEWS TRACKING: Read news and KAP announcements retain their read status with subtle visual indicators."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/lib/userPreferencesStorage.ts",
+        "src/App.tsx",
+        "src/components/TopSearch.tsx",
+        "src/features/news/NewsFeedView.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "bir de tüm uygulamayı kullanıcı en son hangi hisseyi aratmış , hangi haberi okumuş bunlar da kayıt altına alınsın hatta uygulama düzeni de çünkü gir çık yapınca uygulama 0 lanmasın.",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-profesyonel-grafik-cizim-ve-risk-odul-araclari",
       "date": "2026-08-18",
       "author": "yazicmert",

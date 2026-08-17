@@ -4,6 +4,7 @@ import { isDataRuntimeConfigured } from '../api/platformClient';
 import { useTranslation } from '../api/i18n';
 import type { EquityRow } from '../types';
 import { PRESET_SYMBOLS, normalizeSearch, presetMatchesQuery, PresetSymbol } from './symbolCatalog';
+import { getTickerHistory, recordTickerSearch, recordSearchQuery } from '../lib/userPreferencesStorage';
 
 interface TopSearchProps {
   placeholder: string;
@@ -81,10 +82,13 @@ export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTi
 
   const pick = (suggestion: Suggestion) => {
     if (suggestion.kind === 'equity') {
+      recordTickerSearch(suggestion.ticker);
       onSelectTicker(suggestion.ticker);
     } else if (suggestion.preset.indexName) {
+      recordTickerSearch(suggestion.preset.indexName);
       onSelectIndex(suggestion.preset.indexName);
     } else {
+      recordTickerSearch(suggestion.preset.symbol);
       onSelectTicker(suggestion.preset.symbol);
     }
     reset();
@@ -105,11 +109,14 @@ export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTi
       if (!command && suggestions.length > 0) {
         pick(suggestions[activeIndex]);
       } else {
+        recordSearchQuery(trimmed);
         onCommand(trimmed);
         reset();
       }
     }
   };
+
+  const recentHistory = getTickerHistory();
 
   return (
     <div style={{ position: 'relative', maxWidth: '400px', width: '100%' }}>
@@ -121,7 +128,7 @@ export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTi
         autoComplete="off"
         onChange={(event) => { setValue(event.target.value); setOpen(true); setHighlight(0); }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => setTimeout(() => setOpen(false), 180)}
         onKeyDown={handleKeyDown}
       />
       {hintKeys && hintKeys.length > 0 && !value && (
@@ -129,6 +136,8 @@ export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTi
           {hintKeys.map((key) => <kbd key={key}>{key}</kbd>)}
         </span>
       )}
+
+      {/* 1. Canlı Arama Sonuçları */}
       {open && query.length > 0 && !command && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
@@ -192,6 +201,59 @@ export default function TopSearch({ placeholder, hintKeys, onCommand, onSelectTi
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* 2. Boş İken Son Aramalar / İncelenen Hisseler */}
+      {open && (!value.trim() || query.length === 0) && recentHistory.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+          background: 'var(--bg-panel)', border: '1px solid var(--border-color)',
+          borderRadius: '6px', margin: '6px 0 0 0',
+          maxHeight: '280px', overflowY: 'auto',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+          padding: '6px 0',
+        }}>
+          <div style={{
+            padding: '6px 12px 4px',
+            fontSize: '0.7rem',
+            color: 'var(--text-muted)',
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}>
+            <span>🕒 Son Aranan Hisseler & Varlıklar</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '6px 12px 8px' }}>
+            {recentHistory.slice(0, 12).map((ticker) => (
+              <button
+                key={ticker}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelectTicker(ticker);
+                  reset();
+                }}
+                style={{
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '4px',
+                  padding: '3px 8px',
+                  color: 'var(--accent-primary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {ticker.replace('.IS', '')}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
