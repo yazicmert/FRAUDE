@@ -5,6 +5,7 @@ import {
   Lock,
   Unlock,
   Copy,
+  Bell,
 } from 'lucide-react';
 import type { HistoricalQuote } from '../../types';
 import type { DrawingItem, DrawingPoint, DrawingToolSettings, DrawingToolType } from './drawingTypes';
@@ -33,6 +34,7 @@ interface ChartDrawingOverlayProps {
   onSelectTool: (tool: DrawingToolType) => void;
   onUndo: () => void;
   onRedo: () => void;
+  onOpenAlertModal?: (drawing: DrawingItem) => void;
   width: number;
   height: number;
 }
@@ -58,6 +60,7 @@ export default function ChartDrawingOverlay({
   onSelectTool,
   onUndo,
   onRedo,
+  onOpenAlertModal,
   width,
   height,
 }: ChartDrawingOverlayProps) {
@@ -774,6 +777,25 @@ export default function ChartDrawingOverlay({
           >
             {selectedDrawing.lineStyle === 'solid' ? '—' : selectedDrawing.lineStyle === 'dashed' ? '- -' : '···'}
           </button>
+
+          {/* Alarm Kur */}
+          {onOpenAlertModal && (
+            <button
+              type="button"
+              onClick={() => onOpenAlertModal(selectedDrawing)}
+              title={i18n.t('drawSetAlert')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: selectedDrawing.hasAlert ? '#e3b341' : '#8b949e',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                display: 'flex',
+              }}
+            >
+              <Bell size={13} />
+            </button>
+          )}
 
           {/* Kilitle / Aç */}
           <button

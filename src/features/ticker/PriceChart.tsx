@@ -8,6 +8,9 @@ import { useChartDrawings } from '../../hooks/useChartDrawings';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import ChartDrawingOverlay from './ChartDrawingOverlay';
 import DrawingManagerModal from './DrawingManagerModal';
+import DrawingAlertModal from './DrawingAlertModal';
+import { useAlerts } from '../alerts/useAlerts';
+import type { DrawingItem } from './drawingTypes';
 
 interface PriceChartProps {
   ticker: string;
@@ -137,6 +140,9 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const [chartWidth, setChartWidth] = useState<number>(800);
   const [showDrawingTools, setShowDrawingTools] = useState<boolean>(true);
   const [showDrawingManager, setShowDrawingManager] = useState<boolean>(false);
+  const [alertModalDrawing, setAlertModalDrawing] = useState<DrawingItem | null>(null);
+
+  const { addRule } = useAlerts();
 
   const [kind, setKind] = useState<ChartKind>('candles');
   const [showSMA20, setShowSMA20] = useState(true);
@@ -469,6 +475,7 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
         onUpdateDrawing={updateDrawing}
         onDeleteDrawing={deleteDrawing}
         onClearAll={clearDrawings}
+        onOpenAlertModal={(drawing) => setAlertModalDrawing(drawing)}
         onImportDrawings={(imported) => {
           for (const item of imported) {
             addDrawing(item);
@@ -476,6 +483,25 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
           setShowDrawingManager(false);
         }}
       />
+
+      {/* Çizim Üzerinden Alarm Kurma Modalı */}
+      {alertModalDrawing && (
+        <DrawingAlertModal
+          ticker={ticker}
+          drawing={alertModalDrawing}
+          isOpen={Boolean(alertModalDrawing)}
+          onClose={() => setAlertModalDrawing(null)}
+          onCreateAlert={(rule) => {
+            const created = addRule(rule);
+            if (alertModalDrawing) {
+              updateDrawing(alertModalDrawing.id, {
+                hasAlert: true,
+                alertRuleId: created.id,
+              });
+            }
+          }}
+        />
+      )}
 
       <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
         <div
@@ -513,6 +539,7 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
           onSelectTool={setActiveTool}
           onUndo={undo}
           onRedo={redo}
+          onOpenAlertModal={(drawing) => setAlertModalDrawing(drawing)}
           width={chartWidth}
           height={totalHeight}
         />

@@ -43,6 +43,8 @@ export interface DrawingItem {
   isLocked?: boolean;
   isVisible?: boolean;
   showStats?: boolean;
+  alertRuleId?: string;
+  hasAlert?: boolean;
   createdAt: number;
   updatedAt: number;
 }

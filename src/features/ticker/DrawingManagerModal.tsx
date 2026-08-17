@@ -10,6 +10,7 @@ import {
   Upload,
   Layers,
   Search,
+  Bell,
 } from 'lucide-react';
 import i18n from '../../i18n';
 import type { DrawingItem } from './drawingTypes';
@@ -23,6 +24,7 @@ interface DrawingManagerModalProps {
   onDeleteDrawing: (id: string) => void;
   onClearAll: () => void;
   onImportDrawings: (imported: DrawingItem[]) => void;
+  onOpenAlertModal?: (drawing: DrawingItem) => void;
 }
 
 export default function DrawingManagerModal({
@@ -34,6 +36,7 @@ export default function DrawingManagerModal({
   onDeleteDrawing,
   onClearAll,
   onImportDrawings,
+  onOpenAlertModal,
 }: DrawingManagerModalProps) {
   const [filter, setFilter] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -288,6 +291,24 @@ export default function DrawingManagerModal({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {/* Alarm Kur */}
+                      {onOpenAlertModal && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenAlertModal(item)}
+                          title={i18n.t('drawSetAlert')}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: item.hasAlert ? '#e3b341' : '#8b949e',
+                            cursor: 'pointer',
+                            padding: '4px',
+                          }}
+                        >
+                          <Bell size={14} />
+                        </button>
+                      )}
+
                       {/* Kilitle / Aç */}
                       <button
                         type="button"

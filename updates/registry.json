@@ -2,6 +2,38 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-cizim-uzerinden-fiyat-ve-pozisyon-alarmi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Grafik Çizimleri Üzerinden Doğrudan Fiyat ve Risk/Ödül Alarmı Kurma",
+        "en": "Direct Price & Risk/Reward Alert Creation from Chart Drawings"
+      },
+      "summary": {
+        "tr": "Grafik üzerindeki tüm çizimlere doğrudan alarm kurma yeteneği entegre edildi:\n\n1. YÜZEN ÇUBUKTAN ALARM: Grafik üzerinde seçilen herhangi bir yatay çizgi, trend çizgisi, kanal veya Fibonacci seviyesine tek tıkla (🔔 ikonu) fiyat alarmı eklenebilir.\n\n2. POZİSYON KUTUSU ALARMLARI: Long ve Short pozisyon kutuları için Kâr Al (TP) seviyesi, Zarar Kes (SL) seviyesi veya her ikisine birden aynı anda alarm kurulabilir.\n\n3. ÇİZİM YÖNETİCİSİ ENTEGRASYONU: Katman yöneticisinde kayıtlı her çizimin yanında yer alan 🔔 butonuyla anında alarm tanımlanabilir.",
+        "en": "Direct alert creation from chart drawings is now live:\n\n1. FLOATING BAR ALERT BUTTON: Click the 🔔 icon on any selected drawing to set a price alert on that level.\n\n2. POSITION RISK/REWARD ALERTS: One-click Take Profit (TP), Stop Loss (SL), or dual simultaneous alert setup for Long and Short position boxes.\n\n3. OBJECT MANAGER INTEGRATION: Set alerts directly from the drawings layer tree."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/ticker/DrawingAlertModal.tsx",
+        "src/features/ticker/ChartDrawingOverlay.tsx",
+        "src/features/ticker/DrawingManagerModal.tsx",
+        "src/features/ticker/PriceChart.tsx",
+        "src/features/ticker/drawingTypes.ts",
+        "src/api/i18n.ts",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "şimdi bu çizim kısmına alarm atma özelliği de ekleyelim",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-oturum-ve-calisma-alani-kaliciligi",
       "date": "2026-08-18",
       "author": "yazicmert",
