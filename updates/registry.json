@@ -2,6 +2,39 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-sade-guncelle-butonu-ve-karsilama-ekrani",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "Sade Üst Çubuk Güncelleme İkonu, Otomatik Yeniden Başlatma & Karşılama Ekranı",
+        "en": "Minimalist Topbar Update Icon, In-App Restart & Startup Welcome Dialog"
+      },
+      "summary": {
+        "tr": "Kullanıcı odaklı güncelleme deneyimi eklendi:\n\n1. SADE ÜST ÇUBUK İKONU: Yeni bir sürüm çıktığında üst çubuktaki ikon yeşil nabız noktası ve parlayan rozetle aktifleşir. Tıklandığında sürüm detaylarını ve tek tıkla güncelleme modalını açar.\n\n2. OTOMATİK KAPATIP YENİDEN BAŞLATMA: Güncelleme paketi uygulama içinden indirilip kurulduktan sonra tek tıkla uygulama otomatik yeniden başlatılır.\n\n3. UYGULAMA AÇILIŞINDA KARŞILAMA EKRANI: Uygulama açıldığında yeni bir sürüm mevcutsa kullanıcıyı şık bir karşılama ekranı karşılar ve güncelleme seçenekleri sunar.",
+        "en": "Streamlined update experience is now live:\n\n1. MINIMALIST TOPBAR ICON: Activates with an animated emerald pulse badge whenever a new release is available.\n\n2. ONE-CLICK UPDATE & RESTART: Downloads in-app and restarts the terminal cleanly.\n\n3. STARTUP WELCOME MODAL: Greets users with new release highlights upon opening the app."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/updates/TopbarUpdateAction.tsx",
+        "src/features/updates/AppUpdateWelcomeModal.tsx",
+        "src/App.tsx",
+        "src/App.css",
+        "src/api/tauriClient.ts",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "daha sade bir ikon olsun eğer güncelleme varsa aktif olsun üstüne basınca uygulama açıkken kapatılıp güncellenip yeniden açılsın. Buna ek olarak eğer güncelleme geldiğinde uygulama açık değilse uygulamaya girince bir ekran bizi karşılasın uygulamanın yeni versiyonu çıktı güncellemek ister misin diye",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-supabase-24-7-bulut-ve-eposta-alarmlari",
       "date": "2026-08-18",
       "author": "yazicmert",

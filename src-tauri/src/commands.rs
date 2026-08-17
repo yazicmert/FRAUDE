@@ -831,3 +831,10 @@ pub async fn set_bridge_identity(
     *BridgeHandle::guard(&bridge.account) = account;
     Ok(())
 }
+
+/// Uygulamayı yeniden başlatır (güncelleme sonrası).
+#[tauri::command]
+pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.restart();
+}
+

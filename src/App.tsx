@@ -47,6 +47,8 @@ import GlobalAiCopilot from './features/ai/GlobalAiCopilot';
 import { setCopilotModule } from './features/ai/userContext';
 import AppUpdateBanner from './features/updates/AppUpdateBanner';
 import SidebarUpdateWidget from './features/updates/SidebarUpdateWidget';
+import TopbarUpdateAction from './features/updates/TopbarUpdateAction';
+import AppUpdateWelcomeModal from './features/updates/AppUpdateWelcomeModal';
 import { useAppUpdateChecker } from './features/updates/useAppUpdateChecker';
 import {
   saveOpenTabs,
@@ -100,18 +102,26 @@ function staticTitle(tab: WorkspaceTab, t: (key: string) => string): string {
 
 export default function App() {
   const { t, lang, setLanguage } = useTranslation();
-  const { hasUpdate, latestVersion } = useAppUpdateChecker();
+  const { hasUpdate, isBannerDismissed } = useAppUpdateChecker();
   const { modules, installedModules, toggleModule, replaceInstalledModules } = useModuleRegistry();
   const { state: monitorState, setState: setMonitorState } = useMonitor();
   const research = useResearch();
   const { unread: alertUnread } = useAlerts({ engine: true });
   const { brief: morningBrief, dismiss: dismissBrief } = useMorningBrief();
 
+  const [startupWelcomeModalOpen, setStartupWelcomeModalOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertsTicker, setAlertsTicker] = useState<string | undefined>(undefined);
   const [marketStatus, setMarketStatus] = useState<MarketStatus>(() => getMarketStatus());
   const [aiQuickPrompt, setAiQuickPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Uygulama açılışında yeni sürüm varsa karşılama ekranını aç
+  useEffect(() => {
+    if (hasUpdate && !isBannerDismissed) {
+      setStartupWelcomeModalOpen(true);
+    }
+  }, [hasUpdate, isBannerDismissed]);
   /** Uygulama içi haber okuyucusunda açık olan haber. */
   const [articleDocument, setArticleDocument] = useState<ViewerDocument | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -728,20 +738,6 @@ export default function App() {
             </button>
           </HotkeyTip>
 
-          {/* Yeni sürüm güncelleme rozeti */}
-          {hasUpdate && latestVersion && (
-            <HotkeyTip label={t('updNewVersionBadge')}>
-              <button
-                type="button"
-                className="topbar-update-chip"
-                onClick={() => openModuleTab('updates')}
-              >
-                <span className="update-dot-pulse" />
-                <span>v{latestVersion} {t('updUpdateApp')}</span>
-              </button>
-            </HotkeyTip>
-          )}
-
           <span className="topbar-sep" />
 
           {/* Fiyat & teknik alarm zili */}
@@ -855,6 +851,9 @@ export default function App() {
               </button>
             </HotkeyTip>
           )}
+
+          {/* Sade Güncelleme Butonu (Yeni sürümde aktif/parlayan rozet) */}
+          <TopbarUpdateAction onOpenUpdatesTab={() => openModuleTab('updates')} />
 
           <span className="topbar-sep" />
 
@@ -1003,6 +1002,10 @@ export default function App() {
       <ToastHost />
       <GlobalAiCopilot />
       <AppUpdateBanner onOpenUpdatesTab={() => openModuleTab('updates')} />
+      <AppUpdateWelcomeModal
+        isOpen={startupWelcomeModalOpen}
+        onClose={() => setStartupWelcomeModalOpen(false)}
+      />
     </div>
   );
 }

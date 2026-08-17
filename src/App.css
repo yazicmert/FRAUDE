@@ -554,6 +554,20 @@ button {
   transform: translateY(-1px);
 }
 
+.topbar-icon-btn.topbar-update-active {
+  color: #3fb950 !important;
+  background: rgba(35, 134, 54, 0.18) !important;
+  border-color: rgba(63, 185, 80, 0.45) !important;
+  box-shadow: 0 0 10px rgba(63, 185, 80, 0.2);
+}
+
+.topbar-icon-btn.topbar-update-active:hover {
+  background: rgba(46, 160, 67, 0.35) !important;
+  border-color: #3fb950 !important;
+  box-shadow: 0 0 14px rgba(63, 185, 80, 0.4);
+  transform: translateY(-1px);
+}
+
 .update-dot-pulse {
   width: 6px;
   height: 6px;
