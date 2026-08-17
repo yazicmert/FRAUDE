@@ -1096,18 +1096,27 @@ pub async fn get_news_feed(
         .map(|value| value.to_lowercase())
         .collect();
 
+    if let Some(sym) = normalized_ticker.as_deref() {
+        if let Some(crypto_base) = sym.strip_suffix("-USD") {
+            query_terms.push(crypto_base.to_lowercase());
+        }
+    }
+
     if let Some(comp) = company {
         let comp_lower = comp.to_lowercase();
         query_terms.push(comp_lower.clone());
-        if let Some(first_word) = comp_lower.split_whitespace().next() {
+        let clean_comp = clean_company_name(comp).to_lowercase();
+        if clean_comp != comp_lower && !clean_comp.is_empty() {
+            query_terms.push(clean_comp.clone());
+        }
+        if let Some(first_word) = clean_comp.split_whitespace().next() {
             if first_word.len() > 2 {
                 query_terms.push(first_word.to_string());
             }
         }
-        // Eğer isim S&P 500 gibi bir endeksse, & işaretini ve boşlukları kaldırarak "sp500" gibi versiyonları da ekle
-        let clean_comp = comp_lower.replace("&", "").replace(" ", "");
-        if clean_comp != comp_lower {
-            query_terms.push(clean_comp);
+        let clean_no_amp = comp_lower.replace("&", "").replace(" ", "");
+        if clean_no_amp != comp_lower {
+            query_terms.push(clean_no_amp);
         }
     }
 
@@ -1498,19 +1507,56 @@ pub async fn run_vision_completion(
     .await
 }
 
+fn clean_company_name(name: &str) -> String {
+    let trimmed = name.trim();
+    let no_parentheses = trimmed.split('(').next().unwrap_or(trimmed).trim();
+    let without_suffix = no_parentheses
+        .replace(" Inc.", "")
+        .replace(" Corp.", "")
+        .replace(" Corporation", "")
+        .replace(" Platforms", "")
+        .replace(" Holdings", "")
+        .replace(" Holding", "")
+        .replace(" A.Ş.", "")
+        .replace(" A.S.", "")
+        .replace(" A.O.", "")
+        .replace(".com", "")
+        .trim()
+        .to_string();
+    if without_suffix.is_empty() {
+        trimmed.to_string()
+    } else {
+        without_suffix
+    }
+}
+
 fn company_query(ticker: Option<&str>, company: Option<&str>) -> String {
     match (ticker, company) {
         (Some(symbol), Some(name)) if !name.trim().is_empty() => {
-            let mut query = format!("\"{}\" OR \"{}\"", symbol, name.trim());
-            // Eğer isim çok uzunsa ve ilk kelimesi anlamlıysa onu da ekle (örnek: "Apple Inc." -> "Apple")
-            if let Some(first_word) = name.trim().split_whitespace().next() {
-                if first_word.len() > 3 && first_word.to_lowercase() != symbol.to_lowercase() {
-                    query.push_str(&format!(" OR \"{}\"", first_word));
-                }
+            let clean_name = clean_company_name(name);
+            let mut terms = Vec::new();
+            terms.push(format!("\"{}\"", symbol));
+
+            if let Some(base_crypto) = symbol.strip_suffix("-USD") {
+                terms.push(format!("\"{}\"", base_crypto));
             }
-            query
+
+            if !clean_name.is_empty() && !clean_name.eq_ignore_ascii_case(symbol) {
+                terms.push(format!("\"{}\"", clean_name));
+            }
+            if name.trim() != clean_name && !name.trim().eq_ignore_ascii_case(symbol) {
+                terms.push(format!("\"{}\"", name.trim()));
+            }
+
+            terms.join(" OR ")
         }
-        (Some(symbol), _) => format!("\"{}\"", symbol),
+        (Some(symbol), _) => {
+            if let Some(base_crypto) = symbol.strip_suffix("-USD") {
+                format!("\"{}\" OR \"{}\"", symbol, base_crypto)
+            } else {
+                format!("\"{}\"", symbol)
+            }
+        }
         _ => "\"Borsa İstanbul\" OR BIST OR \"Türk şirketleri\" OR \"Wall Street\" OR \"Global Markets\"".into(),
     }
 }
@@ -1786,13 +1832,18 @@ fn clean_summary(value: &str, title: &str) -> String {
 }
 
 const NEWS_BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+const NEWS_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7";
+const NEWS_ACCEPT_LANG: &str = "en-US,en;q=0.9,tr;q=0.8";
+const NEWS_CONSENT_COOKIE: &str = "GUCS=AX0A; GUC=AQEBAQFnpPdn9kIajgS6; consent=yes; eu_consent=yes; notice_gdpr_prefs=";
 
 /// Haber bağlantısını doğrular ve Google News yönlendirme bağlantılarını gerçek
 /// haber adresine çözümler. Google News RSS linkleri makalenin kendisine değil,
 /// JavaScript ile yönlendiren bir ara sayfaya gittiğinden içerik çekilemez.
 async fn resolve_news_target(client: &reqwest::Client, raw_url: &str) -> Result<reqwest::Url, String> {
     let mut url = reqwest::Url::parse(raw_url).map_err(|_| "Geçersiz haber bağlantısı.".to_string())?;
-    if url.scheme() != "https" {
+    if url.scheme() == "http" {
+        let _ = url.set_scheme("https");
+    } else if url.scheme() != "https" {
         return Err("Yalnızca güvenli HTTPS haber bağlantıları açılabilir.".into());
     }
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
@@ -1856,6 +1907,8 @@ async fn resolve_google_news_via_api(client: &reqwest::Client, id: &str) -> Resu
         .get(format!("https://news.google.com/rss/articles/{id}"))
         .timeout(std::time::Duration::from_secs(8))
         .header("User-Agent", NEWS_BROWSER_UA)
+        .header("Accept", NEWS_ACCEPT)
+        .header("Accept-Language", NEWS_ACCEPT_LANG)
         .header("Cookie", "CONSENT=YES+cb; SOCS=CAI")
         .send()
         .await
@@ -1884,6 +1937,8 @@ async fn resolve_google_news_via_api(client: &reqwest::Client, id: &str) -> Resu
         .post("https://news.google.com/_/DotsSplashUi/data/batchexecute")
         .timeout(std::time::Duration::from_secs(8))
         .header("User-Agent", NEWS_BROWSER_UA)
+        .header("Accept", NEWS_ACCEPT)
+        .header("Accept-Language", NEWS_ACCEPT_LANG)
         .form(&[("f.req", f_req.as_str())])
         .send()
         .await
@@ -1914,7 +1969,10 @@ pub async fn get_news_preview(client: &reqwest::Client, raw_url: &str) -> Result
     let response = client
         .get(url)
         .timeout(std::time::Duration::from_secs(8))
-        .header("User-Agent", "Fraude/0.1 article-preview")
+        .header("User-Agent", NEWS_BROWSER_UA)
+        .header("Accept", NEWS_ACCEPT)
+        .header("Accept-Language", NEWS_ACCEPT_LANG)
+        .header("Cookie", NEWS_CONSENT_COOKIE)
         .send()
         .await
         .map_err(|error| format!("Haber özeti alınamadı: {error}"))?
@@ -1944,6 +2002,17 @@ pub async fn get_news_html(client: &reqwest::Client, raw_url: &str) -> Result<St
         .get(url)
         .timeout(std::time::Duration::from_secs(12))
         .header("User-Agent", NEWS_BROWSER_UA)
+        .header("Accept", NEWS_ACCEPT)
+        .header("Accept-Language", NEWS_ACCEPT_LANG)
+        .header("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+        .header("Sec-Ch-Ua-Mobile", "?0")
+        .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+        .header("Sec-Fetch-Dest", "document")
+        .header("Sec-Fetch-Mode", "navigate")
+        .header("Sec-Fetch-Site", "none")
+        .header("Sec-Fetch-User", "?1")
+        .header("Upgrade-Insecure-Requests", "1")
+        .header("Cookie", NEWS_CONSENT_COOKIE)
         .send()
         .await
         .map_err(|error| format!("Haber sayfası alınamadı: {error}"))?
