@@ -416,10 +416,132 @@ body.kap-docked-open .topbar-icon-btn {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
-  padding: 36px 40px;
+  padding: 36px 44px;
   color: #c9d1d9;
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.7;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.75;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.kap-article-reader h1,
+.kap-article-reader h2,
+.kap-article-reader h3,
+.kap-article-reader h4 {
+  color: #ffffff;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+
+.kap-article-reader h1 {
+  font-size: 1.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.4em;
+}
+
+.kap-article-reader h2 {
+  font-size: 1.35rem;
+}
+
+.kap-article-reader h3 {
+  font-size: 1.18rem;
+}
+
+.kap-article-reader p {
+  margin-top: 0;
+  margin-bottom: 1.25em;
+  color: #d0d7de;
+}
+
+.kap-article-reader a {
+  color: #58a6ff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+
+.kap-article-reader a:hover {
+  color: #79c0ff;
+}
+
+.kap-article-reader blockquote {
+  margin: 1.4em 0;
+  padding: 10px 20px;
+  border-left: 3px solid #00ff9d;
+  background: rgba(0, 255, 157, 0.05);
+  border-radius: 0 6px 6px 0;
+  color: #8b949e;
+  font-style: italic;
+}
+
+.kap-article-reader blockquote p {
+  margin-bottom: 0.5em;
+}
+
+.kap-article-reader blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.kap-article-reader ul,
+.kap-article-reader ol {
+  padding-left: 28px;
+  margin-bottom: 1.3em;
+}
+
+.kap-article-reader li {
+  margin-bottom: 0.4em;
+  color: #d0d7de;
+}
+
+.kap-article-reader img,
+.kap-article-reader figure img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 1.2em auto;
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kap-article-reader figure {
+  margin: 1.4em 0;
+  text-align: center;
+}
+
+.kap-article-reader figcaption {
+  font-size: 0.82rem;
+  color: #8b949e;
+  margin-top: 6px;
+}
+
+.kap-article-reader table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-size: 0.9rem;
+}
+
+.kap-article-reader th,
+.kap-article-reader td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.kap-article-reader th {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f0f6fc;
+  font-weight: 600;
+}
+
+.kap-article-reader hr {
+  border: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 2em 0;
 }
 
 /* Paper Document Styling */

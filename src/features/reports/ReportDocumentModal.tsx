@@ -504,10 +504,9 @@ export default function ReportDocumentModal({ document: target, onClose, onSelec
                   className="kap-pdf-iframe-wrapper"
                   style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
                 >
-                  {/* Sayfa betiksiz ve kökensiz bir kutuda açılır: kaynağın kendi
-                      düzeni görünür, ama sayfa ne betik çalıştırabilir ne de
-                      uygulamanın verisine uzanabilir. */}
-                  <iframe src={doc.objectUrl} title={target.title} className="kap-pdf-iframe" sandbox="" />
+                  {/* Sayfa betiksiz ve güvenli bir kutuda açılır: kaynağın kendi
+                      düzeni ve stilleri görünür, ama sayfa betik çalıştıramaz. */}
+                  <iframe src={doc.objectUrl} title={target.title} className="kap-pdf-iframe" sandbox="allow-same-origin" />
                 </div>
               ))}
           </div>

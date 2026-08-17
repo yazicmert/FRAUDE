@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-17-haber-etiket-esleme-ve-makale-okuyucu-iyilestirmesi",
+      "date": "2026-08-17",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Haber etiket eşleme mantığı düzeltildi ve ABD/kripto haber okuyucusu güçlendirildi",
+        "en": "Fixed news tag matching logic and improved US/crypto article reader"
+      },
+      "summary": {
+        "tr": "Haber akışında iki önemli mantık ve okuma sorunu çözüldü:\n\n1. ETİKET EŞLEME MANTIĞI: \"Dolar\", \"ihracat\", \"faiz\", \"enflasyon\", \"turizm\", \"havacılık\" gibi makro ve sektörel anahtar kelimeler eskiden ilgili şirket kodlarına doğrudan eşleniyor, bu nedenle döviz veya enflasyon geçen hemen hemen her haberde alakasız şekilde THYAO, FROTO, GARAN gibi hisse etiketleri çıkıyordu. Ayrıca \"thy\", \"koç\", \"bim\", \"tav\" gibi kısa şirket adları alt dize kontrolü nedeniyle \"anything\", \"everything\", \"python\", \"healthy\", \"iskoçya\", \"kombine\" gibi kelimelerin içinde sahte eşleşme üretiyordu. Artık sektör kelimeleri yalnızca sektör etiketlerini (`#döviz`, `#faiz`, `#ihracat`, `#havacılık` vb.) dolduruyor; şirket hisse etiketleri (`item.tags`) ise yalnızca bağımsız kelime sınırları içinde gerçekten adı/kodu geçen şirketler için üretiliyor. Global hisseler (AAPL, MSFT, NVDA, TSLA vb.) ve kripto paralar (BTC-USD, ETH-USD vb.) için de doğru etiketleme eklendi.\n\n2. ABD VE KRİPTO HABER OKUYUCUSU: GDELT ve RSS kaynaklarından gelen HTTP bağlantıları HTTPS protokolüne yükseltildi, eksik gezinme başlıkları ve Yahoo Finance rıza çerezleri eklenerek 403 engelleri ve rıza yönlendirmeleri aşıldı. Readability\"nin metin çıkaramadığı modern haber ve kripto siteleri için yedek bir makale çıkarıcı eklendi, tembel yüklenen görseller çözümlendi ve uygulama içi okuyucuya Safari Reader kalitesinde akıcı koyu tema tipografi stilleri kazandırıldı.",
+        "en": "Two significant news logic and reading issues have been resolved:\n\n1. TAG MATCHING LOGIC: Macro and sector keywords like \"dollar\", \"export\", \"interest rate\", \"inflation\", \"tourism\", \"aviation\" used to directly inject specific stock tickers, causing unrelated THYAO, FROTO, GARAN badges on almost every general economy or FX article. Additionally, substring matching for short company names like \"thy\", \"koç\", \"bim\", \"tav\" produced false matches inside English and Turkish words like \"anything\", \"everything\", \"python\", \"healthy\", \"iskoçya\", \"kombine\". Sector keywords now exclusively populate sector tags (`#döviz`, `#faiz`, `#ihracat`, `#havacılık`, etc.), while company tags (`item.tags`) require exact whole-word matches. Support for global equities (AAPL, MSFT, NVDA, TSLA, etc.) and crypto assets (BTC-USD, ETH-USD, etc.) has also been integrated.\n\n2. US & CRYPTO ARTICLE READER: HTTP links from GDELT and RSS are now upgraded to HTTPS, full browser navigation headers and Yahoo consent cookies were added to prevent 403 Forbidden and consent-wall redirects. A fallback article extractor was introduced for modern news and crypto pages where Readability yields minimal content, lazy-loaded images are automatically resolved, and polished Safari Reader-like dark theme typography has been applied to the in-app reader."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/news_tagger.rs",
+        "core/src/services.rs",
+        "core/src/yahoo.rs",
+        "src/lib/articleReader.ts",
+        "src/features/reports/ReportDocumentModal.tsx",
+        "src/features/kap/KapDocumentViewerModal.css"
+      ],
+      "agentPrompt": "FRAUDE uygulamasında haber etiket eşleme mantığındaki hataları gider ve ABD hisseleri ile kripto haberlerinin uygulama içi okuyucusunda tarayıcı kalitesinde okunmasını sağla.",
+      "notes": null
+    },
+    {
       "id": "2026-08-14-takvim-satiri-etkiledigi-paylari-etiketliyor",
       "date": "2026-08-14",
       "author": "yazicmert",
