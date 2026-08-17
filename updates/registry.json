@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-tradingview-gelismis-grafik-ve-cizim-araclari-entegrasyonu",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feat",
+      "area": "app",
+      "title": {
+        "tr": "TradingView Pro Gelişmiş Grafik ve Yerleşik Çizim Araçları Entegrasyonu",
+        "en": "TradingView Pro Advanced Chart and Built-in Drawing Tools Integration"
+      },
+      "summary": {
+        "tr": "FRAUDE grafik deneyimi dünya standardındaki TradingView Advanced Real-Time Chart widget'ı ile güçlendirildi:\n\n1. 100+ PROFESYONEL ÇİZİM ARACI: Trend çizgileri, ışınlar, Fibonacci düzeltmeleri, Gann & Pitchfork araçları, metin, cetvel ve serbest fırça gibi tüm TradingView yerel çizim araçları sol kenar çubuğunda eksiksiz sunuldu.\n\n2. OTOMATİK KALICILIK: Yapılan tüm çizimler ve eklenen göstergeler TradingView depolama motoru tarafından oturumlar arasında otomatik olarak kaydedilir ve korunur.\n\n3. ESNEK GRAFİK MOTORU SEÇİMİ: Kullanıcılar tek tıkla `TradingView Pro` ve `FRAUDE Temel` grafikleri arasında anında geçiş yapabilir.",
+        "en": "FRAUDE charting experience is now powered by the industry-standard TradingView Advanced Real-Time Chart widget:\n\n1. 100+ PROFESSIONAL DRAWING TOOLS: Full suite of native TradingView drawing tools including trendlines, rays, Fibonacci retracements, pitchforks, annotations, and measurement rulers.\n\n2. AUTOMATIC DRAWING PERSISTENCE: All user drawings and indicators are automatically saved across sessions.\n\n3. SEAMLESS ENGINE SWITCHING: Users can switch between `TradingView Pro` and `FRAUDE Basic` with a single click."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/ticker/TradingViewChart.tsx",
+        "src/features/ticker/PriceChart.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "hala çizilmiyor yahoo nun ya da tradinviewin kendi grafikleri ve kendi çizim araçları daha uygun olmaz mı",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-tek-tikla-uygulamadan-guncelleme-ve-dinamik-bildirim",
       "date": "2026-08-18",
       "author": "yazicmert",

@@ -7,6 +7,7 @@ import type { HistoricalQuote } from '../../types';
 import { useChartDrawings } from '../../hooks/useChartDrawings';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import ChartDrawingOverlay from './ChartDrawingOverlay';
+import TradingViewChart from './TradingViewChart';
 
 interface PriceChartProps {
   ticker: string;
@@ -17,6 +18,7 @@ interface PriceChartProps {
 }
 
 type ChartKind = 'candles' | 'line' | 'area';
+type ChartEngine = 'tradingview' | 'fraude';
 
 /** Aralık butonu → görünür pencere (saniye). 'max' ve bilinmeyenler tam sığdırır. */
 const RANGE_SECONDS: Record<string, number> = {
@@ -114,24 +116,28 @@ function calculateBollinger(data: Point[], period = 20, mult = 2): { upper: Poin
 }
 
 const toggleStyle = (active: boolean): React.CSSProperties => ({
-  padding: '3px 9px',
-  fontSize: '0.7rem',
+  padding: '4px 10px',
+  fontSize: '0.72rem',
   fontFamily: 'var(--font-mono)',
+  fontWeight: active ? 'bold' : 'normal',
   background: active ? '#1f6feb33' : 'transparent',
   color: active ? '#58a6ff' : '#8b949e',
   border: `1px solid ${active ? '#1f6feb66' : '#30363d'}`,
   borderRadius: '4px',
   cursor: 'pointer',
+  transition: 'all 0.15s ease',
 });
 
 export default function PriceChart({ ticker, data, range = '6mo', livePrice }: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
-  // Canlı tik grafiği yeniden kurmadan son barı günceller; bu yüzden ana seri
-  // ve son bar effect dışında da erişilebilir tutulur.
   const activeSeriesRef = useRef<any>(null);
   const lastBarRef = useRef<{ time: Time; open: number; high: number; low: number; close: number } | null>(null);
   const kindRef = useRef<ChartKind>('candles');
+
+  const [chartEngine, setChartEngine] = useState<ChartEngine>(() => {
+    return (localStorage.getItem('fraude-chart-engine') as ChartEngine) || 'tradingview';
+  });
 
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
   const [activeSeriesApi, setActiveSeriesApi] = useState<ISeriesApi<SeriesType> | null>(null);
@@ -147,6 +153,11 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
   const [showRSI, setShowRSI] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
   const [logScale, setLogScale] = useState(false);
+
+  const handleSelectEngine = (engine: ChartEngine) => {
+    setChartEngine(engine);
+    localStorage.setItem('fraude-chart-engine', engine);
+  };
 
   const {
     drawings,
@@ -169,11 +180,12 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     canRedo,
   } = useChartDrawings(ticker);
 
-  const baseHeight = 400;
+  const baseHeight = 520;
   const paneHeight = 110;
   const totalHeight = baseHeight + (showRSI ? paneHeight : 0) + (showMACD ? paneHeight : 0);
 
   useEffect(() => {
+    if (chartEngine !== 'fraude') return;
     if (!chartContainerRef.current || data.length === 0) return;
     const initialWidth = chartContainerRef.current.clientWidth || 800;
     setChartWidth(initialWidth);
@@ -249,59 +261,58 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
       s.setData(calculateSMA(closeData, 20));
     }
     if (showSMA50) {
-      const s = chart.addSeries(LineSeries, { color: 'rgba(186, 104, 255, 0.75)', lineWidth: 1, title: 'SMA 50', priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: 'rgba(163, 113, 247, 0.75)', lineWidth: 1, title: 'SMA 50', priceLineVisible: false, lastValueVisible: false });
       s.setData(calculateSMA(closeData, 50));
     }
     if (showEMA20) {
-      const s = chart.addSeries(LineSeries, { color: 'rgba(0, 200, 255, 0.85)', lineWidth: 1, title: 'EMA 20', priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: '#f0883e', lineWidth: 1, title: 'EMA 20', priceLineVisible: false, lastValueVisible: false });
       s.setData(calculateEMA(closeData, 20));
     }
-    // Bollinger Bantları (20, 2)
     if (showBB) {
-      const { upper, middle, lower } = calculateBollinger(closeData, 20, 2);
-      const bandColor = 'rgba(130, 170, 255, 0.55)';
-      const up = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: i18n.t('bbUpper'), priceLineVisible: false, lastValueVisible: false });
-      up.setData(upper);
-      const lo = chart.addSeries(LineSeries, { color: bandColor, lineWidth: 1, lineStyle: 2, title: i18n.t('bbLower'), priceLineVisible: false, lastValueVisible: false });
-      lo.setData(lower);
-      const mid = chart.addSeries(LineSeries, { color: 'rgba(130, 170, 255, 0.3)', lineWidth: 1, title: i18n.t('bbMiddle'), priceLineVisible: false, lastValueVisible: false });
-      mid.setData(middle);
+      const bb = calculateBollinger(closeData);
+      const bbU = chart.addSeries(LineSeries, { color: 'rgba(56, 139, 253, 0.45)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      const bbM = chart.addSeries(LineSeries, { color: 'rgba(56, 139, 253, 0.65)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      const bbL = chart.addSeries(LineSeries, { color: 'rgba(56, 139, 253, 0.45)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      bbU.setData(bb.upper);
+      bbM.setData(bb.middle);
+      bbL.setData(bb.lower);
     }
 
-    // Alt paneller: RSI ve MACD
-    let paneIndex = 0;
-    let rsiSeries: any = null;
+    // Ayrı paneller
+    let rsiSeries: ReturnType<typeof chart.addSeries> | null = null;
+    let macdSeries: ReturnType<typeof chart.addSeries> | null = null;
+
     if (showRSI) {
-      paneIndex += 1;
-      rsiSeries = chart.addSeries(LineSeries, {
-        color: '#f0883e', lineWidth: 2, title: 'RSI 14',
-        priceLineVisible: false, lastValueVisible: true,
-      }, paneIndex);
-      rsiSeries.setData(calculateRSI(closeData, 14));
-      // 30/70 seviye çizgileri
-      rsiSeries.createPriceLine({ price: 70, color: '#f8514966', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-      rsiSeries.createPriceLine({ price: 30, color: '#3fb95066', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-    }
-    if (showMACD) {
-      paneIndex += 1;
-      const { macd, signal, hist } = calculateMACD(closeData);
-      const histSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, paneIndex);
-      histSeries.setData(hist.map((p) => ({ ...p, color: p.value >= 0 ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)' })));
-      const macdSeries = chart.addSeries(LineSeries, { color: '#58a6ff', lineWidth: 1, title: 'MACD', priceLineVisible: false, lastValueVisible: false }, paneIndex);
-      macdSeries.setData(macd);
-      const sigSeries = chart.addSeries(LineSeries, { color: '#f0883e', lineWidth: 1, title: 'Sinyal', priceLineVisible: false, lastValueVisible: false }, paneIndex);
-      sigSeries.setData(signal);
+      rsiSeries = chart.addSeries(LineSeries, { color: '#a371f7', lineWidth: 2, title: 'RSI 14' }, 1);
+      rsiSeries.setData(calculateRSI(closeData));
+      const ob = chart.addSeries(LineSeries, { color: '#f8514966', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }, 1);
+      const os = chart.addSeries(LineSeries, { color: '#3fb95066', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }, 1);
+      ob.setData(closeData.map((p) => ({ time: p.time, value: 70 })));
+      os.setData(closeData.map((p) => ({ time: p.time, value: 30 })));
     }
 
-    // Panel yükseklikleri
+    if (showMACD) {
+      const macdPaneIndex = showRSI ? 2 : 1;
+      const macdData = calculateMACD(closeData);
+      macdSeries = chart.addSeries(LineSeries, { color: '#58a6ff', lineWidth: 2, title: 'MACD' }, macdPaneIndex);
+      const signalSeries = chart.addSeries(LineSeries, { color: '#f0883e', lineWidth: 1, title: 'Signal' }, macdPaneIndex);
+      const histSeries = chart.addSeries(HistogramSeries, { title: 'Histogram' }, macdPaneIndex);
+      macdSeries.setData(macdData.macd);
+      signalSeries.setData(macdData.signal);
+      histSeries.setData(macdData.hist.map((p) => ({
+        time: p.time,
+        value: p.value,
+        color: p.value >= 0 ? 'rgba(63, 185, 80, 0.6)' : 'rgba(248, 81, 73, 0.6)',
+      })));
+    }
+
+    // Panel yüksekliklerini sabitle
     const panes = chart.panes();
     if (panes.length > 1) {
-      panes[0].setHeight(baseHeight - 40);
+      panes[0].setHeight(baseHeight);
       for (let i = 1; i < panes.length; i++) panes[i].setHeight(paneHeight);
     }
 
-    // Aralık butonu yalnızca görünür pencereyi seçer; veri tam yüklü olduğundan
-    // her aralıkta sola sürükleyerek serinin en başına kadar gidilebilir.
     const span = RANGE_SECONDS[range];
     if (span && chartData.length > 1) {
       const to = chartData[chartData.length - 1].time as number;
@@ -311,7 +322,6 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
       chart.timeScale().fitContent();
     }
 
-    // Canlı tik ve çizim için erişim noktaları
     activeSeriesRef.current = activeSeries;
     kindRef.current = effectiveKind;
     lastBarRef.current = chartData.length > 0 ? { ...chartData[chartData.length - 1] } : null;
@@ -319,7 +329,6 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     setChartApi(chart);
     setActiveSeriesApi(activeSeries);
 
-    // Önceki kapanışa göre değişim için hızlı erişim
     const prevCloseByTime = new Map<number, number>();
     for (let i = 1; i < chartData.length; i++) {
       prevCloseByTime.set(chartData[i].time as number, chartData[i - 1].close);
@@ -391,11 +400,10 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
       setActiveSeriesApi(null);
       chart.remove();
     };
-  }, [data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
+  }, [chartEngine, data, ticker, range, kind, showSMA20, showSMA50, showEMA20, showBB, showVolume, showRSI, showMACD, logScale, totalHeight]);
 
-  // Gecikmeli canlı fiyat son (bugünkü) bara işlenir; grafik yeniden kurulmaz,
-  // göstergeler günlük kaldığından yeniden hesaplanmaz.
   useEffect(() => {
+    if (chartEngine !== 'fraude') return;
     const series = activeSeriesRef.current;
     const last = lastBarRef.current;
     if (!series || !last || !livePrice || livePrice <= 0) return;
@@ -407,102 +415,133 @@ export default function PriceChart({ ticker, data, range = '6mo', livePrice }: P
     } else {
       series.update({ time: last.time, value: livePrice });
     }
-  }, [livePrice]);
+  }, [chartEngine, livePrice]);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '4px', marginRight: '6px' }}>
-            {(['candles', 'line', 'area'] as const).map((k) => (
-              <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
-                {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
-              </button>
-            ))}
-          </div>
-          <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
-          <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
-          <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
-          <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
-          <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
-          <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
-          <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
-          <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
+      {/* Üst Grafik Motoru ve Araç Başlığı */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Grafik Motoru Seçimi (TradingView Pro vs FRAUDE Temel) */}
+        <div style={{ display: 'flex', gap: '4px', background: '#0d1117', padding: '3px 4px', borderRadius: '6px', border: '1px solid #30363d' }}>
+          <button
+            type="button"
+            style={toggleStyle(chartEngine === 'tradingview')}
+            onClick={() => handleSelectEngine('tradingview')}
+            title="TradingView Gelişmiş Grafik & Tüm Çizim Araçları"
+          >
+            📊 TradingView Pro
+          </button>
+          <button
+            type="button"
+            style={toggleStyle(chartEngine === 'fraude')}
+            onClick={() => handleSelectEngine('fraude')}
+            title="Hızlı Yerel Grafik (Lightweight Charts)"
+          >
+            ⚡ FRAUDE Temel
+          </button>
         </div>
 
-        {/* Çizim Araçları Açma / Kapatma Butonu */}
-        <button
-          type="button"
-          style={toggleStyle(showDrawingTools)}
-          onClick={() => setShowDrawingTools(!showDrawingTools)}
-          title={i18n.t('drawTools')}
-        >
-          ✏️ {i18n.t('drawTools')}
-        </button>
+        {/* FRAUDE Temel Modunda Göstergeler */}
+        {chartEngine === 'fraude' && (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '4px', marginRight: '6px' }}>
+              {(['candles', 'line', 'area'] as const).map((k) => (
+                <button key={k} type="button" style={toggleStyle(kind === k)} onClick={() => setKind(k)}>
+                  {k === 'candles' ? i18n.t('chartCandles') : k === 'line' ? i18n.t('chartLine') : i18n.t('chartArea')}
+                </button>
+              ))}
+            </div>
+            <button type="button" style={toggleStyle(showSMA20)} onClick={() => setShowSMA20(!showSMA20)}>SMA 20</button>
+            <button type="button" style={toggleStyle(showSMA50)} onClick={() => setShowSMA50(!showSMA50)}>SMA 50</button>
+            <button type="button" style={toggleStyle(showEMA20)} onClick={() => setShowEMA20(!showEMA20)}>EMA 20</button>
+            <button type="button" style={toggleStyle(showBB)} onClick={() => setShowBB(!showBB)} title={i18n.t('bbHint')}>BB</button>
+            <button type="button" style={toggleStyle(showVolume)} onClick={() => setShowVolume(!showVolume)}>{i18n.t('volumeLabel')}</button>
+            <button type="button" style={toggleStyle(showRSI)} onClick={() => setShowRSI(!showRSI)}>RSI</button>
+            <button type="button" style={toggleStyle(showMACD)} onClick={() => setShowMACD(!showMACD)}>MACD</button>
+            <button type="button" style={toggleStyle(logScale)} onClick={() => setLogScale(!logScale)} title={i18n.t('logHint')}>Log</button>
+
+            <button
+              type="button"
+              style={toggleStyle(showDrawingTools)}
+              onClick={() => setShowDrawingTools(!showDrawingTools)}
+              title={i18n.t('drawTools')}
+            >
+              ✏️ {i18n.t('drawTools')}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Çizim Araç Çubuğu */}
-      {showDrawingTools && (
-        <div style={{ marginBottom: '8px' }}>
-          <ChartDrawingToolbar
-            settings={drawingSettings}
-            onSelectTool={setActiveTool}
-            onToggleMagnet={toggleMagnet}
-            onToggleVisibility={toggleVisibility}
-            onSetColor={setColor}
-            onSetLineWidth={setLineWidth}
-            onSetLineStyle={setLineStyle}
-            onUndo={undo}
-            onRedo={redo}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            selectedId={selectedId}
-            onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
-            onClearAll={clearDrawings}
-          />
-        </div>
+      {/* 1. TRADINGVIEW GELİŞMİŞ GRAFİK MOTORU (Varsayılan) */}
+      {chartEngine === 'tradingview' && (
+        <TradingViewChart ticker={ticker} height={baseHeight} />
       )}
 
-      <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
-        <div
-          ref={legendRef}
-          style={{
-            position: 'absolute',
-            top: '12px',
-            left: '12px',
-            zIndex: 10,
-            background: 'rgba(22, 27, 34, 0.90)',
-            border: '1px solid #30363d',
-            padding: '10px 14px',
-            borderRadius: '6px',
-            color: '#c9d1d9',
-            display: 'none',
-            pointerEvents: 'none',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            minWidth: '150px',
-          }}
-        />
-        <div ref={chartContainerRef} style={{ width: '100%', height: '100%', border: '1px solid #30363d', borderRadius: 4, overflow: 'hidden' }} />
+      {/* 2. FRAUDE YEREL GRAFİK MOTORU */}
+      {chartEngine === 'fraude' && (
+        <>
+          {showDrawingTools && (
+            <div style={{ marginBottom: '8px' }}>
+              <ChartDrawingToolbar
+                settings={drawingSettings}
+                onSelectTool={setActiveTool}
+                onToggleMagnet={toggleMagnet}
+                onToggleVisibility={toggleVisibility}
+                onSetColor={setColor}
+                onSetLineWidth={setLineWidth}
+                onSetLineStyle={setLineStyle}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                selectedId={selectedId}
+                onDeleteSelected={() => selectedId && deleteDrawing(selectedId)}
+                onClearAll={clearDrawings}
+              />
+            </div>
+          )}
 
-        {/* Grafik Üzeri İnteraktif Çizim Katmanı */}
-        <ChartDrawingOverlay
-          chart={chartApi}
-          series={activeSeriesApi}
-          quotes={data}
-          drawings={drawings}
-          selectedId={selectedId}
-          settings={drawingSettings}
-          onSelectId={setSelectedId}
-          onAddDrawing={addDrawing}
-          onUpdateDrawing={updateDrawing}
-          onDeleteDrawing={deleteDrawing}
-          onSelectTool={setActiveTool}
-          onUndo={undo}
-          onRedo={redo}
-          width={chartWidth}
-          height={totalHeight}
-        />
-      </div>
+          <div style={{ position: 'relative', width: '100%', height: totalHeight }}>
+            <div
+              ref={legendRef}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                zIndex: 10,
+                background: 'rgba(22, 27, 34, 0.90)',
+                border: '1px solid #30363d',
+                padding: '10px 14px',
+                borderRadius: '6px',
+                color: '#c9d1d9',
+                display: 'none',
+                pointerEvents: 'none',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                minWidth: '150px',
+              }}
+            />
+            <div ref={chartContainerRef} style={{ width: '100%', height: '100%', border: '1px solid #30363d', borderRadius: 4, overflow: 'hidden' }} />
+
+            <ChartDrawingOverlay
+              chart={chartApi}
+              series={activeSeriesApi}
+              quotes={data}
+              drawings={drawings}
+              selectedId={selectedId}
+              settings={drawingSettings}
+              onSelectId={setSelectedId}
+              onAddDrawing={addDrawing}
+              onUpdateDrawing={updateDrawing}
+              onDeleteDrawing={deleteDrawing}
+              onSelectTool={setActiveTool}
+              onUndo={undo}
+              onRedo={redo}
+              width={chartWidth}
+              height={totalHeight}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
