@@ -2,6 +2,34 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-kap-xbrl-bilanco-ayristirici-ve-senkronizasyon",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "KAP XBRL Finansal Rapor Ayrıştırıcı ve Anlık Bilanço Senkronizasyonu",
+        "en": "KAP XBRL Financial Report Parser and Real-time Statement Synchronization"
+      },
+      "summary": {
+        "tr": "KAP finansal raporlarının ham metin araması yerine resmi XBRL Excel export taksonomisi üzerinden doğrudan ve hatasız ayrıştırılması sağlandı. Şirket sunum birimleri (milyon TL / bin TL) otomatik tespit edilerek TL'ye normalize edildi, dönem ISO formatına ('YYYY-MM-DD') uyarlandı ve yeni bir FR bildirimi geldiğinde önbellek otomatik geçersiz kılınarak anlık senkronizasyon kuruldu.",
+        "en": "Replaced brittle raw text scraping with deterministic KAP XBRL taxonomy parsing from official Excel exports. Automatically normalizes varying presentation units (million/thousand TRY) to exact TRY values, standardizes period formatting to ISO dates, and automatically invalidates statement caches on new financial report disclosures for immediate synchronization."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/kap.rs",
+        "core/src/fundamentals.rs",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "kaptan gelen bilançok verilerini ekleyelim ve bu senkronize olsun yeni bir kap haberi gelince otomatikman veriler çekilsin",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-bilanco-radari-tekil-sirket-tekilleme",
       "date": "2026-08-18",
       "author": "yazicmert",

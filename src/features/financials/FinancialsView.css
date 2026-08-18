@@ -61,6 +61,56 @@
   margin: 0;
 }
 
+/* 10-Year Archive Progress Bar */
+.fin-archive-progress-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-surface-soft, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+}
+
+.fin-archive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+}
+
+.fin-archive-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fin-archive-badge {
+  font-size: 0.72rem;
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-family: var(--font-mono);
+}
+
+.fin-archive-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fin-archive-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #238636, #3fb950, #56d364);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
 /* Mode Switcher (List vs Detail) */
 .fin-mode-switcher {
   display: inline-flex;

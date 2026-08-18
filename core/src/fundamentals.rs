@@ -92,6 +92,19 @@ struct CachedStatement {
 
 static CACHE: OnceLock<Mutex<HashMap<String, CachedStatement>>> = OnceLock::new();
 
+/// Verilen hissenin önbellekteki mali tablo kayıtlarını temizler.
+/// KAP'tan yeni bir finansal rapor bildirimi geldiğinde çağrılarak bir sonraki
+/// `get_financial_statements` çağrısının güncel veriyi hemen çekmesi sağlanır.
+pub fn invalidate_financial_cache(ticker: &str) {
+    let company = ticker.trim().trim_end_matches(".IS").to_uppercase();
+    if let Some(mutex) = CACHE.get() {
+        if let Ok(mut map) = mutex.lock() {
+            let prefix = format!("{company}:");
+            map.retain(|key, _| !key.starts_with(&prefix));
+        }
+    }
+}
+
 /// Türkçe karakterleri ASCII'ye indirger ve büyük harfe çevirir; İş Yatırım
 /// kalem açıklamaları karışık büyük/küçük harf ve İ/ı içerdiğinden eşleştirme
 /// bu sadeleştirilmiş biçim üzerinden yapılır.
@@ -391,6 +404,41 @@ pub async fn get_financial_statements(
         }
     }
 
+    // 1. Önce merkezi Supabase 10 yıllık KAP XBRL veritabanından sorgula (~50ms).
+    if let Ok(Some(mut sb_statement)) =
+        crate::supabase_financials::fetch_ticker_statement(client, &company, currency.label()).await
+    {
+        if !sb_statement.quarterlies.is_empty() {
+            // Canlı KAP kontrolü: Supabase'e henüz yazılmamış çok yeni bir çeyrek varsa ekle
+            if let Ok(Some(live_kap_period)) =
+                crate::kap::fetch_latest_kap_financial_period(client, &company).await
+            {
+                if !sb_statement
+                    .quarterlies
+                    .iter()
+                    .any(|q| q.period == live_kap_period.period)
+                {
+                    sb_statement.quarterlies.push(live_kap_period);
+                }
+            }
+
+            CACHE
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(
+                    cache_key,
+                    CachedStatement {
+                        fetched_at: Instant::now(),
+                        statement: sb_statement.clone(),
+                    },
+                );
+
+            return Ok(sb_statement);
+        }
+    }
+
+    // 2. Supabase'de henüz veri yoksa veya USD derin geçmiş isteniyorsa İş Yatırım'dan çek.
     let current_year = chrono::Utc::now().year();
     let quarterly_from = current_year - QUARTERLY_YEARS + 1;
     let mut pairs: Vec<(i32, u8)> = Vec::new();

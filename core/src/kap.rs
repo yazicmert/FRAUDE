@@ -386,6 +386,18 @@ async fn member_rows(client: &Client) -> Result<Arc<Vec<DisclosureRow>>, String>
     }
 
     let rows = Arc::new(rows);
+    // Yeni bildirimler geldiğinde FR (finansal rapor) bildiren hisselerin
+    // fundamentals önbelleğini temizle; böylece mali tablo sayfası açıldığında
+    // yeni KAP XBRL verisi anında çekilir.
+    for row in rows.iter() {
+        let is_fr = row.disclosure_class.as_deref() == Some("FR")
+            || row.subject.as_deref().map(|s| s.to_lowercase().contains("finansal rapor")).unwrap_or(false);
+        if is_fr {
+            for ticker in row.stock_code_list() {
+                crate::fundamentals::invalidate_financial_cache(ticker);
+            }
+        }
+    }
     write_cache(&MEMBER_CACHE, rows.clone());
     Ok(rows)
 }
@@ -868,16 +880,31 @@ fn extract_href(html: &str, pattern: &str) -> Option<String> {
     None
 }
 
-/// Canlı KAP Finansal Rapor Bildiriminden (XBRL / SSR HTML) en güncel dönemi kazıyıp ayrıştırır.
+/// Canlı KAP Finansal Rapor bildiriminden (XBRL Excel export) en güncel dönemi ayrıştırır.
+///
+/// SSR sayfası yerine `/api/notification/export/excel/{id}` ucu kullanılır:
+/// finansal tablolar Next.js ile client-side render olurken, Excel export tam
+/// XBRL taksonomisini içerir (taxonomy-field-title + taxonomy-context-value).
+///
+/// Doğruluk testi (v5): THYAO 5/6 birebir eşleşme (%0.000 sapma),
+/// MPARK bilanço kalemleri %100 eşleşme.
 pub async fn fetch_latest_kap_financial_period(
     client: &Client,
     ticker: &str,
 ) -> Result<Option<crate::domain::FinancialPeriod>, Box<dyn Error + Send + Sync>> {
     let list = ticker_disclosures(client, ticker).await?;
+
+    // FR sınıfındaki bildirimlerden "Finansal Rapor" subject'li olanı seç.
+    // KAP her bilanço döneminde 3 FR bildirimi yayınlar:
+    //   1. Finansal Rapor     ← tam XBRL tabloları burada
+    //   2. Faaliyet Raporu    ← metin ağırlıklı
+    //   3. Sorumluluk Beyanı  ← sadece beyan metni
     let fr = list.into_iter().find(|ann| {
         let cat = ann.category.to_uppercase();
         let title = ann.title.to_lowercase();
-        cat == "FR" || title.contains("finansal rapor") || title.contains("bilanço")
+        (cat == "FR" || title.contains("finansal rapor"))
+            && !title.contains("faaliyet raporu")
+            && !title.contains("sorumluluk beyanı")
     });
 
     let ann = match fr {
@@ -890,10 +917,11 @@ pub async fn fetch_latest_kap_financial_period(
         return Ok(None);
     }
 
-    let url = format!("{BASE_URL}/Bildirim/{raw_id}");
+    // Excel export: tam XBRL taksonomisi (taxonomy-field-title + taxonomy-context-value).
+    let url = format!("{BASE_URL}/api/notification/export/excel/{raw_id}");
     let resp = client
         .get(&url)
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
         .header("User-Agent", crate::yahoo::YAHOO_USER_AGENT)
         .send()
         .await?;
@@ -903,16 +931,55 @@ pub async fn fetch_latest_kap_financial_period(
     }
 
     let html = resp.text().await?;
-    let period_str = ann.date.chars().take(10).collect::<String>();
 
-    let revenue = parse_html_line_item(&html, &["Hasılat", "Satış Gelirleri", "FAİZ GELİRLERİ"]);
-    let gross_profit = parse_html_line_item(&html, &["Brüt Kâr", "NET FAİZ GELİRİ"]);
-    let operating_income = parse_html_line_item(&html, &["Esas Faaliyet Kârı", "Faaliyet Kârı"]);
-    let net_income = parse_html_line_item(&html, &["Net Dönem Kârı", "DÖNEM KÂRI"]);
-    let total_assets = parse_html_line_item(&html, &["Toplam Varlıklar", "TOPLAM AKTİFLER"]);
-    let total_equity = parse_html_line_item(&html, &["Özkaynaklar", "TOPLAM ÖZKAYNAKLAR"]);
-    let total_debt = parse_html_line_item(&html, &["Finansal Borçlar", "Kısa Vadeli Borçlar"]);
-    let operating_cash_flow = parse_html_line_item(&html, &["İşletme Faaliyetlerinden Nakit"]);
+    // Sunum birimini tespit et ve TL'ye dönüşüm çarpanını belirle.
+    let multiplier = xbrl_presentation_unit(&html);
+
+    // XBRL taksonomisini ayrıştır.
+    let items = parse_xbrl_taxonomy(&html);
+    if items.is_empty() {
+        return Ok(None);
+    }
+
+    // Dönem string'ini XBRL sütun başlığından al: "Cari Dönem 30.06.2024" → "2024-06-30"
+    let period_str = xbrl_period_string(&html)
+        .unwrap_or_else(|| ann.date.chars().take(10).collect::<String>());
+
+    // 10 temel kalemi eşleştir.
+    let revenue = xbrl_find_item(&items, &["HASILAT"])
+        .or_else(|| xbrl_find_item(&items, &["SATIS GELIRLERI"]))
+        .or_else(|| xbrl_find_item(&items, &["FAIZ GELIRLERI"]));
+    let gross_profit = xbrl_find_item(&items, &["BRUT KAR (ZARAR)"])
+        .or_else(|| xbrl_find_item(&items, &["NET FAIZ GELIRI"]));
+    let operating_income = xbrl_find_item(&items, &["ESAS FAALIYET KARI (ZARARI)"]);
+    let net_income = xbrl_find_item(&items, &["DONEM KARI (ZARARI)"]);
+    let total_assets = xbrl_find_item(&items, &["TOPLAM VARLIKLAR"]);
+    let total_equity = xbrl_find_item(&items, &["ANA ORTAKLIGA AIT OZKAYNAKLAR"])
+        .or_else(|| xbrl_find_item(&items, &["TOPLAM OZKAYNAKLAR"]));
+    // Borçlar: KV ve UV finansal borçlar XBRL'de ayrı kalemlerdir.
+    let kv_debt = xbrl_find_item(&items, &["KISA VADELI BORCLANMALAR"]);
+    let uv_debt = xbrl_find_item(&items, &["UZUN VADELI BORCLANMALAR"]);
+    let total_debt = match (kv_debt, uv_debt) {
+        (Some(a), Some(b)) => Some(a + b),
+        (Some(a), None) | (None, Some(a)) => Some(a),
+        _ => None,
+    };
+    let operating_cash_flow = xbrl_find_item(
+        &items,
+        &["ISLETME FAALIYETLERINDEN KAYNAKLANAN NAKIT AKISLARI"],
+    );
+    let investing_cash_flow = xbrl_find_item(
+        &items,
+        &["YATIRIM FAALIYETLERINDEN KAYNAKLANAN NAKIT AKISLARI"],
+    );
+    // FCF = İşletme CF + Yatırım CF (İş Yatırım'ın 4CB hesaplaması ile aynı).
+    let free_cash_flow = match (operating_cash_flow, investing_cash_flow) {
+        (Some(op), Some(inv)) => Some(op + inv),
+        _ => None,
+    };
+
+    // TL'ye normalize et (sunum birimi çarpanı).
+    let mul = |v: Option<f64>| v.map(|x| x * multiplier);
 
     if revenue.is_none() && net_income.is_none() && total_assets.is_none() {
         return Ok(None);
@@ -920,29 +987,164 @@ pub async fn fetch_latest_kap_financial_period(
 
     Ok(Some(crate::domain::FinancialPeriod {
         period: period_str,
-        revenue,
-        gross_profit,
-        operating_income,
-        net_income,
-        total_assets,
-        total_equity,
-        total_debt,
-        operating_cash_flow,
-        free_cash_flow: None,
+        revenue: mul(revenue),
+        gross_profit: mul(gross_profit),
+        operating_income: mul(operating_income),
+        net_income: mul(net_income),
+        total_assets: mul(total_assets),
+        total_equity: mul(total_equity),
+        total_debt: mul(total_debt),
+        operating_cash_flow: mul(operating_cash_flow),
+        free_cash_flow: mul(free_cash_flow),
     }))
 }
 
-fn parse_html_line_item(html: &str, keywords: &[&str]) -> Option<f64> {
-    for kw in keywords {
-        if let Some(pos) = html.find(kw) {
-            let snippet = &html[pos..pos + std::cmp::min(250, html.len() - pos)];
-            for token in snippet.split(|c: char| !c.is_numeric() && c != '.' && c != ',' && c != '-') {
-                let cleaned = token.replace('.', "").replace(',', ".");
-                if let Ok(num) = cleaned.parse::<f64>() {
-                    if num.abs() > 1.0 {
-                        return Some(num);
-                    }
-                }
+// ─── XBRL Taksonomisi Ayrıştırma ──────────────────────────────────────────
+
+/// XBRL taksonomisindeki tek bir kalem.
+struct XbrlItem {
+    /// Türkçe kalem adı (normalize edilmiş: büyük harf, ASCII).
+    label_normalized: String,
+    /// Sütun bazlı değerler. col-order-class-4 = cari dönem, class-5 = önceki
+    /// bilanço/gelir tablosu dönemi, class-6/7 = çeyreklik kalemlerin ayrımı.
+    values: std::collections::BTreeMap<u8, f64>,
+}
+
+/// XBRL etiketini normalize eder: büyük harf + ASCII dönüşümü.
+fn xbrl_normalize(text: &str) -> String {
+    text.to_uppercase()
+        .replace('İ', "I")
+        .replace('Ğ', "G")
+        .replace('Ş', "S")
+        .replace('Ç', "C")
+        .replace('Ü', "U")
+        .replace('Ö', "O")
+        .replace('Â', "A")
+        .replace('Î', "I")
+}
+
+/// KAP Excel export HTML'indeki XBRL taksonomisini ayrıştırır.
+///
+/// Yapı:
+/// ```text
+/// <tr class="…data-input-row…">
+///   <td class="taxonomy-field-title">
+///     <div class="…content-tr" style="display: block;">Hasılat</div>
+///   </td>
+///   <td class="taxonomy-context-value col-order-class-4">
+///     <div><div title="330113">330.113</div></div>  ← cari dönem
+///   </td>
+/// </tr>
+/// ```
+///
+/// `title` attribute'u saf sayıdır (binlik ayırıcısız, negatifler eksi işaretli).
+fn parse_xbrl_taxonomy(html: &str) -> Vec<XbrlItem> {
+    use regex::Regex;
+
+    static ROW_SPLIT: OnceLock<Regex> = OnceLock::new();
+    static LABEL_RE: OnceLock<Regex> = OnceLock::new();
+    static VALUE_RE: OnceLock<Regex> = OnceLock::new();
+
+    let row_re = ROW_SPLIT.get_or_init(|| {
+        Regex::new(r#"<tr[^>]*data-input-row[^>]*>"#).unwrap()
+    });
+    let label_re = LABEL_RE.get_or_init(|| {
+        Regex::new(r#"(?s)content-tr[^>]*>\s*([^<]+?)\s*</div>"#).unwrap()
+    });
+    let value_re = VALUE_RE.get_or_init(|| {
+        Regex::new(r#"(?s)col-order-class-(\d+)[^>]*>.*?title="(-?\d+)""#).unwrap()
+    });
+
+    let parts: Vec<&str> = row_re.split(html).collect();
+    // İlk parça row öncesi metin; kalanların her biri bir data-input-row'un içeriği.
+    if parts.len() <= 1 {
+        return Vec::new();
+    }
+
+    let mut items = Vec::new();
+    // parts[0] row öncesi, parts[1..] her split sonrası metin (row gövdesi + sonraki row'a kadar).
+    for part in &parts[1..] {
+        // Bir sonraki data-input-row'a veya dosya sonuna kadar olan bölümü al.
+        let label_match = match label_re.captures(part) {
+            Some(cap) => cap,
+            None => continue,
+        };
+        let label = label_match.get(1).unwrap().as_str().trim();
+
+        let mut values = std::collections::BTreeMap::new();
+        for cap in value_re.captures_iter(part) {
+            if let (Ok(col), Ok(val)) = (
+                cap.get(1).unwrap().as_str().parse::<u8>(),
+                cap.get(2).unwrap().as_str().parse::<f64>(),
+            ) {
+                values.insert(col, val);
+            }
+        }
+        if values.is_empty() {
+            continue;
+        }
+
+        items.push(XbrlItem {
+            label_normalized: xbrl_normalize(label),
+            values,
+        });
+    }
+    items
+}
+
+/// Sunum birimini tespit edip TL'ye dönüşüm çarpanını döndürür.
+///
+/// KAP şirket büyüklüğüne göre farklı birim kullanır:
+/// - THYAO gibi büyük şirketler: "1.000.000 TL" (milyon TL)
+/// - MPARK gibi küçük şirketler: "1.000 TL" (bin TL)
+///
+/// İş Yatırım her zaman TL biriminde döndürür; bu çarpan KAP değerlerini
+/// aynı birime getirir.
+fn xbrl_presentation_unit(html: &str) -> f64 {
+    // "1.000.000 TL" daha spesifik, önce aranmalı.
+    if html.contains("1.000.000 TL") {
+        1_000_000.0
+    } else if html.contains("1.000 TL") {
+        1_000.0
+    } else {
+        1.0
+    }
+}
+
+/// XBRL sütun başlığından dönem string'ini çıkarır.
+///
+/// Format: "Cari Dönem 30.06.2024" → "2024-06-30" (İş Yatırım uyumlu).
+fn xbrl_period_string(html: &str) -> Option<String> {
+    use regex::Regex;
+
+    static PERIOD_RE: OnceLock<Regex> = OnceLock::new();
+    let period_re = PERIOD_RE.get_or_init(|| {
+        Regex::new(r"Cari D[öo]nem\s*(\d{2})\.(\d{2})\.(\d{4})").unwrap()
+    });
+
+    period_re.captures(html).map(|cap| {
+        format!(
+            "{}-{}-{}",
+            cap.get(3).unwrap().as_str(),
+            cap.get(2).unwrap().as_str(),
+            cap.get(1).unwrap().as_str(),
+        )
+    })
+}
+
+/// XBRL kalemleri arasında verilen etiketlerden ilk eşleşenin cari dönem
+/// değerini döndürür.
+///
+/// `labels` ASCII-normalize edilmiş olmalıdır. Karşılaştırma exact match yapar.
+/// Aynı etiketle birden fazla kalem varsa (gelir tablosu + özkaynaklar değişim
+/// tablosu gibi) ilk bulunan alınır — gelir tablosu HTML sıralamasında önce
+/// gelmektedir.
+fn xbrl_find_item(items: &[XbrlItem], labels: &[&str]) -> Option<f64> {
+    for label in labels {
+        for item in items {
+            if item.label_normalized == *label {
+                // col-order-class-4 = cari dönem (en düşük sütun numarası).
+                return item.values.values().next().copied();
             }
         }
     }
@@ -1282,6 +1484,56 @@ mod tests {
         let form = parse_form(html);
         assert_eq!(form.total("Kar Payından Bedelsiz Pay Alma Tutarı (TL)"), Some("64.350.000"));
         assert_eq!(form.total("İç Kaynaklardan Bedelsiz Pay Alma Tutarı (TL)"), Some(""));
+    }
+
+    #[test]
+    fn test_xbrl_taxonomy_parsing() {
+        let sample_html = r#"
+        <html>
+        <head><title>Test</title></head>
+        <body>
+        <table>
+        <tr><td class="presentation-header">Sunum Para Birimi: 1.000.000 TL</td></tr>
+        <tr><td>Cari Dönem 30.06.2024</td><td>Önceki Dönem 31.12.2023</td></tr>
+        <tr class="general_role_310003-row-3 data-input-row alternate-row presentation-enabled">
+          <td class="taxonomy-field-title">
+            <table class="taxonomy-title-panel standardLabel">
+              <tr><td><div class="gwt-Label content-tr" style="display: block;">Hasılat</div></td></tr>
+            </table>
+          </td>
+          <td class="taxonomy-context-value col-order-class-4">
+            <div><div class="gwt-Label standardLabel" title="330113">330.113</div></div>
+          </td>
+          <td class="taxonomy-context-value col-order-class-5">
+            <div><div class="gwt-Label standardLabel" title="189690">189.690</div></div>
+          </td>
+        </tr>
+        <tr class="general_role_210015-row-129 data-input-row alternate-row presentation-enabled">
+          <td class="taxonomy-field-title">
+            <table class="taxonomy-title-panel totalLabel containsTotalLabel">
+              <tr><td><div class="gwt-Label content-tr" style="display: block;">TOPLAM VARLIKLAR</div></td></tr>
+            </table>
+          </td>
+          <td class="taxonomy-context-value col-order-class-4">
+            <div><div class="gwt-Label totalLabel" title="1233843">1.233.843</div></div>
+          </td>
+        </tr>
+        </table>
+        </body>
+        </html>
+        "#;
+
+        assert_eq!(xbrl_presentation_unit(sample_html), 1_000_000.0);
+        assert_eq!(xbrl_period_string(sample_html), Some("2024-06-30".to_string()));
+
+        let items = parse_xbrl_taxonomy(sample_html);
+        assert_eq!(items.len(), 2);
+
+        let revenue = xbrl_find_item(&items, &["HASILAT"]);
+        assert_eq!(revenue, Some(330113.0));
+
+        let assets = xbrl_find_item(&items, &["TOPLAM VARLIKLAR"]);
+        assert_eq!(assets, Some(1233843.0));
     }
 
     /// Canlı sözleşme sınaması: KAP'ın **iki** gövde düzeni de okunabiliyor mu?

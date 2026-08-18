@@ -53,6 +53,7 @@ pub mod shareholders;
 pub mod spk;
 pub mod storage;
 pub mod subsidiaries;
+pub mod supabase_financials;
 pub mod tefas;
 pub mod tefas_issuer;
 pub mod tradingview;

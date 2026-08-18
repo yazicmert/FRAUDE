@@ -43,7 +43,9 @@ import {
   Layers,
   ExternalLink,
   Radio,
+  Database,
 } from 'lucide-react';
+import { supabase } from '../auth/supabaseClient';
 import './FinancialsView.css';
 
 interface FinancialsViewProps {
@@ -92,6 +94,28 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
   const [loadingDisclosures, setLoadingDisclosures] = useState(false);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [statementError, setStatementError] = useState<string | null>(null);
+  const [archiveStats, setArchiveStats] = useState<{ totalTickers: number; totalPeriods: number } | null>(null);
+
+  // Load 10-Year Supabase Financials Archive Stats
+  useEffect(() => {
+    async function loadArchiveStats() {
+      try {
+        const { data, count, error } = await supabase
+          .from('bist_financial_periods')
+          .select('ticker', { count: 'exact' });
+        if (!error && data) {
+          const unique = new Set(data.map((d: { ticker: string }) => d.ticker)).size;
+          setArchiveStats({
+            totalTickers: unique,
+            totalPeriods: count ?? data.length,
+          });
+        }
+      } catch (err) {
+        console.warn('Supabase archive stats fetch error:', err);
+      }
+    }
+    loadArchiveStats();
+  }, []);
 
   // Load Dashboard Snapshot & Live KAP Financial Disclosures
   useEffect(() => {
@@ -456,6 +480,29 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
           >
             <Sparkles size={15} /> Şirket Detay Analizi ({selectedTicker})
           </button>
+        </div>
+      </div>
+
+      {/* 10-Year Cloud Archive Progress Bar */}
+      <div className="fin-archive-progress-card">
+        <div className="fin-archive-header">
+          <div className="fin-archive-title">
+            <Database size={15} color="#3fb950" />
+            <span>10 Yıllık BIST KAP XBRL Bulut Veritabanı (2016 – 2026)</span>
+          </div>
+          <span className="fin-archive-badge">
+            {archiveStats
+              ? `${archiveStats.totalTickers} / 560 Şirket (${archiveStats.totalPeriods.toLocaleString()} Çeyrek) • %${Math.round((archiveStats.totalTickers / 560) * 100)}`
+              : 'Veritabanı senkronize ediliyor...'}
+          </span>
+        </div>
+        <div className="fin-archive-track">
+          <div
+            className="fin-archive-bar"
+            style={{
+              width: `${Math.min(100, Math.max(2, ((archiveStats?.totalTickers || 0) / 560) * 100))}%`,
+            }}
+          />
         </div>
       </div>
 
