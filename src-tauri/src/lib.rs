@@ -205,6 +205,7 @@ pub fn run() {
             commands::get_ticker_snapshot,
             commands::run_screener,
             commands::list_kap_announcements,
+            commands::list_financial_disclosures,
             commands::get_kap_disclosure_detail,
             commands::ask_ai,
             commands::list_ai_keys,

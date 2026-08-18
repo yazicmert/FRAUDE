@@ -313,6 +313,10 @@ export function listKapAnnouncements(ticker?: string) {
   });
 }
 
+export function listFinancialDisclosures() {
+  return invoke<KapAnnouncement[]>('list_financial_disclosures');
+}
+
 export interface KapDisclosureDetail {
   disclosure_index: string;
   attachments: { name: string; url: string }[];

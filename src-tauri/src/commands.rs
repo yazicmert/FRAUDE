@@ -70,6 +70,13 @@ pub async fn list_kap_announcements(
 }
 
 #[tauri::command]
+pub async fn list_financial_disclosures(
+    state: State<'_, AppState>,
+) -> Result<Vec<KapAnnouncement>, String> {
+    api::list_financial_disclosures(&state).await
+}
+
+#[tauri::command]
 pub async fn get_kap_disclosure_detail(
     state: State<'_, AppState>,
     disclosure_index: String,

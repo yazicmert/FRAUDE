@@ -229,6 +229,14 @@ pub async fn list_kap_announcements(
     Ok(services::filter_kap(&store, filter))
 }
 
+pub async fn list_financial_disclosures(
+    state: &AppState,
+) -> Result<Vec<KapAnnouncement>, String> {
+    crate::kap::fetch_financial_disclosures(&state.http)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 pub async fn get_price_history(
     state: &AppState,
     ticker: String,
