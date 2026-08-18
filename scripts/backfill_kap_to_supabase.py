@@ -417,9 +417,10 @@ def main():
     parser.add_argument("--force", action="store_true", help="Kayıtlı hisseleri atlamadan tekrar çek")
     args = parser.parse_args()
 
-    covered_map = {} if args.force else get_supabase_covered_tickers()
-    if covered_map:
-        log(f"📊 Supabase'de halihazırda {len(covered_map)} şirket kayıtlı.\n")
+    existing_map = {} if args.force else get_supabase_existing_periods()
+    if existing_map:
+        total_p = sum(len(v) for v in existing_map.values())
+        log(f"📊 Supabase'de halihazırda {len(existing_map)} şirket ve {total_p} çeyrek kayıtlı.\n")
 
     canonical_equities = load_canonical_bist_equities()
     valid_set = set(canonical_equities)
@@ -436,13 +437,15 @@ def main():
 
     total_synced = 0
     for idx, ticker in enumerate(target_tickers, start=1):
-        if not args.force and covered_map.get(ticker, 0) >= 25:
-            log(f"⏩ [{idx}/{len(target_tickers)}] {ticker}: Zaten {covered_map[ticker]} çeyrek mevcut, atlanıyor.")
-            continue
-
         disclosures = ticker_map.get(ticker, [])
         if not disclosures:
             log(f"ℹ️ [{idx}/{len(target_tickers)}] {ticker}: Rapor bulunamadı.")
+            continue
+
+        already_saved_periods = existing_map.get(ticker, set())
+        # Eğer bu hissenin bildirim sayısı kadar çeyreği zaten Supabase'de varsa doğrudan atla
+        if not args.force and len(already_saved_periods) >= len(disclosures) and len(disclosures) > 0:
+            log(f"⏩ [{idx}/{len(target_tickers)}] {ticker}: Tüm {len(already_saved_periods)} çeyrek zaten Supabase'de mevcut, atlanıyor.")
             continue
 
         parsed_periods = []
@@ -451,10 +454,16 @@ def main():
         for disc in disclosures:
             d_idx = disc["index"]
             pub_date = disc["date"]
+
+            # Eğer bu bildirimden gelecek dönem zaten Supabase'de varsa indirmeden geç!
+            estimated_period, _, _, _ = derive_period_from_pub_date(pub_date)
+            if not args.force and estimated_period and estimated_period in already_saved_periods:
+                continue
+
             data = parse_disclosure_financials(ticker, d_idx, pub_date, sleep_sec=args.sleep)
             if data:
                 p_key = (data["period"], data["currency"])
-                if p_key in seen_periods:
+                if p_key in seen_periods or (not args.force and data["period"] in already_saved_periods):
                     continue
                 seen_periods.add(p_key)
                 parsed_periods.append(data)
@@ -464,11 +473,11 @@ def main():
             saved = upsert_to_supabase(parsed_periods)
             if saved > 0:
                 total_synced += saved
-                log(f"✅ [{idx}/{len(target_tickers)}] {ticker}: {saved} çeyrek Supabase'e yazıldı.")
+                log(f"✅ [{idx}/{len(target_tickers)}] {ticker}: {saved} yeni çeyrek Supabase'e yazıldı.")
             else:
                 log(f"❌ [{idx}/{len(target_tickers)}] {ticker}: Supabase'e kaydedilemedi.")
         else:
-            log(f"⚠️ [{idx}/{len(target_tickers)}] {ticker}: Ayrıştırılamadı.")
+            log(f"⏩ [{idx}/{len(target_tickers)}] {ticker}: Eksik çeyrek bulunamadı, güncel.")
 
     log(f"\n🎉 Tüm 10 yıllık BIST yüklemesi tamamlandı! Toplam {total_synced} finansal çeyrek Supabase'e kaydedildi.")
 
