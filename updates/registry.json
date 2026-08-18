@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-bilanco-radari-tekil-sirket-tekilleme",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Bilanço Radarında Tekil Şirket Gösterimi ve Dönem Ayrıştırması",
+        "en": "Strict Company Deduplication and Period Extraction in Financials Radar"
+      },
+      "summary": {
+        "tr": "Şirketlerin aynı anda gönderdiği birden fazla KAP bildiriminin (Sorumluluk Beyanı, Faaliyet Raporu vb.) radar listesinde tekrara yol açması engellendi. Her şirket en güncel bildirimiyle listede yalnızca 1 kez tekil olarak yer alacak şekilde tekilleştirildi ve çeyreklik dönem tespiti geliştirildi.",
+        "en": "Ensured strict 1-row-per-company deduplication in the earnings radar by grouping multi-part disclosures (responsibility statements, audit reports) to their newest release, and enhanced quarterly period detection."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/financials/FinancialsView.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "bir şirket neden birden fazla kez gözüküyor",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-kap-canli-bilanco-radari-akisi",
       "date": "2026-08-18",
       "author": "yazicmert",
