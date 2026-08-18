@@ -49,8 +49,8 @@ def http_get_with_retry(url, max_retries=3):
                 return resp.read().decode("utf-8", errors="replace")
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 15 * (attempt + 1)
-                log(f"\n     ⏳ KAP Hız sınırı: {wait_time}s bekleniyor...", end="")
+                wait_time = 60 * (attempt + 1)
+                log(f"\n     ⏳ KAP Hız sınırı sıfırlanması bekleniyor ({wait_time}s)...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
                 time.sleep(2)
@@ -59,7 +59,7 @@ def http_get_with_retry(url, max_retries=3):
         except Exception:
             if attempt == max_retries - 1:
                 raise
-            time.sleep(1.5)
+            time.sleep(2.0)
     return ""
 
 
@@ -78,8 +78,8 @@ def http_post_json_with_retry(url, payload, extra_headers=None, max_retries=4):
                 return json.loads(raw) if raw.strip() else {}
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 15 * (attempt + 1)
-                log(f"\n     ⏳ KAP Hız sınırı: {wait_time}s bekleniyor...", end="")
+                wait_time = 60 * (attempt + 1)
+                log(f"\n     ⏳ KAP Hız sınırı sıfırlanması bekleniyor ({wait_time}s)...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
                 time.sleep(2)
@@ -88,7 +88,7 @@ def http_post_json_with_retry(url, payload, extra_headers=None, max_retries=4):
         except Exception:
             if attempt == max_retries - 1:
                 raise
-            time.sleep(2)
+            time.sleep(2.0)
     return {}
 
 
@@ -185,6 +185,28 @@ def get_earnings_season_windows(year):
     ]
 
 
+def load_canonical_bist_equities():
+    """FRAUDE'un resmi 614 BIST hisse senedi evrenini yükler (borçlanma araçları ve varantlar hariç)."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(script_dir)
+    yahoo_path = os.path.join(repo_root, "core", "src", "yahoo.rs")
+
+    if os.path.exists(yahoo_path):
+        try:
+            with open(yahoo_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            m = re.search(r'pub const BIST_TICKERS: &\[\(&str, &str\)\] = &\[(.*?)\];', content, re.DOTALL)
+            if m:
+                tickers = [c[0] for c in re.findall(r'\(\"([^\"]+)\",\s*\"([^\"]+)\"\)', m.group(1))]
+                if len(tickers) >= 500:
+                    return sorted(list(set(tickers)))
+        except Exception as e:
+            log(f"  ⚠️ yahoo.rs okuma hatası: {e}")
+
+    # Fallback
+    return ["THYAO", "ASELS", "EREGL", "FROTO", "BIMAS", "KCHOL", "TUPRS", "SISE", "SAHOL", "AKBNK", "MPARK"]
+
+
 def get_supabase_covered_tickers():
     url = f"{SUPABASE_URL}/rest/v1/bist_financial_periods?select=ticker"
     headers = {
@@ -204,10 +226,11 @@ def get_supabase_covered_tickers():
         return {}
 
 
-def scan_all_seasons_bulk(from_year, to_year, sleep_sec=1.0):
+def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=1.0):
     """
     Tüm BIST şirketlerinin bilanço bildirimlerini sezon pencereleriyle
     tek seferde haritalar. 25.000 istek yerine yalnız ~32 istek atar!
+    Yalnızca gerçek BIST hisse senetlerini (614 şirket) filtreler.
     """
     now = datetime.now()
     ticker_disclosures = defaultdict(list)
@@ -254,7 +277,7 @@ def scan_all_seasons_bulk(from_year, to_year, sleep_sec=1.0):
                             all_codes = [c.strip() for c in f"{stock_codes},{related}".split(",") if c.strip() and c.strip() != "-"]
 
                             for code in all_codes:
-                                if 3 <= len(code) <= 6:
+                                if code in valid_equities_set:
                                     ticker_disclosures[code].append({
                                         "index": idx,
                                         "subject": subject,
@@ -268,7 +291,7 @@ def scan_all_seasons_bulk(from_year, to_year, sleep_sec=1.0):
 
             log(f"  📅 {label}: {season_found} bildirim yakalandı.")
 
-    log(f"\n✅ Haritalama tamamlandı! Toplam {len(ticker_disclosures)} farklı şirketin bilançoları bulundu.")
+    log(f"\n✅ Haritalama tamamlandı! Toplam {len(ticker_disclosures)} BIST hissesinin bilançoları bulundu.")
     return ticker_disclosures
 
 
@@ -359,13 +382,17 @@ def main():
     if covered_map:
         log(f"📊 Supabase'de halihazırda {len(covered_map)} şirket kayıtlı.\n")
 
-    # 1. Adım: Tüm sezonları toplu tara ve hisselere göre grupla (~30 saniye)
-    ticker_map = scan_all_seasons_bulk(args.from_year, args.to_year, sleep_sec=1.0)
+    canonical_equities = load_canonical_bist_equities()
+    valid_set = set(canonical_equities)
+    log(f"📋 FRAUDE BIST Hisse Senedi Evreni: {len(canonical_equities)} şirket.\n")
 
-    target_tickers = [args.ticker.upper()] if args.ticker else sorted(ticker_map.keys())
+    # 1. Adım: Tüm sezonları toplu tara ve hisselere göre grupla (~30 saniye)
+    ticker_map = scan_all_seasons_bulk(args.from_year, args.to_year, valid_set, sleep_sec=1.0)
+
+    target_tickers = [args.ticker.upper()] if args.ticker else canonical_equities
 
     log(f"\n{'━' * 80}")
-    log(f"📦 {len(target_tickers)} Şirketin XBRL Raporları Ayrıştırılıyor ve Supabase'e Yazılıyor")
+    log(f"📦 {len(target_tickers)} BIST Şirketinin XBRL Raporları Ayrıştırılıyor ve Supabase'e Yazılıyor")
     log(f"{'━' * 80}")
 
     total_synced = 0
