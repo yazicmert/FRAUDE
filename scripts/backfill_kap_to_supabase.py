@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-KAP XBRL 10 Yıllık Finansal Rapor Çekici & Supabase Yükleyici v5 (Toplu Sezon Taraması)
-====================================================================================
-- 99.8% Daha Az İstek: 25.000 `byCriteria` isteği yerine sadece ~32 sezon sorgusu
-  ile TÜM 797 şirketin 8-10 yıllık bilanço bildirimlerini tek seferde haritalar.
-- 429 Hatası Sıfır: Sezon taraması 30 saniyede biter, ardından her hissenin
-  `/tr/Bildirim/{id}` XBRL sayfaları çekilip Supabase'e kaydedilir.
-- Anlık Supabase Senkronizasyonu & Resume (kaldığı yerden devam etme).
+KAP XBRL 10 Yıllık Finansal Rapor Çekici & Supabase Yükleyici v6
+===============================================================
+- 2016-2026 Arası Kesintisiz 10 Yıllık Takvim Taraması (365 gün kapsama).
+- Dönem Tarihi Tespiti: Bildirim yayın tarihine bağlı kalmaz, doğrudan
+  XBRL tablosunun içindeki resmi dönem tarihini (Örn: 2024-06-30) okur.
+- 614 BIST Hisse Senedi için Toplu Haritalama (30-45 saniyede tamamlanır).
+- Supabase 'bist_financial_periods' tablosuna anlık ve hatasız kayıt (Upsert).
 """
 
 import argparse
@@ -34,6 +34,8 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.kap.org.tr/tr/bist-sirketler",
 }
 
 
@@ -49,7 +51,7 @@ def http_get_with_retry(url, max_retries=3):
                 return resp.read().decode("utf-8", errors="replace")
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 60 * (attempt + 1)
+                wait_time = 45 * (attempt + 1)
                 log(f"\n     ⏳ KAP Hız sınırı sıfırlanması bekleniyor ({wait_time}s)...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
@@ -78,7 +80,7 @@ def http_post_json_with_retry(url, payload, extra_headers=None, max_retries=4):
                 return json.loads(raw) if raw.strip() else {}
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 60 * (attempt + 1)
+                wait_time = 45 * (attempt + 1)
                 log(f"\n     ⏳ KAP Hız sınırı sıfırlanması bekleniyor ({wait_time}s)...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
@@ -148,7 +150,22 @@ def xbrl_presentation_unit(html):
     return 1.0
 
 
-def derive_period_from_date(pub_date_str):
+def xbrl_period_string(html):
+    """HTML tablosunun içindeki resmi dönem tarihini doğrudan ayıklar (Örn: 2024-06-30)."""
+    date_re = re.compile(r"(\d{2})\.(\d{2})\.(20\d{2})")
+    for m in date_re.finditer(html):
+        day, month, year = m.group(1), m.group(2), m.group(3)
+        if (month == "03" and day in ("31", "30")) or \
+           (month == "06" and day == "30") or \
+           (month == "09" and day == "30") or \
+           (month == "12" and day == "31"):
+            y = int(year)
+            q = 1 if month == "03" else (2 if month == "06" else (3 if month == "09" else 4))
+            return f"{year}-{month}-{day}", y, q, (q == 4)
+    return None, None, None, None
+
+
+def derive_period_from_pub_date(pub_date_str):
     try:
         dt = datetime.strptime(pub_date_str[:10], "%d.%m.%Y")
         y = dt.year
@@ -176,17 +193,18 @@ def xbrl_find(items, labels):
     return None
 
 
-def get_earnings_season_windows(year):
+def get_year_calendar_windows(year):
+    """Her yılın 365 gününü 4 kesintisiz takvim çeyreğine böler (sıfır boşluk)."""
     return [
-        (f"{year}-04-20", f"{year}-06-12", f"{year}Q1"),
-        (f"{year}-07-20", f"{year}-09-12", f"{year}Q2"),
-        (f"{year}-10-20", f"{year}-12-12", f"{year}Q3"),
-        (f"{year+1}-01-25", f"{year+1}-05-12", f"{year}Q4"),
+        (f"{year}-01-01", f"{year}-03-31", f"{year} Ç1"),
+        (f"{year}-04-01", f"{year}-06-30", f"{year} Ç2"),
+        (f"{year}-07-01", f"{year}-09-30", f"{year} Ç3"),
+        (f"{year}-10-01", f"{year}-12-31", f"{year} Ç4"),
     ]
 
 
 def load_canonical_bist_equities():
-    """FRAUDE'un resmi 614 BIST hisse senedi evrenini yükler (borçlanma araçları ve varantlar hariç)."""
+    """FRAUDE'un resmi 614 BIST hisse senedi evrenini yükler."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
     yahoo_path = os.path.join(repo_root, "core", "src", "yahoo.rs")
@@ -203,7 +221,6 @@ def load_canonical_bist_equities():
         except Exception as e:
             log(f"  ⚠️ yahoo.rs okuma hatası: {e}")
 
-    # Fallback
     return ["THYAO", "ASELS", "EREGL", "FROTO", "BIMAS", "KCHOL", "TUPRS", "SISE", "SAHOL", "AKBNK", "MPARK"]
 
 
@@ -226,20 +243,19 @@ def get_supabase_covered_tickers():
         return {}
 
 
-def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=1.0):
+def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=0.8):
     """
-    Tüm BIST şirketlerinin bilanço bildirimlerini sezon pencereleriyle
-    tek seferde haritalar. 25.000 istek yerine yalnız ~32 istek atar!
-    Yalnızca gerçek BIST hisse senetlerini (614 şirket) filtreler.
+    2016-2026 arası tüm 365 günlük takvim dönemlerini tarayarak
+    614 BIST hissesinin tüm Finansal Rapor (FR) bildirimlerini haritalar.
     """
     now = datetime.now()
     ticker_disclosures = defaultdict(list)
     seen_indices = set()
 
-    log(f"🚀 Bilanço Sezonları Toplu Taranıyor ({from_year} - {to_year}):")
+    log(f"🚀 BIST Finansal Rapor Bildirimleri Taranıyor ({from_year} - {to_year}):")
 
     for year in range(from_year, to_year + 1):
-        for start_str, end_str, label in get_earnings_season_windows(year):
+        for start_str, end_str, label in get_year_calendar_windows(year):
             start_dt = datetime.strptime(start_str, "%Y-%m-%d")
             if start_dt > now:
                 continue
@@ -264,10 +280,9 @@ def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=1.0)
                         subj_lower = subject.lower()
                         idx = row.get("disclosureIndex")
 
-                        if idx in seen_indices:
+                        if not idx or idx in seen_indices:
                             continue
 
-                        # Asıl Finansal Rapor'u filtrele
                         if (disc_class == "FR" or "finansal rapor" in subj_lower) and \
                            "faaliyet" not in subj_lower and "sorumluluk" not in subj_lower:
                             seen_indices.add(idx)
@@ -291,7 +306,7 @@ def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=1.0)
 
             log(f"  📅 {label}: {season_found} bildirim yakalandı.")
 
-    log(f"\n✅ Haritalama tamamlandı! Toplam {len(ticker_disclosures)} BIST hissesinin bilançoları bulundu.")
+    log(f"\n✅ Haritalama tamamlandı! Toplam {len(ticker_disclosures)} BIST hissesinin bilanço bildirimleri bulundu.")
     return ticker_disclosures
 
 
@@ -306,7 +321,10 @@ def parse_disclosure_financials(ticker, disc_index, pub_date, sleep_sec=0.2):
     if not items:
         return None
 
-    period, year, quarter, is_annual = derive_period_from_date(pub_date)
+    # Önce XBRL tablosundan resmi dönem tarihini al, yoksa yayın tarihinden türet
+    period, year, quarter, is_annual = xbrl_period_string(html)
+    if not period:
+        period, year, quarter, is_annual = derive_period_from_pub_date(pub_date)
     if not period:
         return None
 
@@ -370,9 +388,9 @@ def upsert_to_supabase(rows):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KAP 10 Yıllık XBRL Toplu Backfill v5")
+    parser = argparse.ArgumentParser(description="KAP 10 Yıllık XBRL Toplu Backfill v6 (2016-2026)")
     parser.add_argument("--ticker", type=str, help="Tek hisse kodu (örn. THYAO)")
-    parser.add_argument("--from-year", type=int, default=2018, help="Başlangıç yılı (varsayılan: 2018)")
+    parser.add_argument("--from-year", type=int, default=2016, help="Başlangıç yılı (varsayılan: 2016)")
     parser.add_argument("--to-year", type=int, default=datetime.now().year, help="Bitiş yılı")
     parser.add_argument("--sleep", type=float, default=0.2, help="İstekler arası bekleme süresi (sn)")
     parser.add_argument("--force", action="store_true", help="Kayıtlı hisseleri atlamadan tekrar çek")
@@ -386,8 +404,8 @@ def main():
     valid_set = set(canonical_equities)
     log(f"📋 FRAUDE BIST Hisse Senedi Evreni: {len(canonical_equities)} şirket.\n")
 
-    # 1. Adım: Tüm sezonları toplu tara ve hisselere göre grupla (~30 saniye)
-    ticker_map = scan_all_seasons_bulk(args.from_year, args.to_year, valid_set, sleep_sec=1.0)
+    # 1. Adım: Tüm takvim dönemlerini toplu tara (~45 saniye)
+    ticker_map = scan_all_seasons_bulk(args.from_year, args.to_year, valid_set, sleep_sec=0.8)
 
     target_tickers = [args.ticker.upper()] if args.ticker else canonical_equities
 
@@ -397,7 +415,7 @@ def main():
 
     total_synced = 0
     for idx, ticker in enumerate(target_tickers, start=1):
-        if not args.force and covered_map.get(ticker, 0) >= 10:
+        if not args.force and covered_map.get(ticker, 0) >= 25:
             log(f"⏩ [{idx}/{len(target_tickers)}] {ticker}: Zaten {covered_map[ticker]} çeyrek mevcut, atlanıyor.")
             continue
 
@@ -428,7 +446,7 @@ def main():
         else:
             log(f"⚠️ [{idx}/{len(target_tickers)}] {ticker}: Ayrıştırılamadı.")
 
-    log(f"\n🎉 Tüm BIST yüklemesi tamamlandı! Toplam {total_synced} finansal çeyrek Supabase'e kaydedildi.")
+    log(f"\n🎉 Tüm 10 yıllık BIST yüklemesi tamamlandı! Toplam {total_synced} finansal çeyrek Supabase'e kaydedildi.")
 
 
 if __name__ == "__main__":
