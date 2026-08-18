@@ -47,7 +47,7 @@ def http_get_with_retry(url, max_retries=3):
     for attempt in range(max_retries):
         try:
             req = Request(url, headers=HEADERS)
-            with urlopen(req, timeout=20) as resp:
+            with urlopen(req, timeout=30) as resp:
                 return resp.read().decode("utf-8", errors="replace")
         except HTTPError as e:
             if e.code == 429:
@@ -57,10 +57,12 @@ def http_get_with_retry(url, max_retries=3):
             elif e.code in (500, 502, 503, 504):
                 time.sleep(2)
             else:
-                raise
-        except Exception:
+                log(f"\n     ⚠️ HTTP {e.code} ({url}): {e.reason}")
+                return ""
+        except Exception as e:
             if attempt == max_retries - 1:
-                raise
+                log(f"\n     ⚠️ İstek zaman aşımı ({url})")
+                return ""
             time.sleep(2.0)
     return ""
 
@@ -372,11 +374,30 @@ def upsert_to_supabase(rows):
     if not rows:
         return 0
 
+    # 1. Öncelik: Güvenli Security-Definer RPC Fonksiyonu
+    rpc_url = f"{SUPABASE_URL}/rest/v1/rpc/upsert_financial_periods_batch"
+    rpc_headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        data = json.dumps({"p_rows": rows}).encode("utf-8")
+        req = Request(rpc_url, data=data, headers=rpc_headers, method="POST")
+        with urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8").strip()
+            count = int(raw) if raw.isdigit() else len(rows)
+            return count
+    except Exception:
+        pass
+
+    # 2. Fallback: Standart PostgREST REST Tablosuna Upsert
     url = f"{SUPABASE_URL}/rest/v1/bist_financial_periods?on_conflict=ticker,period,currency"
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Prefer": "resolution=merge-duplicates,return=minimal",
+        "Content-Type": "application/json",
     }
 
     try:
@@ -441,8 +462,11 @@ def main():
 
         if parsed_periods:
             saved = upsert_to_supabase(parsed_periods)
-            total_synced += saved
-            log(f"✅ [{idx}/{len(target_tickers)}] {ticker}: {len(parsed_periods)} çeyrek Supabase'e yazıldı.")
+            if saved > 0:
+                total_synced += saved
+                log(f"✅ [{idx}/{len(target_tickers)}] {ticker}: {saved} çeyrek Supabase'e yazıldı.")
+            else:
+                log(f"❌ [{idx}/{len(target_tickers)}] {ticker}: Supabase'e kaydedilemedi.")
         else:
             log(f"⚠️ [{idx}/{len(target_tickers)}] {ticker}: Ayrıştırılamadı.")
 
