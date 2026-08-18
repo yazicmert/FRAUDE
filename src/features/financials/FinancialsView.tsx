@@ -164,41 +164,67 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
   const parsePeriodFromDisclosure = (title: string, summary: string, date: string, eq?: EquityRow): string => {
     const text = `${title} ${summary}`.toUpperCase();
 
-    // Look for explicit 202X / XX patterns
-    const matchSlash = text.match(/202[3-9]\s*[\/\-]\s*(12|09|06|03|[1-4])/);
+    // 1. Check for explicit date endings like "30.06.2024", "30/06/2024", "31.12.2024"
+    const dMatch06 = text.match(/30[\.\/]06[\.\/](202[0-9])/);
+    if (dMatch06) return `${dMatch06[1]}/06`;
+
+    const dMatch09 = text.match(/30[\.\/]09[\.\/](202[0-9])/);
+    if (dMatch09) return `${dMatch09[1]}/09`;
+
+    const dMatch12 = text.match(/31[\.\/]12[\.\/](202[0-9])/);
+    if (dMatch12) return `${dMatch12[1]}/12`;
+
+    const dMatch03 = text.match(/31[\.\/]03[\.\/](202[0-9])/);
+    if (dMatch03) return `${dMatch03[1]}/03`;
+
+    // 2. Check for explicit Year + Month or Quarter combinations
+    const yearMatch = text.match(/(202[0-9])/);
+    const year = yearMatch ? yearMatch[1] : (eq?.fundamentals_as_of ? eq.fundamentals_as_of.split('/')[0] : '2024');
+
+    if (text.includes('12 AYLIK') || text.includes('4. ÇEYREK') || text.includes('4.ÇEYREK') || text.includes('4 ÇEYREK') || text.includes('YILLIK')) {
+      return `${year}/12`;
+    }
+    if (text.includes('9 AYLIK') || text.includes('3. ÇEYREK') || text.includes('3.ÇEYREK') || text.includes('3 ÇEYREK')) {
+      return `${year}/09`;
+    }
+    if (text.includes('6 AYLIK') || text.includes('2. ÇEYREK') || text.includes('2.ÇEYREK') || text.includes('2 ÇEYREK')) {
+      return `${year}/06`;
+    }
+    if (text.includes('3 AYLIK') || text.includes('1. ÇEYREK') || text.includes('1.ÇEYREK') || text.includes('1 ÇEYREK')) {
+      return `${year}/03`;
+    }
+
+    // 3. Explicit 202X/XX pattern in text
+    const matchSlash = text.match(/(202[0-9])\s*[\/\-]\s*(12|09|06|03|[1-4])/);
     if (matchSlash) {
-      let q = matchSlash[1];
+      let q = matchSlash[2];
       if (q === '4') q = '12';
       else if (q === '3') q = '09';
       else if (q === '2') q = '06';
       else if (q === '1') q = '03';
-      return `${matchSlash[0].slice(0, 4)}/${q}`;
+      return `${matchSlash[1]}/${q}`;
     }
 
-    if (text.includes('12 AYLIK') || text.includes('4. ÇEYREK') || text.includes('4.ÇEYREK') || text.includes('YILLIK')) {
-      const yearMatch = text.match(/202[3-9]/);
-      return yearMatch ? `${yearMatch[0]}/12` : '2024/12';
-    }
-    if (text.includes('9 AYLIK') || text.includes('3. ÇEYREK') || text.includes('3.ÇEYREK')) {
-      const yearMatch = text.match(/202[3-9]/);
-      return yearMatch ? `${yearMatch[0]}/09` : '2024/09';
-    }
-    if (text.includes('6 AYLIK') || text.includes('2. ÇEYREK') || text.includes('2.ÇEYREK')) {
-      const yearMatch = text.match(/202[3-9]/);
-      return yearMatch ? `${yearMatch[0]}/06` : '2024/06';
-    }
-    if (text.includes('3 AYLIK') || text.includes('1. ÇEYREK') || text.includes('1.ÇEYREK')) {
-      const yearMatch = text.match(/202[3-9]/);
-      return yearMatch ? `${yearMatch[0]}/03` : '2024/03';
-    }
-
+    // 4. Authoritative fundamentals_as_of from İş Yatırım
     if (eq?.fundamentals_as_of) {
       return eq.fundamentals_as_of;
     }
 
-    // Fallback based on publish date
-    const dMatch = date.match(/202[3-9]/);
-    return dMatch ? `${dMatch[0]}/12` : '2024/12';
+    // 5. Fallback based on disclosure calendar publish month
+    const pubMonthMatch = date.match(/(\d{2})\.(\d{2})\.(202[0-9])/);
+    if (pubMonthMatch) {
+      const month = parseInt(pubMonthMatch[2], 10);
+      const pubYear = pubMonthMatch[3];
+      if (month >= 7 && month <= 9) return `${pubYear}/06`;
+      if (month >= 10 && month <= 11) return `${pubYear}/09`;
+      if (month >= 12 || month <= 4) {
+        const targetYear = month <= 4 ? String(parseInt(pubYear, 10) - 1) : pubYear;
+        return `${targetYear}/12`;
+      }
+      if (month >= 5 && month <= 6) return `${pubYear}/03`;
+    }
+
+    return '2024/12';
   };
 
   // Build the list of earnings disclosures from KAP
@@ -219,7 +245,7 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
       }
     }
 
-    // Process & deduplicate by ticker (keeping the newest disclosure for each ticker)
+    // Process & deduplicate strictly by ticker (keeping the newest disclosure for each ticker)
     const items: EarningsItem[] = [];
     const seenTickers = new Set<string>();
 
@@ -227,12 +253,17 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
       const ticker = ann.ticker.toUpperCase();
       if (!ticker || ticker === 'KAP' || ticker === '-') continue;
 
+      // Only include valid Borsa Istanbul equities from bistEquitiesMap
       const eq = bistEquitiesMap.get(ticker);
-      // Ensure it's a BIST stock if equity row exists
-      if (eq && !isBistEquity(eq)) continue;
+      if (!eq) continue;
+
+      // STRICT DEDUPLICATION: 1 row per company (newest disclosure takes precedence)
+      if (seenTickers.has(ticker)) {
+        continue;
+      }
 
       const period = parsePeriodFromDisclosure(ann.title, ann.summary, ann.date, eq);
-      const name = eq?.name || ticker;
+      const name = eq.name || ticker;
 
       // Add item
       items.push({
@@ -277,6 +308,7 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
             announcement: fakeAnn,
             equity: eq,
           });
+          seenTickers.add(eq.ticker.toUpperCase());
         }
       }
     }
