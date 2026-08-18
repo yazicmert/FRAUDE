@@ -226,23 +226,26 @@ def load_canonical_bist_equities():
     return ["THYAO", "ASELS", "EREGL", "FROTO", "BIMAS", "KCHOL", "TUPRS", "SISE", "SAHOL", "AKBNK", "MPARK"]
 
 
-def get_supabase_covered_tickers():
-    url = f"{SUPABASE_URL}/rest/v1/bist_financial_periods?select=ticker"
+def get_supabase_existing_periods():
+    """Supabase'de kayıtlı olan tüm hisse ve dönemleri çeker: { 'THYAO': {'2024-06-30', '2024-03-31', ...} }"""
+    url = f"{SUPABASE_URL}/rest/v1/bist_financial_periods?select=ticker,period"
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
     }
     try:
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=10) as resp:
+        with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            counts = {}
+            periods_by_ticker = defaultdict(set)
             for row in data:
                 t = row.get("ticker")
-                counts[t] = counts.get(t, 0) + 1
-            return counts
+                p = row.get("period")
+                if t and p:
+                    periods_by_ticker[t].add(p)
+            return periods_by_ticker
     except Exception:
-        return {}
+        return defaultdict(set)
 
 
 def scan_all_seasons_bulk(from_year, to_year, valid_equities_set, sleep_sec=0.8):
