@@ -13,18 +13,9 @@ create table if not exists public.bist_tickers (
 );
 
 -- Kolonların mevcut olduğundan emin ol (varsa alter et)
-do $$
-begin
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bist_tickers' and column_name = 'first_seen_at') then
-    alter table public.bist_tickers add column first_seen_at timestamptz not null default now();
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bist_tickers' and column_name = 'status') then
-    alter table public.bist_tickers add column status text not null default 'active';
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bist_tickers' and column_name = 'last_reconciled_at') then
-    alter table public.bist_tickers add column last_reconciled_at timestamptz;
-  end if;
-end $$;
+alter table public.bist_tickers add column if not exists first_seen_at timestamptz not null default now();
+alter table public.bist_tickers add column if not exists status text not null default 'active';
+alter table public.bist_tickers add column if not exists last_reconciled_at timestamptz;
 
 -- İndeksler
 create index if not exists idx_bist_tickers_status on public.bist_tickers(status);
