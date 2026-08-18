@@ -43,6 +43,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_ticker_snapshot",
     "run_screener",
     "list_kap_announcements",
+    "list_financial_disclosures",
     "get_price_history",
     "get_news_feed",
     "get_news_preview",
@@ -297,6 +298,10 @@ pub async fn dispatch(
         "list_kap_announcements" => {
             run!(args, KapFilterArgs, |p| api::list_kap_announcements(s, p.filter))
         }
+        "list_financial_disclosures" => match api::list_financial_disclosures(s).await {
+            Ok(data) => ok_response(data),
+            Err(error) => err_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+        },
         "get_price_history" => run!(args, PriceHistoryArgs, |p| api::get_price_history(
             s, p.ticker, p.range, p.source
         )),

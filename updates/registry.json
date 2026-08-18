@@ -2,6 +2,40 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-kap-canli-bilanco-radari-akisi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "app",
+      "title": {
+        "tr": "KAP Canlı Bilanço Radarı ve Bildirim Sıralaması",
+        "en": "Live KAP Financial Disclosures Radar and Chronological Stream"
+      },
+      "summary": {
+        "tr": "Bilanço modülü Borsa İstanbul'un tüm hisselerini alfabetik basmak yerine doğrudan KAP'a düşen Finansal Rapor (FR) bildirimlerinden canlı olarak beslendi. Liste en son/en geç açıklayan şirketten en erken açıklayana doğru çeyreklik bazda kronolojik sıralandı. KAP bildirimini doğrudan görüntüleme ve tek tıkla UFRS detay analizine geçme eklendi.",
+        "en": "Shifted Financials module to dynamically stream live Financial Report (FR) disclosures from KAP, ordered from latest to oldest disclosed per earnings season, with direct KAP modal viewer and one-click IFRS detail access."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/api.rs",
+        "core/src/kap.rs",
+        "server/src/rpc.rs",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs",
+        "src/api/tauriClient.ts",
+        "src/features/financials/FinancialsView.tsx",
+        "src/features/financials/FinancialsView.css",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "kaptan en son bilançosu açıklananlar çekilmeli öyle bistteki tüm hisseler bu listede olmayacak her bir çeyrekte bu liste yenilenecek en geç açıklayandan en erken açuklayan listelenmeli",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-bilanco-bist-filtreleme-duzeltmesi",
       "date": "2026-08-18",
       "author": "yazicmert",

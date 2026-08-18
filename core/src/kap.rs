@@ -400,6 +400,31 @@ pub async fn fetch_kap_announcements(
     Ok(items)
 }
 
+/// Son KAP akışından yalnızca finansal rapor bildirimlerini (FR, Bilanço, Sorumluluk Beyanı vb.)
+/// en güncel açıklanandan en eskiye doğru sıralı olarak döndürür.
+pub async fn fetch_financial_disclosures(
+    client: &Client,
+) -> Result<Vec<KapAnnouncement>, Box<dyn Error + Send + Sync>> {
+    let rows = member_rows(client).await?;
+    let items: Vec<KapAnnouncement> = rows
+        .iter()
+        .filter(|row| {
+            let is_fr_class = row.disclosure_class.as_deref() == Some("FR");
+            let is_fr_text = row.subject.as_deref().map(|s| {
+                let s_lower = s.to_lowercase();
+                s_lower.contains("finansal rapor")
+                    || s_lower.contains("bilanço")
+                    || s_lower.contains("sorumluluk beyanı")
+                    || s_lower.contains("faaliyet raporu")
+            }).unwrap_or(false);
+            is_fr_class || is_fr_text
+        })
+        .filter_map(to_announcement)
+        .filter(|a| a.ticker != "KAP" && !a.ticker.is_empty())
+        .collect();
+    Ok(items)
+}
+
 /// Havuzdan tek hissenin bildirimlerini süzer. Kod eşleşmesi parça bazlıdır:
 /// "AKBNK, GARAN" satırı GARAN sorgusuna da çıkar, "AGARAN" çıkmaz.
 fn rows_for_ticker(rows: &[DisclosureRow], code: &str) -> Vec<KapAnnouncement> {
