@@ -71,18 +71,44 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const now = new Date().toISOString();
-  const rows = symbols.map(([code, name]) => ({ code, name, updated_at: now }));
 
-  // Toplu upsert (parça parça, 500'lük)
+  // Mevcut aktif kodları çekerek yeni halka arzları (diff) tespit et
+  const { data: existingTickers } = await supabase
+    .from('bist_tickers')
+    .select('code');
+  const existingSet = new Set((existingTickers || []).map((t: { code: string }) => t.code));
+
+  const newIpos: string[] = [];
+  const rows = symbols.map(([code, name]) => {
+    if (!existingSet.has(code)) {
+      newIpos.push(code);
+    }
+    return {
+      code,
+      name,
+      status: 'active',
+      updated_at: now,
+    };
+  });
+
+  // Toplu upsert (500'lük parçalar halinde)
   for (let i = 0; i < rows.length; i += 500) {
     const { error } = await supabase.from('bist_tickers').upsert(rows.slice(i, i + 500), { onConflict: 'code' });
     if (error) return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500 });
   }
-  // Kotasyondan çıkanları temizle (bu turda görülmeyen kodlar)
-  const codes = symbols.map(([c]) => c);
-  await supabase.from('bist_tickers').delete().not('code', 'in', `(${codes.map((c) => `"${c}"`).join(',')})`);
 
-  return new Response(JSON.stringify({ ok: true, count: symbols.length }), {
+  // Kotasyondan çıkanları 'delisted' yap (tarihsel bilançolar silinmez, korunur)
+  const activeCodes = symbols.map(([c]) => c);
+  await supabase
+    .from('bist_tickers')
+    .update({ status: 'delisted', updated_at: now })
+    .not('code', 'in', `(${activeCodes.map((c) => `"${c}"`).join(',')})`);
+
+  return new Response(JSON.stringify({
+    ok: true,
+    total_active: symbols.length,
+    new_ipos_detected: newIpos,
+  }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

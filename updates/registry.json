@@ -2,6 +2,36 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-kap-otomatik-bilanco-senkronizasyon-ve-reconciler",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "BIST Şirket Evreni & Otomatik Bilanço Senkronizasyon Mimarisi",
+        "en": "BIST Universe Tracking & Automated Financial Statement Reconciler"
+      },
+      "summary": {
+        "tr": "BIST şirketlerinin (yeni halka arzlar dahil) günlük otomatik takibi, 10 yıllık XBRL arşivinin eksiksiz tutulması ve FRAUDE uygulamasının bulutla çift yönlü senkronizasyonu sağlandı. Canlı bildirim akışından yakalanan yeni bilançolar anında merkezi Supabase veritabanına aktarılır.",
+        "en": "Introduced automated daily BIST company tracking (including new IPOs), self-healing 10-year XBRL balance sheet reconciliation, and two-way cloud synchronization. Live disclosures on KAP are immediately parsed and pushed to Supabase."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/kap.rs",
+        "core/src/supabase_financials.rs",
+        "supabase/functions/refresh-bist-universe/index.ts",
+        "supabase/migrations/20260818000003_bist_universe_and_reconcile.sql",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "tüm bist şirketlerinin kodlarını bu siteden çekebiliriz sağda excelle indirme var ya yani tüm bist hisseleri otomatikman buradna çekilip sonra eksik bilançolar otomatikman tamamnalanabilir",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-kap-xbrl-bilanco-ayristirici-ve-senkronizasyon",
       "date": "2026-08-18",
       "author": "yazicmert",

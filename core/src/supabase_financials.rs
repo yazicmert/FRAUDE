@@ -107,6 +107,30 @@ pub async fn fetch_ticker_statement(
     }))
 }
 
+/// Yeni bir finansal dönemi arka planda Supabase veritabanına kaydeder/günceller.
+pub async fn upsert_financial_period(
+    client: &Client,
+    row: &SupabaseFinancialRow,
+) -> Result<(), String> {
+    let url = format!("{SUPABASE_URL}/rest/v1/bist_financial_periods?on_conflict=ticker,period,currency");
+    let response = client
+        .post(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {SUPABASE_ANON_KEY}"))
+        .header("Prefer", "resolution=merge-duplicates,return=minimal")
+        .header("Content-Type", "application/json")
+        .timeout(REQUEST_TIMEOUT)
+        .json(&[row])
+        .send()
+        .await
+        .map_err(|e| format!("Supabase yazma hatası: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Supabase yanıt kodu: {}", response.status()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
