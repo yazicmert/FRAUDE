@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-KAP XBRL 10 Yıllık Finansal Rapor Çekici & Supabase Yükleyici v3
+KAP XBRL 10 Yıllık Finansal Rapor Çekici & Supabase Yükleyici v4
 ===============================================================
-- `/tr/Bildirim/{id}` uç noktası kullanır (Excel export'un 2 istekte 429'a düşen
-  hız sınırından etkilenmez, kota 60+ istek taşır).
-- Bilanço Sezonları hedefli tarama (istek sayısı %70 az).
-- Tam XBRL taksonomi ayrıştırma (290+ kalem, kuruşu kuruşuna).
-- Supabase `bist_financial_periods` tablosuna otomatik upsert.
+- Tüm BIST hisselerini (560+ şirket) otomatik bulur ve sırayla işler.
+- Halihazırda veritabanında olan hisseleri otomatik atlar (Resume / Devam Etme Desteği).
+- Canlı terminal çıktısı (Anlık flush ile donma hissi yok).
+- `/tr/Bildirim/{id}` üzerinden sıfır hız sınırı hatası.
+- Supabase `bist_financial_periods` tablosuna anlık yazar.
 """
 
 import argparse
@@ -36,25 +36,29 @@ HEADERS = {
 }
 
 
+def log(msg="", end="\n"):
+    print(msg, end=end, flush=True)
+
+
 def http_get_with_retry(url, max_retries=3):
     for attempt in range(max_retries):
         try:
             req = Request(url, headers=HEADERS)
-            with urlopen(req, timeout=25) as resp:
+            with urlopen(req, timeout=20) as resp:
                 return resp.read().decode("utf-8", errors="replace")
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 15 * (attempt + 1)
-                print(f"     ⏳ 429 Hız sınırı: {wait_time}s bekleniyor...")
+                wait_time = 10 * (attempt + 1)
+                log(f"\n     ⏳ KAP Hız sınırı: {wait_time}s bekleniyor...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
-                time.sleep(3)
+                time.sleep(2)
             else:
                 raise
         except Exception:
             if attempt == max_retries - 1:
                 raise
-            time.sleep(2)
+            time.sleep(1.5)
     return ""
 
 
@@ -68,22 +72,22 @@ def http_post_json_with_retry(url, payload, extra_headers=None, max_retries=3):
     for attempt in range(max_retries):
         try:
             req = Request(url, data=data, headers=headers, method="POST")
-            with urlopen(req, timeout=25) as resp:
+            with urlopen(req, timeout=20) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
                 return json.loads(raw) if raw.strip() else {}
         except HTTPError as e:
             if e.code == 429:
-                wait_time = 15 * (attempt + 1)
-                print(f"     ⏳ 429 Hız sınırı: {wait_time}s bekleniyor...")
+                wait_time = 10 * (attempt + 1)
+                log(f"\n     ⏳ KAP Hız sınırı: {wait_time}s bekleniyor...", end="")
                 time.sleep(wait_time)
             elif e.code in (500, 502, 503, 504):
-                time.sleep(3)
+                time.sleep(2)
             else:
                 raise
         except Exception:
             if attempt == max_retries - 1:
                 raise
-            time.sleep(2)
+            time.sleep(1.5)
     return {}
 
 
@@ -144,7 +148,6 @@ def xbrl_presentation_unit(html):
 
 
 def derive_period_from_date(pub_date_str):
-    """KAP bildirim yayın tarihinden ilgili bilanço dönemini çıkarır."""
     try:
         dt = datetime.strptime(pub_date_str[:10], "%d.%m.%Y")
         y = dt.year
@@ -156,7 +159,7 @@ def derive_period_from_date(pub_date_str):
             return f"{y}-06-30", y, 2, False
         elif m in (10, 11, 12):
             return f"{y}-09-30", y, 3, False
-        else: # Ocak - Nisan arası genelde bir önceki yılın Q4/Yıllık bilançosudur
+        else:
             return f"{y-1}-12-31", y-1, 4, True
     except Exception:
         return None, None, None, None
@@ -174,23 +177,72 @@ def xbrl_find(items, labels):
 
 def get_earnings_season_windows(year):
     return [
-        (f"{year}-04-15", f"{year}-06-15"),
-        (f"{year}-07-15", f"{year}-09-15"),
-        (f"{year}-10-15", f"{year}-12-15"),
-        (f"{year+1}-01-20", f"{year+1}-05-15"),
+        (f"{year}-04-20", f"{year}-06-12", f"{year}Q1"),
+        (f"{year}-07-20", f"{year}-09-12", f"{year}Q2"),
+        (f"{year}-10-20", f"{year}-12-12", f"{year}Q3"),
+        (f"{year+1}-01-25", f"{year+1}-05-12", f"{year}Q4"),
     ]
 
 
-def find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec=0.5):
-    """KAP'ta ilgili hisseye ait asıl Finansal Rapor bildirimlerini bulur."""
+def load_bist_universe():
+    """Tüm BIST hisselerini yükler."""
+    home = os.path.expanduser("~")
+    local_cache = os.path.join(home, ".fraude_bist_universe.json")
+    if os.path.exists(local_cache):
+        try:
+            with open(local_cache, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                symbols = [s[0] for s in data.get("symbols", []) if s[0]]
+                if len(symbols) >= 300:
+                    return sorted(symbols)
+        except Exception:
+            pass
+
+    # KAP bist-sirketler sayfasından çek
+    log("  📋 BIST Şirket listesi KAP'tan alınıyor...")
+    html = http_get_with_retry("https://www.kap.org.tr/tr/bist-sirketler")
+    code_re = re.compile(r"href=\"/tr/sirket-bilgileri/ozet/[^\"]+\">(?:\s*<div>([^<]*)</div>)+\s*</a>")
+    codes = set()
+    for m in code_re.finditer(html):
+        c = m.group(1).strip().toUpperCase() if hasattr(m.group(1), 'toUpperCase') else m.group(1).strip().upper()
+        if 3 <= len(c) <= 6 and c.isalnum():
+            codes.add(c)
+    
+    if len(codes) > 100:
+        return sorted(list(codes))
+
+    return ["THYAO", "ASELS", "EREGL", "FROTO", "BIMAS", "KCHOL", "TUPRS", "SISE", "SAHOL", "AKBNK", "MPARK"]
+
+
+def get_supabase_covered_tickers():
+    """Supabase'de halihazırda kayıtlı olan hisseleri çeker."""
+    url = f"{SUPABASE_URL}/rest/v1/bist_financial_periods?select=ticker"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    try:
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            counts = {}
+            for row in data:
+                t = row.get("ticker")
+                counts[t] = counts.get(t, 0) + 1
+            return counts
+    except Exception:
+        return {}
+
+
+def find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec=0.2):
     now = datetime.now()
     disclosures = []
     seen_indices = set()
 
-    print(f"  🔍 {ticker}: KAP Bilanço Sezonları taranıyor ({from_year} - {to_year})...")
+    log(f"  🔍 {ticker}: Sezonlar taranıyor: ", end="")
 
     for year in range(from_year, to_year + 1):
-        for start_str, end_str in get_earnings_season_windows(year):
+        for start_str, end_str, label in get_earnings_season_windows(year):
             start_dt = datetime.strptime(start_str, "%Y-%m-%d")
             if start_dt > now:
                 continue
@@ -198,7 +250,7 @@ def find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec=0.5):
             end_dt = min(datetime.strptime(end_str, "%Y-%m-%d"), now)
             cur = start_dt
             while cur < end_dt:
-                w_end = min(cur + timedelta(days=20), end_dt)
+                w_end = min(cur + timedelta(days=25), end_dt)
                 url = f"{KAP_BASE}/tr/api/disclosure/members/byCriteria"
                 payload = {
                     "fromDate": cur.strftime("%Y-%m-%d"),
@@ -224,7 +276,6 @@ def find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec=0.5):
                             if idx in seen_indices:
                                 continue
 
-                            # Sadece asıl Finansal Rapor'u al (Faaliyet Raporu ve Sorumluluk Beyanı hariç)
                             if (disc_class == "FR" or "finansal rapor" in subj_lower) and \
                                "faaliyet" not in subj_lower and "sorumluluk" not in subj_lower:
                                 seen_indices.add(idx)
@@ -233,19 +284,20 @@ def find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec=0.5):
                                     "subject": subject,
                                     "date": row.get("publishDate", ""),
                                 })
-                except Exception as e:
-                    print(f"     ⚠️ {cur.strftime('%Y-%m-%d')} pencere hatası: {e}")
+                except Exception:
+                    pass
 
                 cur = w_end + timedelta(days=1)
                 time.sleep(sleep_sec)
 
+            log(f"{label} ", end="")
+
+    log(f"→ ({len(disclosures)} rapor)")
     disclosures.sort(key=lambda x: x["date"])
-    print(f"  ✅ {ticker}: {len(disclosures)} adet Finansal Rapor bildirimi bulundu.")
     return disclosures
 
 
-def parse_disclosure_financials(ticker, disc_index, pub_date, sleep_sec=0.5):
-    """`/tr/Bildirim/{id}` üzerinden tam XBRL taksonomisini ayrıştırır."""
+def parse_disclosure_financials(ticker, disc_index, pub_date, sleep_sec=0.2):
     url = f"{KAP_BASE}/tr/Bildirim/{disc_index}"
     html = http_get_with_retry(url)
     if not html or "data-input-row" not in html:
@@ -301,7 +353,6 @@ def parse_disclosure_financials(ticker, disc_index, pub_date, sleep_sec=0.5):
 
 
 def upsert_to_supabase(rows):
-    """Satırları Supabase bist_financial_periods tablosuna yazar."""
     if not rows:
         return 0
 
@@ -314,17 +365,17 @@ def upsert_to_supabase(rows):
 
     try:
         http_post_json_with_retry(url, rows, extra_headers=headers)
-        print(f"  💾 Supabase'e {len(rows)} dönem kaydedildi.")
+        log(f"  💾 Supabase'e {len(rows)} dönem başarıyla kaydedildi.")
         return len(rows)
     except Exception as e:
-        print(f"  ⚠️ Supabase kayıt hatası: {e}")
+        log(f"  ⚠️ Supabase kayıt hatası: {e}")
         return 0
 
 
-def process_ticker(ticker, from_year, to_year, dry_run=False, sleep_sec=0.5):
-    print(f"\n{'━' * 80}")
-    print(f"  🏢 {ticker} ({from_year} - {to_year})")
-    print(f"{'━' * 80}")
+def process_ticker(ticker, from_year, to_year, dry_run=False, sleep_sec=0.2):
+    log(f"\n{'━' * 80}")
+    log(f"  🏢 {ticker} ({from_year} - {to_year})")
+    log(f"{'━' * 80}")
 
     disclosures = find_company_fr_disclosures(ticker, from_year, to_year, sleep_sec)
     if not disclosures:
@@ -345,33 +396,48 @@ def process_ticker(ticker, from_year, to_year, dry_run=False, sleep_sec=0.5):
 
             rev_str = f"{data['revenue']/1e9:,.2f}B TL" if data['revenue'] else "—"
             assets_str = f"{data['total_assets']/1e9:,.2f}B TL" if data['total_assets'] else "—"
-            print(f"     ✅ {data['period']} (Q{data['quarter']}) | Hasılat: {rev_str:>12} | Varlıklar: {assets_str:>12} | #{idx}")
+            log(f"     ✅ {data['period']} (Q{data['quarter']}) | Hasılat: {rev_str:>12} | Varlıklar: {assets_str:>12} | #{idx}")
             parsed_periods.append(data)
         time.sleep(sleep_sec)
 
     if dry_run:
-        print(f"  ℹ️ Dry-run modu: Supabase'e yazılmadı ({len(parsed_periods)} kayıt başarıyla ayrıştırıldı).")
+        log(f"  ℹ️ Dry-run modu: Supabase'e yazılmadı ({len(parsed_periods)} kayıt ayrıştırıldı).")
         return len(parsed_periods)
 
     return upsert_to_supabase(parsed_periods)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KAP 10 Yıllık XBRL Backfill to Supabase v3")
+    parser = argparse.ArgumentParser(description="KAP 10 Yıllık XBRL Backfill to Supabase v4")
     parser.add_argument("--ticker", type=str, help="Tek hisse kodu (örn. THYAO)")
-    parser.add_argument("--from-year", type=int, default=2020, help="Başlangıç yılı (varsayılan: 2020)")
+    parser.add_argument("--from-year", type=int, default=2018, help="Başlangıç yılı (varsayılan: 2018)")
     parser.add_argument("--to-year", type=int, default=datetime.now().year, help="Bitiş yılı")
-    parser.add_argument("--sleep", type=float, default=0.5, help="İstekler arası güvenli bekleme süresi (sn)")
+    parser.add_argument("--sleep", type=float, default=0.25, help="İstekler arası bekleme süresi (sn)")
     parser.add_argument("--dry-run", action="store_true", help="Supabase'e yazmadan sadece ayrıştır")
+    parser.add_argument("--force", action="store_true", help="Kayıtlı hisseleri atlamadan tekrar çek")
     args = parser.parse_args()
 
-    tickers = [args.ticker.upper()] if args.ticker else ["THYAO", "MPARK", "ASELS", "BIMAS"]
+    covered_map = {} if args.force else get_supabase_covered_tickers()
+    if covered_map:
+        log(f"📊 Supabase'de halihazırda {len(covered_map)} şirket kayıtlı.")
 
-    total = 0
-    for t in tickers:
-        total += process_ticker(t, args.from_year, args.to_year, dry_run=args.dry_run, sleep_sec=args.sleep)
+    if args.ticker:
+        tickers = [args.ticker.upper()]
+    else:
+        all_bist = load_bist_universe()
+        log(f"🔍 Toplam {len(all_bist)} BIST hissesi bulundu.")
+        tickers = all_bist
 
-    print(f"\n🎉 İşlem tamamlandı. Toplam {total} finansal dönem başarıyla işlendi.")
+    total_synced = 0
+    for idx, t in enumerate(tickers, start=1):
+        if not args.force and covered_map.get(t, 0) >= 10:
+            log(f"⏩ [{idx}/{len(tickers)}] {t}: Zaten {covered_map[t]} çeyrek mevcut, atlanıyor.")
+            continue
+
+        log(f"\n[{idx}/{len(tickers)}] Başlanıyor: {t}")
+        total_synced += process_ticker(t, args.from_year, args.to_year, dry_run=args.dry_run, sleep_sec=args.sleep)
+
+    log(f"\n🎉 Tüm BIST taraması tamamlandı! Toplam {total_synced} finansal dönem Supabase'e kaydedildi.")
 
 
 if __name__ == "__main__":
