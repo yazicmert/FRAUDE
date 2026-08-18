@@ -50,20 +50,19 @@ create index if not exists bist_financial_periods_year_quarter_idx
 -- RLS (Row Level Security) Yapılandırması
 alter table public.bist_financial_periods enable row level security;
 
--- Herkes (anonim ve giriş yapmış kullanıcılar) finansal tabloları okuyabilir.
+-- Herkes (anonim ve giriş yapmış kullanıcılar) finansal tabloları okuyabilir ve ekleyebilir.
 drop policy if exists bist_financial_periods_public_select on public.bist_financial_periods;
 create policy bist_financial_periods_public_select on public.bist_financial_periods
   for select to anon, authenticated using (true);
 
--- Yalnızca service_role veya backend yazma/güncelleme yapabilir.
-drop policy if exists bist_financial_periods_service_insert on public.bist_financial_periods;
-create policy bist_financial_periods_service_insert on public.bist_financial_periods
-  for insert to service_role with check (true);
+drop policy if exists bist_financial_periods_public_insert on public.bist_financial_periods;
+create policy bist_financial_periods_public_insert on public.bist_financial_periods
+  for insert to anon, authenticated with check (true);
 
-drop policy if exists bist_financial_periods_service_update on public.bist_financial_periods;
-create policy bist_financial_periods_service_update on public.bist_financial_periods
-  for update to service_role using (true) with check (true);
+drop policy if exists bist_financial_periods_public_update on public.bist_financial_periods;
+create policy bist_financial_periods_public_update on public.bist_financial_periods
+  for update to anon, authenticated using (true) with check (true);
 
 grant usage on schema public to anon, authenticated, service_role;
-grant select on public.bist_financial_periods to anon, authenticated;
+grant select, insert, update on public.bist_financial_periods to anon, authenticated;
 grant all on public.bist_financial_periods to service_role;
