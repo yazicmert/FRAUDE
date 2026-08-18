@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-18-bilanco-bist-filtreleme-duzeltmesi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "app",
+      "title": {
+        "tr": "Bilanço Modülünde Yalnızca Borsa İstanbul (BIST) Şirketlerinin Listelenmesi",
+        "en": "Filter Financials Module Strictly for Borsa İstanbul (BIST) Equities"
+      },
+      "summary": {
+        "tr": "Bilanço modülünün evren filtrelemesi düzeltildi: Küresel ve yabancı hisseler (AAPL, MSFT, NVDA vb.) BIST Bilanço Radarı listesinden tamamen arındırıldı. Liste, endeks filtreleri (BIST 30, BIST 50, BIST 100, Sınai, Banka, Halka Arz, Temettü) ve arama motoru yalnızca Türkiye Borsa İstanbul şirketlerine odaklandı.",
+        "en": "Filtered Financials module strictly for Borsa İstanbul (BIST) equities, removing global equities from the earnings radar and aligning index filters to Turkish markets."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/features/financials/FinancialsView.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "türkiye hisselerini görelim karışık olmasın",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-bilanco-radari-ve-is-yatirim-dogrulamasi",
       "date": "2026-08-18",
       "author": "yazicmert",

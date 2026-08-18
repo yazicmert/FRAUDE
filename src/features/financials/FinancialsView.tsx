@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from '../../api/i18n';
 import { getFinancialStatements, getDashboardSnapshot, type StatementCurrency } from '../../api/tauriClient';
 import type { FinancialStatement, FinancialPeriod, DashboardSnapshot, EquityRow } from '../../types';
+import { isBistEquity } from '../../lib/equityGroups';
 import {
   ComposedChart,
   Bar,
@@ -96,36 +97,39 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
     };
   }, [selectedTicker, currency, viewMode]);
 
+  // All Turkish BIST Equities
+  const bistEquities = useMemo(() => {
+    return (snapshot?.equities || []).filter(isBistEquity);
+  }, [snapshot]);
+
   // Current equity info
   const currentEquity = useMemo(() => {
-    return snapshot?.equities?.find((e) => e.ticker.toUpperCase() === selectedTicker.toUpperCase());
-  }, [snapshot, selectedTicker]);
+    return bistEquities.find((e) => e.ticker.toUpperCase() === selectedTicker.toUpperCase());
+  }, [bistEquities, selectedTicker]);
 
-  // Autocomplete search suggestions
+  // Autocomplete search suggestions (BIST only)
   const searchSuggestions = useMemo(() => {
     if (!searchInput.trim()) return [];
     const q = searchInput.trim().toUpperCase();
-    return (snapshot?.equities || [])
+    return bistEquities
       .filter((e) => e.ticker.toUpperCase().includes(q) || (e.name && e.name.toUpperCase().includes(q)))
       .slice(0, 8);
-  }, [searchInput, snapshot]);
+  }, [searchInput, bistEquities]);
 
-  // Unique list of periods available in universe
+  // Unique list of periods available in BIST universe
   const availablePeriods = useMemo(() => {
-    if (!snapshot?.equities) return [];
     const set = new Set<string>();
-    for (const eq of snapshot.equities) {
+    for (const eq of bistEquities) {
       if (eq.fundamentals_as_of) {
         set.add(eq.fundamentals_as_of);
       }
     }
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [snapshot]);
+  }, [bistEquities]);
 
-  // Filtered and Sorted Equities List for Bilanço Listesi
+  // Filtered and Sorted Equities List for Bilanço Listesi (Strictly BIST)
   const filteredList = useMemo(() => {
-    if (!snapshot?.equities) return [];
-    let list = [...snapshot.equities];
+    let list = [...bistEquities];
 
     // Filter by search query
     if (listSearchInput.trim()) {
@@ -135,7 +139,10 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
 
     // Filter by index
     if (indexFilter !== 'all') {
-      list = list.filter((e) => e.index_memberships && e.index_memberships.includes(indexFilter));
+      const matchIndex = indexFilter.toUpperCase();
+      list = list.filter((e) =>
+        e.index_memberships && e.index_memberships.some((m) => m.toUpperCase().includes(matchIndex))
+      );
     }
 
     // Filter by period
@@ -148,11 +155,15 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
       let cmp = 0;
       switch (sortField) {
         case 'period':
-          // Sort newest period first
-          cmp = (b.fundamentals_as_of || '').localeCompare(a.fundamentals_as_of || '');
-          if (cmp === 0) {
-            // secondary sort by profit growth
-            cmp = (b.profit_growth ?? -9999) - (a.profit_growth ?? -9999);
+          const aHas = Boolean(a.fundamentals_as_of);
+          const bHas = Boolean(b.fundamentals_as_of);
+          if (aHas && !bHas) cmp = -1;
+          else if (!aHas && bHas) cmp = 1;
+          else {
+            cmp = (b.fundamentals_as_of || '').localeCompare(a.fundamentals_as_of || '');
+            if (cmp === 0) {
+              cmp = (b.profit_growth ?? -9999) - (a.profit_growth ?? -9999);
+            }
           }
           break;
         case 'profit_growth':
@@ -178,7 +189,7 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
     });
 
     return list;
-  }, [snapshot, listSearchInput, indexFilter, periodFilter, sortField, sortAsc]);
+  }, [bistEquities, listSearchInput, indexFilter, periodFilter, sortField, sortAsc]);
 
   // Processed periods (Annual or Quarterly)
   const periods = useMemo<FinancialPeriod[]>(() => {
@@ -211,14 +222,14 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
     };
   }, [latestPeriod]);
 
-  // Peer companies
+  // Peer companies (strictly BIST)
   const peers = useMemo<EquityRow[]>(() => {
-    if (!currentEquity || !snapshot?.equities) return [];
+    if (!currentEquity || !bistEquities) return [];
     const primaryIndex = currentEquity.index_memberships?.[0];
-    return snapshot.equities
+    return bistEquities
       .filter((e) => e.ticker !== selectedTicker && (!primaryIndex || (e.index_memberships && e.index_memberships.includes(primaryIndex))))
       .slice(0, 10);
-  }, [currentEquity, snapshot, selectedTicker]);
+  }, [currentEquity, bistEquities, selectedTicker]);
 
   // Chart data for Revenue & Net Profit
   const chartData = useMemo(() => {
@@ -334,12 +345,16 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
                 onChange={(e) => setIndexFilter(e.target.value)}
                 className="fin-select"
               >
-                <option value="all">Tüm Endeksler ({snapshot?.equities?.length || 0})</option>
-                <option value="XU030">BIST 30</option>
-                <option value="XU100">BIST 100</option>
-                <option value="XUSIN">BIST Sınai</option>
-                <option value="XBANK">BIST Banka</option>
-                <option value="XGMDL">BIST GYO</option>
+                <option value="all">Tüm BIST Hisseleri ({bistEquities.length})</option>
+                <option value="BIST 30">BIST 30</option>
+                <option value="BIST 50">BIST 50</option>
+                <option value="BIST 100">BIST 100</option>
+                <option value="SINAI">BIST Sınai</option>
+                <option value="BANKA">BIST Banka</option>
+                <option value="HIZMET">BIST Hizmetler</option>
+                <option value="TEKNOLOJI">BIST Teknoloji</option>
+                <option value="HALKA ARZ">BIST Halka Arz</option>
+                <option value="TEMETTU">BIST Temettü</option>
               </select>
             </div>
 
