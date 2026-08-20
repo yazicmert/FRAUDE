@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     code,
     expires_at: expiresAt,
     email,
-    bot_username: 'FraudeTerminalBot',
-    bot_url: 'https://t.me/FraudeTerminalBot',
+    bot_username: 'FraudeTerminal_Bot',
+    bot_url: 'https://t.me/FraudeTerminal_Bot',
   });
 });

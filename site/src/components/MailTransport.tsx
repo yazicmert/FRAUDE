@@ -186,7 +186,7 @@ export default function MailTransport({ user }: { user: User }) {
 
         {kind === 'telegram' && (
           <p className="muted small">
-            Telegram botuna (<b>@FraudeTerminalBot</b>) giderek e-postanızı yazın veya masaüstü FRAUDE Terminal uygulamasından 6 haneli kod alarak anında eşleştirin.
+            Telegram botuna (<b>@FraudeTerminal_Bot</b>) giderek e-postanızı yazın veya masaüstü FRAUDE Terminal uygulamasından 6 haneli kod alarak anında eşleştirin.
           </p>
         )}
 
