@@ -942,9 +942,9 @@ async function handleIpoApplications(chatId: string): Promise<void> {
     });
     if (res.ok) {
       const html = await res.text();
-      const rows = html.match(/(?is)<tr[^>]*>(.*?)<\/tr>/g) || [];
+      const rows = html.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || [];
       for (const r of rows) {
-        const cells = (r.match(/(?is)<t[dh][^>]*>(.*?)<\/t[dh]>/g) || []).map((c) =>
+        const cells = (r.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi) || []).map((c) =>
           c.replace(/<[^>]+>/g, '').trim(),
         );
         if (cells.length >= 3 && /\d{2}\.\d{2}\.\d{4}/.test(cells[2])) {
