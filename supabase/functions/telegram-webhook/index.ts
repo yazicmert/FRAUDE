@@ -25,8 +25,8 @@ const LLM_MODEL = Deno.env.get('LLM_MODEL') ?? 'deepseek-chat';
 const MAIN_KEYBOARD = {
   keyboard: [
     [{ text: '📊 Durum' }, { text: '📈 Hisselerim' }],
-    [{ text: '🔔 Alarmlarım' }, { text: '📰 Son Haberler' }],
-    [{ text: 'ℹ️ Yardım' }],
+    [{ text: '🏛️ SPK Bülteni' }, { text: '🔔 Alarmlarım' }],
+    [{ text: '📰 Son Haberler' }, { text: 'ℹ️ Yardım' }],
   ],
   resize_keyboard: true,
 };
@@ -145,6 +145,10 @@ Deno.serve(async (req) => {
 
     if (data === 'refresh_status') {
       await handleStatus(supabase, cbChatId);
+    } else if (data === 'spk_ipo_apps') {
+      await handleIpoApplications(cbChatId);
+    } else if (data === 'spk_bulletin') {
+      await handleSpkBulletins(supabase, cbChatId);
     } else if (data.startsWith('add_')) {
       const tk = data.replace('add_', '').toUpperCase();
       await handleAddTicker(supabase, cbChatId, tk);
@@ -257,6 +261,18 @@ Deno.serve(async (req) => {
       return new Response('ok', { status: 200 });
     }
     await handleRemoveTicker(supabase, chatId, cleanTk);
+    return new Response('ok', { status: 200 });
+  }
+
+  // ── /spk veya /bulten ───────────────────────────────────────────────────────
+  if (rawText === '/spk' || rawText === '/bulten' || rawText === '🏛️ SPK Bülteni') {
+    await handleSpkBulletins(supabase, chatId);
+    return new Response('ok', { status: 200 });
+  }
+
+  // ── /halkaarz veya /ipo ───────────────────────────────────────────────────
+  if (rawText === '/halkaarz' || rawText === '/ipo' || rawText === '🏛️ Halka Arzlar') {
+    await handleIpoApplications(chatId);
     return new Response('ok', { status: 200 });
   }
 
@@ -856,4 +872,108 @@ async function handleVerifyCode(
       `<i>Menüden /hisseler yazarak takip listenizi özelleştirebilir veya /alarm yazarak fiyat alarmı kurabilirsiniz.</i>`,
     { reply_markup: MAIN_KEYBOARD },
   );
+}
+
+async function handleSpkBulletins(supabase: any, chatId: string): Promise<void> {
+  const currentYear = new Date().getFullYear();
+  let bulletins: Array<{ no: string; url: string }> = [];
+
+  try {
+    const res = await fetch(`https://spk.gov.tr/spk-bultenleri/${currentYear}-yili-spk-bultenleri`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const re = /href=["']([^"']*?(\d{4})-(\d+)\.pdf)["']/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(html)) !== null) {
+        bulletins.push({ no: `${m[2]}/${m[3]}`, url: m[1] });
+      }
+    }
+  } catch {}
+
+  const recent = bulletins.slice(0, 4);
+
+  const { data: lastSpk } = await supabase
+    .from('notify_outbox')
+    .select('subject, payload, created_at')
+    .ilike('subject', '%SPK%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let text = `🏛️ <b>Sermaye Piyasası Kurulu (SPK) Bültenleri</b>\n───────────────────────────\n\n`;
+
+  if (lastSpk) {
+    const p = lastSpk.payload as any;
+    text += `📢 <b>Son Bülten Özeti:</b>\n<i>${escapeTelegramHtml(p?.summary || p?.title || lastSpk.subject)}</i>\n\n───────────────────────────\n\n`;
+  }
+
+  if (recent.length > 0) {
+    text += `📄 <b>Son Yayımlanan Resmi Bültenler:</b>\n\n`;
+    for (const b of recent) {
+      text += `• <b>SPK Bülteni No: ${b.no}</b>\n  👉 <a href="${b.url}">Resmi PDF'i Görüntüle / İndir ↗</a>\n\n`;
+    }
+  } else {
+    text += `• <a href="https://spk.gov.tr/spk-bultenleri">SPK Resmi Bülten Sayfasına Git ↗</a>\n\n`;
+  }
+
+  text += `───────────────────────────`;
+
+  await sendTelegramReply(chatId, text, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '🏛️ Halka Arz Başvuruları', callback_data: 'spk_ipo_apps' },
+          { text: '📄 SPK Resmi Sitesi ↗', url: 'https://spk.gov.tr/spk-bultenleri' },
+        ],
+      ],
+    },
+  });
+}
+
+async function handleIpoApplications(chatId: string): Promise<void> {
+  let apps: Array<{ name: string; date: string }> = [];
+  try {
+    const res = await fetch('https://spk.gov.tr/istatistikler/basvurular/ilk-halka-arz-basvurusu', {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const rows = html.match(/(?is)<tr[^>]*>(.*?)<\/tr>/g) || [];
+      for (const r of rows) {
+        const cells = (r.match(/(?is)<t[dh][^>]*>(.*?)<\/t[dh]>/g) || []).map((c) =>
+          c.replace(/<[^>]+>/g, '').trim(),
+        );
+        if (cells.length >= 3 && /\d{2}\.\d{2}\.\d{4}/.test(cells[2])) {
+          apps.push({ name: cells[1], date: cells[2] });
+        }
+      }
+    }
+  } catch {}
+
+  const recentApps = apps.slice(-6).reverse();
+
+  let text = `🏛️ <b>SPK İlk Halka Arz Başvuru Listesi</b>\n───────────────────────────\n\n`;
+  if (recentApps.length > 0) {
+    for (const a of recentApps) {
+      text += `🏢 <b>${escapeTelegramHtml(a.name)}</b>\n📅 Başvuru Tarihi: <code>${a.date}</code>\n\n`;
+    }
+  } else {
+    text += `Halka arz başvuru listesine şu an ulaşılamıyor.\n\n`;
+  }
+  text += `───────────────────────────\n<i>Kaynak: spk.gov.tr</i>`;
+
+  await sendTelegramReply(chatId, text, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '🏛️ SPK Bültenleri', callback_data: 'spk_bulletin' },
+          { text: '🌐 SPK Başvuru Tablosu ↗', url: 'https://spk.gov.tr/istatistikler/basvurular/ilk-halka-arz-basvurusu' },
+        ],
+      ],
+    },
+  });
 }
