@@ -876,7 +876,7 @@ async function handleVerifyCode(
 
 async function handleSpkBulletins(supabase: any, chatId: string): Promise<void> {
   const currentYear = new Date().getFullYear();
-  let bulletins: Array<{ no: string; url: string }> = [];
+  let bulletins: Array<{ no: string; date: string; url: string }> = [];
 
   try {
     const res = await fetch(`https://spk.gov.tr/spk-bultenleri/${currentYear}-yili-spk-bultenleri`, {
@@ -885,10 +885,28 @@ async function handleSpkBulletins(supabase: any, chatId: string): Promise<void> 
     });
     if (res.ok) {
       const html = await res.text();
-      const re = /href=["']([^"']*?(\d{4})-(\d+)\.pdf)["']/gi;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(html)) !== null) {
-        bulletins.push({ no: `${m[2]}/${m[3]}`, url: m[1] });
+      const anchorMatches = html.match(/<a\s+href=["']([^"']*?(\d{4})-(\d+)\.pdf)["'][\s\S]*?<\/a>/gi) || [];
+      for (const a of anchorMatches) {
+        const hrefMatch = a.match(/href=["']([^"']+)["']/i);
+        const baslikMatch = a.match(/liste-baslik[^>]*>([\s\S]*?)<\/div>/i);
+        const icerikMatch = a.match(/liste-icerik[^>]*>([\s\S]*?)<\/div>/i);
+
+        const href = hrefMatch ? hrefMatch[1] : '';
+        const no = baslikMatch
+          ? baslikMatch[1].replace(/<[^>]+>/g, '').replace(/Bülten\s*No\s*:\s*/i, '').trim()
+          : '';
+        const rawDate = icerikMatch
+          ? icerikMatch[1].replace(/<[^>]+>/g, '').replace(/Yayımlanma\s*:\s*/i, '').trim()
+          : '';
+        const date = rawDate.replace(/&#199;/g, 'Ç').replace(/&ccedil;/g, 'ç').replace(/&nbsp;/g, ' ');
+
+        if (href && (no || href.includes('.pdf'))) {
+          bulletins.push({
+            no: no || 'Bülten',
+            date,
+            url: href,
+          });
+        }
       }
     }
   } catch {}
@@ -913,7 +931,8 @@ async function handleSpkBulletins(supabase: any, chatId: string): Promise<void> 
   if (recent.length > 0) {
     text += `📄 <b>Son Yayımlanan Resmi Bültenler:</b>\n\n`;
     for (const b of recent) {
-      text += `• <b>SPK Bülteni No: ${b.no}</b>\n  👉 <a href="${b.url}">Resmi PDF'i Görüntüle / İndir ↗</a>\n\n`;
+      const dateLine = b.date ? `\n  📅 <b>${escapeTelegramHtml(b.date)}</b>` : '';
+      text += `• <b>SPK Bülteni No: ${escapeTelegramHtml(b.no)}</b>${dateLine}\n  👉 <a href="${b.url}">Resmi PDF'i Görüntüle / İndir ↗</a>\n\n`;
     }
   } else {
     text += `• <a href="https://spk.gov.tr/spk-bultenleri">SPK Resmi Bülten Sayfasına Git ↗</a>\n\n`;
