@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
   const [{ data: transportRows }, { data: secretRows }] = await Promise.all([
     supabase
       .from('notify_transports')
-      .select('user_id, kind, webhook_url, api_provider, from_email, from_name, verified_at, failure_count, disabled_at')
+      .select('user_id, kind, webhook_url, api_provider, from_email, from_name, telegram_chat_id, telegram_username, verified_at, failure_count, disabled_at')
       .in('user_id', userIds),
     supabase
       .from('notify_transport_secrets')

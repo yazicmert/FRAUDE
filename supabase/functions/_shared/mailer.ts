@@ -1,23 +1,15 @@
 // FRAUDE — gönderim kanalı (transport) soyutlaması.
 // ─────────────────────────────────────────────────────────────────────────────
-// Bildirim maili üç yoldan biriyle çıkabilir:
+// Bildirimler dört yoldan biriyle çıkabilir:
 //
-//   platform → FRAUDE'nin Brevo hesabı. Varsayılan ve DAİMA yedek: kullanıcının
-//              kendi kanalı bozulduğunda onu haberdar edecek yol da budur, o
-//              yüzden hiçbir koşulda devre dışı bırakılmaz.
+//   platform → FRAUDE'nin Brevo hesabı. Varsayılan ve DAİMA yedek.
+//   telegram → FRAUDE Telegram Botu (@FraudeTerminalBot) veya özel bot.
 //   webhook  → kullanıcının verdiği https uca bildirim JSON'u POST edilir.
-//              Kimlik bilgisi saklamayan seçenek; kurumsal tarafın istediği
-//              "veri bizde kalsın" senaryosunu en temiz karşılayan yol.
-//   api      → kullanıcının kendi transactional sağlayıcı anahtarı
-//              (Resend / Brevo / Postmark).
-//
-// Ham SMTP bilinçli olarak yok. Gerekçe docs/mail-transports.md'de; özeti:
-// SMTP şifresi çoğu sağlayıcıda tüm posta kutusuna gönderim yetkisi verir,
-// API anahtarı ise yalnız gönderim yetkilidir ve tek tıkla iptal edilir.
+//   api      → kullanıcının kendi transactional sağlayıcı anahtarı (Resend/Brevo/Postmark).
 
 // ── Tipler ──────────────────────────────────────────────────────────────────
 
-export type TransportKind = 'platform' | 'webhook' | 'api';
+export type TransportKind = 'platform' | 'webhook' | 'api' | 'telegram';
 export type ApiProvider = 'resend' | 'brevo' | 'postmark';
 
 export interface TransportRow {
@@ -27,6 +19,8 @@ export interface TransportRow {
   api_provider: ApiProvider | null;
   from_email: string | null;
   from_name: string | null;
+  telegram_chat_id: string | null;
+  telegram_username: string | null;
   verified_at: string | null;
   failure_count: number;
   disabled_at: string | null;
@@ -38,7 +32,7 @@ export interface StoredSecret {
   key_version: number;
 }
 
-/** Gönderilecek tek mail. `payload` yalnız webhook kanalında kullanılır. */
+/** Gönderilecek tek bildirim / mail. */
 export interface MailJob {
   to: string;
   subject: string;
@@ -46,11 +40,6 @@ export interface MailJob {
   payload?: Record<string, unknown>;
 }
 
-/**
- * Gönderim sonucu. `retryable` ayrımı kritik: geçici hata (ağ, 5xx, 429)
- * yeniden denenir; kalıcı hata (401/403/422 — yanlış anahtar, doğrulanmamış
- * gönderici) denenmez, doğrudan kullanıcının kanalını arızalı sayar.
- */
 export interface SendResult {
   ok: boolean;
   error?: string;
@@ -61,11 +50,6 @@ const SEND_TIMEOUT_MS = 10_000;
 
 // ── Hata metni temizleme ────────────────────────────────────────────────────
 
-/**
- * Sağlayıcı hata gövdeleri gönderdiğimiz anahtarı ya da yetkilendirme
- * başlığını aynen geri yansıtabiliyor. Bu metin veritabanına (last_error) ve
- * loglara gittiği için önce süzülür.
- */
 export function scrubError(value: unknown): string {
   let text = typeof value === 'string' ? value : String(value);
   text = text
@@ -76,13 +60,6 @@ export function scrubError(value: unknown): string {
 }
 
 // ── Sır şifreleme (AES-GCM) ─────────────────────────────────────────────────
-//
-// Anahtar Edge Function secret'ında durur, veritabanında değil. Bir veritabanı
-// dökümü tek başına kullanıcı anahtarlarını açmaya yetmez.
-//
-// Rotasyon: yeni anahtarı MAIL_CRED_KEY_V2 olarak ekle, MAIL_CRED_KEY_VERSION=2
-// yap. Eski satırlar key_version=1 ile okunmaya devam eder; kullanıcı anahtarını
-// bir dahaki kaydedişinde yeni sürüme geçer.
 
 function envKeyName(version: number): string {
   return version <= 1 ? 'MAIL_CRED_KEY' : `MAIL_CRED_KEY_V${version}`;
@@ -92,7 +69,6 @@ async function importKey(version: number): Promise<CryptoKey> {
   const name = envKeyName(version);
   const raw = Deno.env.get(name);
   if (!raw) throw new Error(`missing-secret:${name}`);
-  // base64 → 32 bayt. Üretmek için: openssl rand -base64 32
   const bytes = Uint8Array.from(atob(raw.trim()), (c) => c.charCodeAt(0));
   if (bytes.length !== 32) throw new Error(`bad-secret-length:${name}`);
   return await crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, [
@@ -111,7 +87,6 @@ function fromBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
 }
 
-/** Yazma sürümü: yeni sırlar bu anahtarla şifrelenir. */
 export function currentKeyVersion(): number {
   const v = Number(Deno.env.get('MAIL_CRED_KEY_VERSION') ?? '1');
   return Number.isInteger(v) && v > 0 ? v : 1;
@@ -121,11 +96,8 @@ export async function encryptSecret(plain: string): Promise<StoredSecret> {
   const version = currentKeyVersion();
   const key = await importKey(version);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    new TextEncoder().encode(plain),
-  );
+  const encoded = new TextEncoder().encode(plain);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
   return {
     ciphertext: toBase64(new Uint8Array(cipher)),
     iv: toBase64(iv),
@@ -133,159 +105,97 @@ export async function encryptSecret(plain: string): Promise<StoredSecret> {
   };
 }
 
-export async function decryptSecret(rec: StoredSecret): Promise<string> {
-  const key = await importKey(rec.key_version);
-  const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: fromBase64(rec.iv) },
-    key,
-    fromBase64(rec.ciphertext),
-  );
-  return new TextDecoder().decode(plain);
+export async function decryptSecret(secret: StoredSecret): Promise<string> {
+  const key = await importKey(secret.key_version);
+  const iv = fromBase64(secret.iv);
+  const cipher = fromBase64(secret.ciphertext);
+  const plainBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+  return new TextDecoder().decode(plainBuffer);
 }
 
-// ── Webhook adres güvenliği (SSRF) ──────────────────────────────────────────
-//
-// Kullanıcı `webhook_url` alanına ne yazarsa Supabase altyapısı oraya bağlanır.
-// Kontrolsüz bırakılırsa bu uç, iç ağ ve bulut metadata servisleri için bir
-// tarayıcıya dönüşür. Üç katman:
-//   1) yalnız https, standart port
-//   2) IP literali ya da bilinen iç isim → red
-//   3) DNS çözülebiliyorsa çözülen adresler de aynı süzgeçten geçer
-// Ayrıca gönderimde yönlendirme takip EDİLMEZ: aksi hâlde herkese açık bir
-// adres 302 ile 169.254.169.254'e çevirebilir.
+// ── SSRF Koruması ──────────────────────────────────────────────────────────
 
-function isPrivateIPv4(ip: string): boolean {
-  const parts = ip.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
-    return true; // ayrıştıramadıysak güvenli tarafta kal
-  }
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 169 && b === 254) return true;              // link-local + metadata
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 192 && b === 0) return true;                // 192.0.0/24 IETF
-  if (a === 100 && b >= 64 && b <= 127) return true;    // CGNAT
-  if (a === 198 && (b === 18 || b === 19)) return true; // benchmark
-  if (a >= 224) return true;                            // multicast + reserved
-  return false;
-}
+const BLOCKED_HOST_PATTERNS = [
+  /^localhost$/i,
+  /\.local$/i,
+  /\.internal$/i,
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^::1$/,
+  /^fc00:/i,
+  /^fe80:/i,
+  /^metadata\.google\.internal$/i,
+  /^169\.254\.169\.254$/,
+];
 
-function isPrivateIPv6(ip: string): boolean {
-  const v = ip.toLowerCase().replace(/^\[|\]$/g, '');
-  if (v === '::' || v === '::1') return true;
-  if (v.startsWith('fc') || v.startsWith('fd')) return true; // unique local
-  if (v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')) {
-    return true; // link local
-  }
-  // ::ffff:1.2.3.4 — IPv4 eşlemesi
-  const mapped = v.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIPv4(mapped[1]);
-  return false;
-}
-
-function isIpLiteral(host: string): 'v4' | 'v6' | null {
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return 'v4';
-  if (host.includes(':')) return 'v6';
-  return null;
-}
-
-const BLOCKED_HOST_SUFFIXES = ['.local', '.internal', '.localdomain', '.home.arpa'];
-const BLOCKED_HOSTS = ['localhost', 'metadata.google.internal', 'instance-data'];
-
-/**
- * Adresi doğrular; uygun değilse sebep metniyle fırlatır. Kaydetme sırasında da
- * her gönderimden önce de çağrılır — DNS kaydı kaydedildikten sonra iç bir
- * adrese çevrilebilir (DNS rebinding), tek seferlik kontrol yetmez.
- */
 export async function assertSafeWebhookUrl(raw: string): Promise<URL> {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new Error('webhook-url-invalid');
-  }
-  if (url.protocol !== 'https:') throw new Error('webhook-url-not-https');
-  if (url.port && url.port !== '443') throw new Error('webhook-url-bad-port');
-
-  const host = url.hostname.toLowerCase().replace(/\.$/, '');
-  if (BLOCKED_HOSTS.includes(host)) throw new Error('webhook-url-internal-host');
-  if (BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s))) {
-    throw new Error('webhook-url-internal-host');
+    throw new Error('invalid-url-format');
   }
 
-  const literal = isIpLiteral(host);
-  if (literal === 'v4' && isPrivateIPv4(host)) throw new Error('webhook-url-private-ip');
-  if (literal === 'v6' && isPrivateIPv6(host)) throw new Error('webhook-url-private-ip');
+  if (url.protocol !== 'https:') {
+    throw new Error('https-required');
+  }
 
-  // DNS katmanı. Çalışma zamanı izin vermiyorsa (resolveDns her ortamda açık
-  // değil) yukarıdaki kontrollerle yetiniriz — bu bilinen bir boşluktur ve
-  // webhook gövdesinde kullanıcı verisi taşımadığımız için kabul edilmiştir.
-  if (!literal) {
-    try {
-      const records = [
-        ...(await Deno.resolveDns(host, 'A').catch(() => [] as string[])),
-        ...(await Deno.resolveDns(host, 'AAAA').catch(() => [] as string[])),
-      ];
-      for (const ip of records) {
-        if (ip.includes(':') ? isPrivateIPv6(ip) : isPrivateIPv4(ip)) {
-          throw new Error('webhook-url-private-ip');
+  const port = url.port ? Number(url.port) : 443;
+  if (port !== 443) {
+    throw new Error('standard-https-port-required');
+  }
+
+  const host = url.hostname.toLowerCase();
+  for (const pattern of BLOCKED_HOST_PATTERNS) {
+    if (pattern.test(host)) {
+      throw new Error(`private-host-rejected:${host}`);
+    }
+  }
+
+  try {
+    const addresses = await Deno.resolveDns(host, 'A');
+    for (const ip of addresses) {
+      for (const pattern of BLOCKED_HOST_PATTERNS) {
+        if (pattern.test(ip)) {
+          throw new Error(`resolved-private-ip:${ip}`);
         }
       }
-    } catch (e) {
-      if (e instanceof Error && e.message === 'webhook-url-private-ip') throw e;
-      // izin/çözümleme hatası: sessizce geç
     }
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes('resolved-private-ip') || msg.includes('private-host-rejected')) throw e;
   }
 
   return url;
 }
 
-// ── HMAC imzası ─────────────────────────────────────────────────────────────
+// ── Gönderim yardımcıları ──────────────────────────────────────────────────
 
-/**
- * Webhook alıcısının gövdenin gerçekten FRAUDE'den geldiğini doğrulaması için.
- * Kullanıcı bir imzalama sırrı tanımladıysa uygulanır; tanımlamadıysa gövde
- * imzasız gider (uç adresinin gizliliği tek koruma olur).
- */
-async function hmacHex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
-  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
+export function parseSender(raw: string): { name: string; email: string } {
+  const match = raw.match(/^\s*(?:"?([^"<]+)"?\s+)?<?([^\s>]+)>?\s*$/);
+  if (!match) return { name: 'FRAUDE', email: raw.trim() };
+  return { name: (match[1] || 'FRAUDE').trim(), email: match[2].trim() };
 }
 
-// ── Gönderim uçları ─────────────────────────────────────────────────────────
-
-/** "Ad <adres>" ya da düz adres → { name, email } */
-export function parseSender(raw: string, fallbackName = 'FRAUDE'): { name: string; email: string } {
-  const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  return m
-    ? { name: m[1].trim() || fallbackName, email: m[2].trim() }
-    : { name: fallbackName, email: raw.trim() };
-}
-
-/** HTTP durum koduna göre yeniden deneme kararı. */
 function retryableStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 async function postJson(
   url: string,
   headers: Record<string, string>,
-  body: unknown,
+  payload: unknown,
   opts: { followRedirects?: boolean } = {},
 ): Promise<SendResult> {
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       redirect: opts.followRedirects ? 'follow' : 'manual',
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
@@ -300,11 +210,9 @@ async function postJson(
         retryable: retryableStatus(res.status),
       };
     }
-    // Gövdeyi tüketmezsek bağlantı sızar.
     await res.body?.cancel().catch(() => {});
     return { ok: true, retryable: false };
   } catch (e) {
-    // Ağ hatası / timeout: geçici kabul edilir.
     return { ok: false, error: scrubError(e), retryable: true };
   }
 }
@@ -317,7 +225,6 @@ export const DEFAULT_MAIL_HEADERS: Record<string, string> = {
   'X-Auto-Response-Suppress': 'All',
 };
 
-/** FRAUDE'nin kendi Brevo hesabı. Varsayılan kanal ve her zaman son çare. */
 export async function sendViaPlatform(job: MailJob): Promise<SendResult> {
   const apiKey = Deno.env.get('BREVO_API_KEY');
   const fromRaw = Deno.env.get('MAIL_FROM');
@@ -337,7 +244,6 @@ export async function sendViaPlatform(job: MailJob): Promise<SendResult> {
   );
 }
 
-/** Kullanıcının kendi ucu. Mail değil, yapılandırılmış bildirim gönderilir. */
 export async function sendViaWebhook(
   rawUrl: string,
   job: MailJob,
@@ -347,7 +253,6 @@ export async function sendViaWebhook(
   try {
     url = await assertSafeWebhookUrl(rawUrl);
   } catch (e) {
-    // Adres kalıcı olarak geçersiz; yeniden denemek anlamsız.
     return { ok: false, error: scrubError(e), retryable: false };
   }
 
@@ -374,7 +279,7 @@ export async function sendViaWebhook(
       method: 'POST',
       headers,
       body,
-      redirect: 'manual', // 302 ile iç adrese sıçramayı engeller
+      redirect: 'manual',
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
     if (res.status >= 300 && res.status < 400) {
@@ -395,7 +300,6 @@ export async function sendViaWebhook(
   }
 }
 
-/** Kullanıcının kendi transactional sağlayıcı anahtarı. */
 export async function sendViaApi(
   provider: ApiProvider,
   apiKey: string,
@@ -445,13 +349,87 @@ export async function sendViaApi(
   }
 }
 
+// ── Telegram Entegrasyonu ──────────────────────────────────────────────────
+
+export function escapeTelegramHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function formatTelegramMessage(job: MailJob): string {
+  const payload = job.payload as {
+    source?: string;
+    title?: string;
+    summary?: string;
+    tickers?: string[];
+    url?: string | null;
+    priority?: number;
+  } | undefined;
+
+  const title = payload?.title ?? job.subject;
+  const summary = payload?.summary ?? '';
+  const tickers = payload?.tickers ?? [];
+  const url = payload?.url;
+  const source = payload?.source;
+
+  const icon = source === 'kap' ? '📢' : source === 'spk' ? '🏛️' : '📰';
+  const tickerBadge = tickers.length > 0 ? ` · <code>${tickers.join(', ')}</code>` : '';
+
+  let msg = `${icon} <b>FRAUDE Terminal</b>${tickerBadge}\n\n`;
+  msg += `<b>${escapeTelegramHtml(title)}</b>\n\n`;
+  if (summary) {
+    msg += `${escapeTelegramHtml(summary)}\n\n`;
+  }
+  if (url) {
+    msg += `🔗 <a href="${escapeTelegramHtml(url)}">Detayı İncele ↗</a>`;
+  }
+  return msg;
+}
+
+export async function sendViaTelegram(
+  botToken: string,
+  chatId: string,
+  job: MailJob,
+): Promise<SendResult> {
+  const text = formatTelegramMessage(job);
+  return await postJson(
+    `https://api.telegram.org/bot${botToken}/sendMessage`,
+    {},
+    {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: false,
+    },
+  );
+}
+
+export function renderPairingEmailHtml(code: string): string {
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="color-scheme" content="dark"></head>
+<body style="margin:0;padding:0;background-color:#0a0d12;" bgcolor="#0a0d12">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0a0d12"><tr><td align="center" style="padding:40px 16px;">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+      <tr><td align="center" style="padding-bottom:22px;font-family:'SF Mono',Menlo,monospace;font-size:20px;font-weight:800;letter-spacing:5px;color:#e8f0f7;"><span style="color:#00e896;">F</span>RAUDE</td></tr>
+      <tr><td bgcolor="#10151d" style="background-color:#10151d;border:1px solid #232a33;border-radius:14px;padding:32px 30px;text-align:center;">
+        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:20px;font-weight:700;color:#e8f0f7;margin-bottom:12px;">Telegram Eşleştirme Kodu</div>
+        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:24px;">
+          FRAUDE hesabınızı Telegram Botuna bağlamak için aşağıdaki 6 haneli kodu Telegram sohbetine yazın. Kod <b>5 dakika</b> geçerlidir.
+        </div>
+        <div style="display:inline-block;background:#0d1117;border:2px dashed #00e896;border-radius:12px;padding:16px 32px;font-family:'SF Mono',Menlo,monospace;font-size:32px;font-weight:800;letter-spacing:8px;color:#00e896;margin-bottom:24px;">
+          ${escapeTelegramHtml(code)}
+        </div>
+        <div style="font-family:-apple-system,'Segoe UI',sans-serif;font-size:13px;color:#8b949e;">
+          Bu işlemi siz başlatmadıysanız bu e-postayı güvenle yok sayabilirsiniz.
+        </div>
+      </td></tr>
+      <tr><td align="center" style="padding-top:22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#8b949e;">FRAUDE Terminal — finansal dostunuz</td></tr>
+    </table></td></tr></table></body></html>`;
+}
+
 // ── Tek giriş noktası ───────────────────────────────────────────────────────
 
-/**
- * Kanalı seçer ve gönderir. Kanal yoksa, doğrulanmamışsa ya da devre dışı
- * bırakılmışsa platform'a düşer — bildirim, konfigürasyon hatası yüzünden
- * kaybolmaz.
- */
 export async function sendWithTransport(
   transport: TransportRow | null,
   secret: string | null,
@@ -468,6 +446,18 @@ export async function sendWithTransport(
   }
 
   const t = transport as TransportRow;
+
+  if (t.kind === 'telegram') {
+    if (!t.telegram_chat_id) {
+      return { ok: false, error: 'telegram-chat-id-missing', retryable: false, usedKind: 'telegram' };
+    }
+    const botToken = secret || Deno.env.get('TELEGRAM_BOT_TOKEN');
+    if (!botToken) {
+      return { ok: false, error: 'telegram-bot-token-missing', retryable: false, usedKind: 'telegram' };
+    }
+    const result = await sendViaTelegram(botToken, t.telegram_chat_id, job);
+    return { ...result, usedKind: 'telegram' };
+  }
 
   if (t.kind === 'webhook') {
     if (!t.webhook_url) {
@@ -487,4 +477,19 @@ export async function sendWithTransport(
     job,
   );
   return { ...result, usedKind: 'api' };
+}
+
+async function hmacHex(secret: string, data: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(data));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
