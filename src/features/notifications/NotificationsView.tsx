@@ -485,7 +485,7 @@ export default function NotificationsView() {
                   {disconnectLoading ? 'Ayrılıyor…' : t('notifTelegramDisconnect')}
                 </button>
                 <a
-                  href="https://t.me/FraudeTerminalBot"
+                  href="https://t.me/FraudeTerminal_Bot"
                   target="_blank"
                   rel="noreferrer"
                   className="notif-btn notif-btn-ghost"
@@ -523,7 +523,7 @@ export default function NotificationsView() {
                   )}
                   <div style={{ marginTop: '14px' }}>
                     <a
-                      href={`https://t.me/FraudeTerminalBot?start=${pairCode}`}
+                      href={`https://t.me/FraudeTerminal_Bot?start=${pairCode}`}
                       target="_blank"
                       rel="noreferrer"
                       className="notif-btn notif-btn-primary"
@@ -543,7 +543,7 @@ export default function NotificationsView() {
                     {pairLoading ? 'Kod Üretiliyor…' : t('notifTelegramGetCode')}
                   </button>
                   <a
-                    href="https://t.me/FraudeTerminalBot"
+                    href="https://t.me/FraudeTerminal_Bot"
                     target="_blank"
                     rel="noreferrer"
                     className="notif-btn"
