@@ -8,6 +8,7 @@ import ComparativeChart from './ComparativeChart';
 
 interface DashboardViewProps {
   onSelectTicker: (ticker: string) => void;
+  onOpenModule?: (kind: string) => void;
 }
 
 const ALL_DASHBOARD_MODULES = [
@@ -26,7 +27,7 @@ const ALL_DASHBOARD_MODULES = [
   'news_panel',
 ];
 
-export default function DashboardView({ onSelectTicker }: DashboardViewProps) {
+export default function DashboardView({ onSelectTicker, onOpenModule }: DashboardViewProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -494,6 +495,7 @@ export default function DashboardView({ onSelectTicker }: DashboardViewProps) {
                   onSelectTicker={onSelectTicker}
                   isEditing={isEditing}
                   onClose={() => closeModule('model_portfolio')}
+                  onOpenModule={onOpenModule}
                 />
               );
               break;
