@@ -423,9 +423,38 @@ fn spk_to_record(ticker: &str, increase: &crate::spk::SpkCapitalIncrease) -> Cap
 
 
 
+fn contains_turkish_ignore_case(haystack: &str, needle_ascii: &str) -> bool {
+    let lower: String = haystack
+        .chars()
+        .map(|c| match c {
+            'İ' | 'I' | 'ı' | 'i' => 'i',
+            'Ğ' | 'ğ' => 'g',
+            'Ü' | 'ü' => 'u',
+            'Ş' | 'ş' => 's',
+            'Ö' | 'ö' => 'o',
+            'Ç' | 'ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect();
+    lower.contains(needle_ascii)
+}
+
+fn is_postponed_or_cancelled_text(text: &str) -> bool {
+    contains_turkish_ignore_case(text, "ertelendi")
+        || contains_turkish_ignore_case(text, "ertelen")
+        || contains_turkish_ignore_case(text, "iptal")
+}
+
 /// Talep toplama / işlem tarihi geçmişte kalan arzları okuma anında
-/// TAMAMLANDI'ya çevirir; böylece site rozeti gecikse bile durum bayatlamaz.
-fn effective_status(status: &str, ipo_date: &str, today: &str) -> String {
+/// TAMAMLANDI'ya çevirir; ertelenen/iptal edilenleri ERTELENDİ'ye dönüştürür.
+fn effective_status(status: &str, ipo_date: &str, book_building_dates: Option<&str>, today: &str) -> String {
+    // 1. Ertelenen veya iptal edilen arzlar
+    if let Some(bb) = book_building_dates {
+        if is_postponed_or_cancelled_text(bb) {
+            return "ERTELENDİ".to_string();
+        }
+    }
+
     let dated = crate::ipo_store::looks_like_iso_date(ipo_date);
 
     if matches!(status, "TALEP TOPLAMA" | "AKTİF") && dated && ipo_date < today {
@@ -446,9 +475,9 @@ fn archive_to_records(archive: Vec<crate::ipo_store::PersistedIpo>) -> Vec<IpoRe
     let mut records: Vec<IpoRecord> = archive
         .into_iter()
         .map(|p| IpoRecord {
+            status: effective_status(&p.status, &p.ipo_date, p.book_building_dates.as_deref(), &today),
             ticker: p.ticker,
             company_name: p.name,
-            status: effective_status(&p.status, &p.ipo_date, &today),
             ipo_date: p.ipo_date,
             price: p.price,
             current_price: None,
@@ -483,14 +512,67 @@ fn archive_to_records(archive: Vec<crate::ipo_store::PersistedIpo>) -> Vec<IpoRe
             major_shareholders: p.major_shareholders,
             data_sources: p.data_sources,
             spk_bulletin_no: p.spk_bulletin_no,
+            spk_approval_date: p.spk_approval_date,
         })
         .collect();
 
-    // ISO tarihli kayıtlar yeniden eskiye; tarihi çözülemeyenler (taslaklar) sona
+    // Sıralama Önceliği:
+    // 1. SPK ONAYLI / TALEP TOPLAMA / AKTİF olan güncel/yaklaşan halka arzlar (Öncelik 0 - En üstte)
+    // 2. Borsada işlem gören tamamlanmış halka arzlar (ISO tarihli) yeniden eskiye (Öncelik 1)
+    // 3. Taslak, başvuru ve ertelenenler (Öncelik 2)
     records.sort_by(|a, b| {
-        let a_iso = crate::ipo_store::looks_like_iso_date(&a.ipo_date);
-        let b_iso = crate::ipo_store::looks_like_iso_date(&b.ipo_date);
-        b_iso.cmp(&a_iso).then_with(|| b.ipo_date.cmp(&a.ipo_date))
+        let is_active_or_approved = |status: &str| {
+            matches!(status, "SPK ONAYLI" | "TALEP TOPLAMA" | "AKTİF" | "YENİ")
+        };
+        let is_draft = |status: &str| matches!(status, "TASLAK" | "SPK_APPLICATION" | "ERTELENDİ" | "İPTAL");
+
+        let priority = |r: &IpoRecord| -> u8 {
+            if is_active_or_approved(&r.status) {
+                0
+            } else if is_draft(&r.status) {
+                2
+            } else {
+                1
+            }
+        };
+
+        let prio_a = priority(a);
+        let prio_b = priority(b);
+
+        if prio_a != prio_b {
+            return prio_a.cmp(&prio_b);
+        }
+
+        let to_iso = |date_str: &str| -> String {
+            if crate::ipo_store::looks_like_iso_date(date_str) {
+                date_str.to_string()
+            } else {
+                let parsed = crate::ipo_scraper::parse_turkish_date(date_str);
+                if crate::ipo_store::looks_like_iso_date(&parsed) {
+                    parsed
+                } else {
+                    date_str.to_string()
+                }
+            }
+        };
+
+        // Aynı grup içindeki sıralama:
+        if prio_a == 0 {
+            // SPK Onaylı / Yaklaşanlar: ISO onay tarihi veya ipo_date'e göre en yeni üstte
+            let date_a_raw = a.spk_approval_date.as_deref().unwrap_or(&a.ipo_date);
+            let date_b_raw = b.spk_approval_date.as_deref().unwrap_or(&b.ipo_date);
+            let date_a = to_iso(date_a_raw);
+            let date_b = to_iso(date_b_raw);
+            date_b.cmp(&date_a).then_with(|| b.spk_bulletin_no.cmp(&a.spk_bulletin_no))
+        } else if prio_a == 1 {
+            // Tamamlananlar: ISO tarihi en yeniden eskiye
+            let a_iso = crate::ipo_store::looks_like_iso_date(&a.ipo_date);
+            let b_iso = crate::ipo_store::looks_like_iso_date(&b.ipo_date);
+            b_iso.cmp(&a_iso).then_with(|| b.ipo_date.cmp(&a.ipo_date))
+        } else {
+            // Taslaklar ve ertelenenler: isim sırasına göre
+            a.company_name.cmp(&b.company_name)
+        }
     });
 
     records
@@ -1498,21 +1580,27 @@ mod tests {
 
     #[test]
     fn past_dated_open_offering_is_reported_completed() {
-        assert_eq!(effective_status("AKTİF", "2026-07-31", "2026-08-08"), "TAMAMLANDI");
-        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-31", "2026-08-08"), "TAMAMLANDI");
+        assert_eq!(effective_status("AKTİF", "2026-07-31", None, "2026-08-08"), "TAMAMLANDI");
+        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-31", None, "2026-08-08"), "TAMAMLANDI");
+    }
+
+    #[test]
+    fn postponed_offering_is_reported_postponed() {
+        assert_eq!(effective_status("SPK ONAYLI", "2025-01-16", Some("Ertelendi"), "2026-08-20"), "ERTELENDİ");
+        assert_eq!(effective_status("AKTİF", "2026-07-23", Some("İptal Edildi"), "2026-08-20"), "ERTELENDİ");
     }
 
     /// Yıl arşivi rozetsiz olduğu için içindeki her kaydı TAMAMLANDI sayıyor;
     /// talep toplaması sürenler böyle "bitmiş" görünüyordu.
     #[test]
     fn future_dated_offering_is_never_reported_completed() {
-        assert_eq!(effective_status("TAMAMLANDI", "2026-08-14", "2026-08-08"), "AKTİF");
+        assert_eq!(effective_status("TAMAMLANDI", "2026-08-14", None, "2026-08-08"), "AKTİF");
     }
 
     #[test]
     fn undated_drafts_keep_their_status() {
-        assert_eq!(effective_status("TASLAK", "Hazırlanıyor...", "2026-08-08"), "TASLAK");
-        assert_eq!(effective_status("TAMAMLANDI", "2026-08-08", "2026-08-08"), "TAMAMLANDI");
+        assert_eq!(effective_status("TASLAK", "Hazırlanıyor...", None, "2026-08-08"), "TASLAK");
+        assert_eq!(effective_status("TAMAMLANDI", "2026-08-08", None, "2026-08-08"), "TAMAMLANDI");
     }
 
     /// Bir yıl arşivinin tamamını gerçekten gezip detayları doldurduğunu
@@ -1613,14 +1701,14 @@ mod tests {
     #[test]
     fn past_open_ipos_become_completed() {
         use super::effective_status;
-        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-10", "2026-07-13"), "TAMAMLANDI");
-        assert_eq!(effective_status("AKTİF", "2026-07-01", "2026-07-13"), "TAMAMLANDI");
+        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-10", None, "2026-07-13"), "TAMAMLANDI");
+        assert_eq!(effective_status("AKTİF", "2026-07-01", None, "2026-07-13"), "TAMAMLANDI");
         // Bugünkü ve gelecekteki arzlar açık kalır
-        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-13", "2026-07-13"), "TALEP TOPLAMA");
-        assert_eq!(effective_status("AKTİF", "2026-08-01", "2026-07-13"), "AKTİF");
+        assert_eq!(effective_status("TALEP TOPLAMA", "2026-07-13", None, "2026-07-13"), "TALEP TOPLAMA");
+        assert_eq!(effective_status("AKTİF", "2026-08-01", None, "2026-07-13"), "AKTİF");
         // Taslaklar ve tarihi çözülemeyenler dokunulmaz
-        assert_eq!(effective_status("TASLAK", "2026-01-01", "2026-07-13"), "TASLAK");
-        assert_eq!(effective_status("TALEP TOPLAMA", "Hazırlanıyor...", "2026-07-13"), "TALEP TOPLAMA");
+        assert_eq!(effective_status("TASLAK", "2026-01-01", None, "2026-07-13"), "TASLAK");
+        assert_eq!(effective_status("TALEP TOPLAMA", "Hazırlanıyor...", None, "2026-07-13"), "TALEP TOPLAMA");
     }
 
     #[tokio::test]

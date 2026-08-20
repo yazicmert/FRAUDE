@@ -5,6 +5,7 @@ import { displayName } from '../lib/useSession';
 import { navigate } from '../lib/router';
 import { useI18n, type StringKey } from '../lib/i18n';
 import NotifyPrefs from '../components/NotifyPrefs';
+import MailTransport from '../components/MailTransport';
 
 interface LicenseRequest {
   id: string;
@@ -179,6 +180,8 @@ export default function Account({ user }: { user: User }) {
       </div>
 
       <NotifyPrefs user={user} />
+
+      <MailTransport user={user} />
 
       <div className="card">
         <h2>{t('sessionTitle')}</h2>

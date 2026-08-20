@@ -318,7 +318,8 @@ fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoAppro
         // "SPK onaylı" etiketi şart: etiketsiz sayı, başka sitelerdekiyle
         // çeliştiğinde hangisinin ne olduğu anlaşılmıyor.
         if approval.total_lots > 0.0 && entry.share_structure.is_none() {
-            entry.share_structure = Some(format!("{:.0} Lot (SPK onaylı)", approval.total_lots));
+            let formatted_lots = format_turkish_thousands(approval.total_lots);
+            entry.share_structure = Some(format!("{formatted_lots} Lot (SPK onaylı)"));
             changed = true;
         }
 
@@ -334,11 +335,21 @@ fn merge_spk_approvals(archive: &mut Vec<PersistedIpo>, approvals: &[SpkIpoAppro
         // Bülten numarası ve onay tarihi yalnız SPK'dan gelir; kaydın hangi
         // bültene dayandığı değişirse (yeniden onay) güncel olan yazılır.
         if !approval.bulletin_no.is_empty()
-            && entry.spk_bulletin_no.as_deref() != Some(approval.bulletin_no.as_str())
+            && (entry.spk_bulletin_no.as_deref() != Some(approval.bulletin_no.as_str())
+                || entry.spk_approval_date.as_deref() != Some(approval.approval_date.as_str()))
         {
             entry.spk_bulletin_no = Some(approval.bulletin_no.clone());
             entry.spk_approval_date = Some(approval.approval_date.clone());
             changed = true;
+        }
+
+        // Eğer ipo_date tarihi henüz atanmamışsa veya "Hazırlanıyor..." ise SPK onay tarihi ile doldur
+        if !crate::ipo_store::looks_like_iso_date(&entry.ipo_date) {
+            let parsed_date = crate::ipo_scraper::parse_turkish_date(&approval.approval_date);
+            if crate::ipo_store::looks_like_iso_date(&parsed_date) {
+                entry.ipo_date = parsed_date;
+                changed = true;
+            }
         }
 
         changed |= add_source(entry, SPK_BULLETIN_SOURCE);
@@ -376,20 +387,46 @@ const KAP_SOURCE: &str = "KAP";
 /// altı ay iki yönde de rahat pay bırakır.
 const KAP_MATCH_WINDOW_DAYS: i64 = 180;
 
+/// Binlik basamakları nokta ile ayıran yardımcı fonksiyon (örn. 40000000 -> 40.000.000).
+pub(crate) fn format_turkish_thousands(n: f64) -> String {
+    let s = format!("{:.0}", n.abs());
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    for (i, &c) in chars.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push('.');
+        }
+        result.push(c);
+    }
+    if n < 0.0 {
+        format!("-{result}")
+    } else {
+        result
+    }
+}
+
 /// Bu metni biz mi ürettik? `format_ipo_size` çıktısı "<tamsayı> TL (" ile
 /// başlar; hiçbir dış kaynak büyüklüğü böyle yazmıyor.
 fn is_derived_ipo_size(size: &str) -> bool {
     let Some((digits, rest)) = size.split_once(" TL (") else {
         return false;
     };
-    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) && rest.ends_with(')')
+    !digits.is_empty()
+        && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
+        && rest.ends_with(')')
 }
 
 fn format_ipo_size(size_tl: f64) -> String {
+    let formatted_tl = format_turkish_thousands(size_tl);
     if size_tl >= 1_000_000_000.0 {
-        format!("{size_tl:.0} TL ({:.2} Milyar ₺)", size_tl / 1_000_000_000.0)
+        let billions = size_tl / 1_000_000_000.0;
+        let b_str = format!("{billions:.2}").replace('.', ",");
+        format!("{formatted_tl} TL ({b_str} Milyar ₺)")
     } else {
-        format!("{size_tl:.0} TL ({:.0} Milyon ₺)", size_tl / 1_000_000.0)
+        let millions = size_tl / 1_000_000.0;
+        let m_str = format!("{millions:.0}");
+        format!("{formatted_tl} TL ({m_str} Milyon ₺)")
     }
 }
 
@@ -803,7 +840,7 @@ mod tests {
         // Onaylanan tavan, gerçekleşen arzdan ayırt edilebilmeli.
         assert_eq!(
             archive[0].share_structure.as_deref(),
-            Some("36500000 Lot (SPK onaylı)")
+            Some("36.500.000 Lot (SPK onaylı)")
         );
         // Türkçe bülten tarihi ISO'ya çevrilmeli; yoksa takvimde sıralanamaz.
         assert_eq!(archive[0].ipo_date, today_in_turkish().1);

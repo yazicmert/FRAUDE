@@ -21,7 +21,7 @@ const DEFAULTS: Prefs = {
   news_enabled: true,
   tickers: [],
   keywords: [],
-  min_priority: 3,
+  min_priority: 4,
 };
 
 /** Türkçe duyarsız arama normalizasyonu (İ/ı/ş/ğ… → sade). */

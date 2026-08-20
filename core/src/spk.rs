@@ -2366,7 +2366,7 @@ Selva Gıda Sanayi A.Ş.  65.000.000  78.000.000  13.000.000  -  13.000.000  -  
         let client = crate::http_client();
 
         // Bilinen halka arz içeren bülteni doğrudan test et
-        let known_url = "https://spk.gov.tr/data/6a7395628f95db1c20deaf20/2026-49.pdf";
+        let known_url = "https://spk.gov.tr/data/6a873ce58f95db0c9cbbbfbb/2026-52.pdf";
         let pdf_bytes = fetch_bulletin_pdf(&client, known_url).await.unwrap();
         println!("PDF boyutu: {} bytes", pdf_bytes.len());
 

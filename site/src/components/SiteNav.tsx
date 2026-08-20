@@ -55,6 +55,23 @@ export default function SiteNav({
     navigate(to);
   };
 
+  /**
+   * Gezinme bağlantılarının ortak sarmalayıcısı. Daha önce bunlar `href`siz
+   * `<a onClick>` idi: tarayıcı `href` taşımayan bir bağlantıyı odaklanabilir
+   * saymaz, ekran okuyucu da bağlantı olarak duyurmaz — menü klavyeyle
+   * erişilemiyordu. Artık gerçek adres var; tıklama yine SPA içinde kalıyor.
+   */
+  const linkProps = (to: string) => ({
+    href: to,
+    'aria-current': (window.location.pathname === to ? 'page' : undefined) as 'page' | undefined,
+    onClick: (event: React.MouseEvent) => {
+      // Yeni sekmede açma isteğine (⌘/Ctrl/orta tık) karışma.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+      event.preventDefault();
+      go(to);
+    },
+  });
+
   const goHash = (hash: string) => {
     setOpen(false);
     if (window.location.pathname !== '/') navigate('/');
@@ -65,8 +82,8 @@ export default function SiteNav({
   };
 
   return (
-    <nav className="site-nav">
-      <a className="brand" onClick={() => go('/')}>
+    <nav className="site-nav" aria-label={t('navMenu')}>
+      <a className="brand" {...linkProps('/')} aria-label="FRAUDE">
         <BrandMark size={30} />
         <Wordmark />
       </a>
@@ -77,34 +94,39 @@ export default function SiteNav({
             {t(section.label)}
           </a>
         ))}
-        <a onClick={() => go('/guncellemeler')}>{t('navUpdates')}</a>
+        <a {...linkProps('/guncellemeler')}>{t('navUpdates')}</a>
       </div>
 
       <div className="spacer" />
 
+      {/* Dil düğmesi hedef dili söyler; "EN" yazan düğme İngilizceye geçirir.
+          Rozetin kendisi iki harf olduğu için erişilebilir ad ayrıca verilir. */}
       <button
         className="btn btn-sm nav-lang"
-        aria-label="Language"
+        lang={lang === 'tr' ? 'en' : 'tr'}
+        aria-label={lang === 'tr' ? 'Switch to English' : "Türkçe'ye geç"}
         onClick={() => setLang(lang === 'tr' ? 'en' : 'tr')}
       >
         {lang === 'tr' ? 'EN' : 'TR'}
       </button>
 
+      {/* Hesap/yönetim düğmeleri gerçekte birer gezinme; bağlantı oldukları
+          için yeni sekmede açılabilir ve adresleri durum çubuğunda görünür. */}
       {user ? (
         <>
           {isAdmin && (
-            <button className="btn btn-sm nav-wide" onClick={() => go('/admin')}>
+            <a className="btn btn-sm nav-wide" {...linkProps('/admin')}>
               {t('adminNav')}
-            </button>
+            </a>
           )}
-          <button className="btn btn-sm nav-wide" onClick={() => go('/hesap')}>
+          <a className="btn btn-sm nav-wide" {...linkProps('/hesap')}>
             {userLabel}
-          </button>
+          </a>
         </>
       ) : (
-        <button className="btn btn-sm nav-wide" onClick={() => go('/giris')}>
+        <a className="btn btn-sm nav-wide" {...linkProps('/giris')}>
           {t('signIn')}
-        </button>
+        </a>
       )}
 
       <a className="btn btn-primary btn-sm nav-wide" href="/#indir" onClick={(e) => { e.preventDefault(); goHash('#indir'); }}>
@@ -135,15 +157,15 @@ export default function SiteNav({
             {t(section.label)}
           </a>
         ))}
-        <a onClick={() => go('/guncellemeler')}>{t('navUpdates')}</a>
+        <a {...linkProps('/guncellemeler')}>{t('navUpdates')}</a>
         <hr />
         {user ? (
           <>
-            {isAdmin && <a onClick={() => go('/admin')}>{t('adminNav')}</a>}
-            <a onClick={() => go('/hesap')}>{userLabel}</a>
+            {isAdmin && <a {...linkProps('/admin')}>{t('adminNav')}</a>}
+            <a {...linkProps('/hesap')}>{userLabel}</a>
           </>
         ) : (
-          <a onClick={() => go('/giris')}>{t('signIn')}</a>
+          <a {...linkProps('/giris')}>{t('signIn')}</a>
         )}
         <a className="btn btn-primary nav-panel-cta" href="/#indir" onClick={(e) => { e.preventDefault(); goHash('#indir'); }}>
           {t('downloadShort')}

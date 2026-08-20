@@ -10,7 +10,7 @@
  * anlatır. `shot`, site/public/shots altındaki ekran görüntüsünün adıdır ve
  * uygulamanın kendisinden çekilmiştir; görüntüsü olmayan modülde null'dur.
  */
-import type { Lang } from './i18n';
+import type { Lang } from './strings';
 
 export type Localized = Record<Lang, string>;
 

@@ -3,12 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FRAUDE — Finansal Dostunuz | Your Financial Companion</title>
+
+    <!-- seo:start -->
+    <!--
+      Adrese göre değişen künye. Bu blok, işaretçiler dahil, derleme sonrası
+      her yol için `scripts/prerender.ts` tarafından yeniden yazılır; tarayıcı
+      tarafında da `lib/useSeo.ts` aynı etiketleri tazeler. Aşağıdaki değerler
+      ana sayfanın künyesi: ön-derleme adımı hiç koşmasa bile sayfa doğru
+      kalır ve `vite dev` de bu künyeyi kullanır. İşaretçileri silmeyin.
+    -->
+    <title>FRAUDE — Borsa İstanbul için masaüstü finans terminali</title>
     <meta
+      data-seo
       name="description"
-      content="FRAUDE — finansal dostunuz: Borsa İstanbul'dan küresel piyasalara canlı veri, fon analizi, KAP izleme ve yapay zeka destekli araştırma. Your financial companion for the markets."
+      content="KAP bildirimleri, SPK bültenleri, TEFAS fon verisi ve teknik tarama tek masaüstü uygulamasında. 16 modül, macOS ve Windows, açık kaynak ve ücretsiz."
     />
+    <meta data-seo name="robots" content="index, follow, max-image-preview:large" />
+    <link data-seo rel="canonical" href="https://fraude.intelligentverseconnection.com/" />
+    <!-- seo:end -->
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#06080b" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Sürüm etiketi açılışta GitHub'a sorulur; el sıkışma peşin yapılsın. -->
+    <link rel="preconnect" href="https://api.github.com" crossorigin />
+    <link rel="dns-prefetch" href="https://github.com" />
   </head>
   <body>
     <div id="root"></div>

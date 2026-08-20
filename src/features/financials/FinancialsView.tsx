@@ -94,20 +94,23 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
   const [loadingDisclosures, setLoadingDisclosures] = useState(false);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [statementError, setStatementError] = useState<string | null>(null);
-  const [archiveStats, setArchiveStats] = useState<{ totalTickers: number; totalPeriods: number } | null>(null);
+  const [archiveStats, setArchiveStats] = useState<{ totalTickers: number; totalPeriods: number; universeCount: number } | null>(null);
 
   // Load 10-Year Supabase Financials Archive Stats
+  //
+  // Sayım sunucuda yapılıyor. Önceki sürüm `bist_financial_periods`ten her
+  // satırın ticker'ını çekip tekilini istemcide sayıyordu; PostgREST varsayılan
+  // olarak 1000 satırda kestiği için arşiv büyüdükçe sonuç sessizce yanlışlaşıyordu
+  // (22.000 dönemde ilk sayfanın tekili görünüyordu).
   useEffect(() => {
     async function loadArchiveStats() {
       try {
-        const { data, count, error } = await supabase
-          .from('bist_financial_periods')
-          .select('ticker', { count: 'exact' });
+        const { data, error } = await supabase.rpc('get_financial_archive_stats');
         if (!error && data) {
-          const unique = new Set(data.map((d: { ticker: string }) => d.ticker)).size;
           setArchiveStats({
-            totalTickers: unique,
-            totalPeriods: count ?? data.length,
+            totalTickers: data.indexed_tickers ?? 0,
+            totalPeriods: data.total_periods ?? 0,
+            universeCount: data.universe_count ?? 0,
           });
         }
       } catch (err) {
@@ -116,6 +119,18 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
     }
     loadArchiveStats();
   }, []);
+
+  // Kapsama oranı, evren sayısı da sunucudan geldiği için sabit 560 yerine
+  // `bist_tickers`teki aktif hisse sayısına göre hesaplanıyor. Halka arzlarla
+  // evren büyüdükçe sabit bölen ilerlemeyi olduğundan yüksek gösteriyordu.
+  const archiveCoverage = useMemo(() => {
+    const universe = archiveStats?.universeCount || 0;
+    if (!archiveStats || universe <= 0) {
+      return { universe: 0, percent: 0 };
+    }
+    const percent = Math.min(100, Math.round((archiveStats.totalTickers / universe) * 100));
+    return { universe, percent };
+  }, [archiveStats]);
 
   // Load Dashboard Snapshot & Live KAP Financial Disclosures
   useEffect(() => {
@@ -492,7 +507,7 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
           </div>
           <span className="fin-archive-badge">
             {archiveStats
-              ? `${archiveStats.totalTickers} / 560 Şirket (${archiveStats.totalPeriods.toLocaleString()} Çeyrek) • %${Math.round((archiveStats.totalTickers / 560) * 100)}`
+              ? `${archiveStats.totalTickers} / ${archiveCoverage.universe} Şirket (${archiveStats.totalPeriods.toLocaleString()} Çeyrek) • %${archiveCoverage.percent}`
               : 'Veritabanı senkronize ediliyor...'}
           </span>
         </div>
@@ -500,7 +515,7 @@ export default function FinancialsView({ onSelectTicker, initialTicker }: Financ
           <div
             className="fin-archive-bar"
             style={{
-              width: `${Math.min(100, Math.max(2, ((archiveStats?.totalTickers || 0) / 560) * 100))}%`,
+              width: `${Math.max(2, archiveCoverage.percent)}%`,
             }}
           />
         </div>

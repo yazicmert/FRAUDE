@@ -10,7 +10,6 @@
 //! bu yüzden pencereler dar tutulur.
 
 use crate::domain::KapAnnouncement;
-use chrono::Datelike;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -999,43 +998,13 @@ pub async fn fetch_latest_kap_financial_period(
         free_cash_flow: mul(free_cash_flow),
     };
 
-    // Arka planda merkezi Supabase veritabanına da yaz (tüm kullanıcılar anında görsün)
-    let client_clone = client.clone();
-    let ticker_clean = ticker.trim().trim_end_matches(".IS").to_uppercase();
-    let period_for_sb = period_str.clone();
-    let raw_id_num = raw_id.parse::<u64>().ok();
-
-    let (year, quarter, is_annual) = if let Ok(dt) = chrono::NaiveDate::parse_from_str(&period_for_sb, "%Y-%m-%d") {
-        let m = dt.month();
-        let q = match m { 1..=3 => 1, 4..=6 => 2, 7..=9 => 3, _ => 4 };
-        (dt.year() as i32, q as u8, q == 4)
-    } else {
-        (chrono::Utc::now().year() as i32, 4, true)
-    };
-
-    let sb_row = crate::supabase_financials::SupabaseFinancialRow {
-        ticker: ticker_clean,
-        period: period_for_sb,
-        year,
-        quarter,
-        is_annual,
-        currency: "TRY".to_string(),
-        revenue: fin_period.revenue,
-        gross_profit: fin_period.gross_profit,
-        operating_income: fin_period.operating_income,
-        net_income: fin_period.net_income,
-        total_assets: fin_period.total_assets,
-        total_equity: fin_period.total_equity,
-        total_debt: fin_period.total_debt,
-        operating_cash_flow: fin_period.operating_cash_flow,
-        free_cash_flow: fin_period.free_cash_flow,
-        disclosure_index: raw_id_num,
-        source: Some("KAP_LIVE_AUTO".to_string()),
-    };
-
-    tokio::spawn(async move {
-        let _ = crate::supabase_financials::upsert_financial_period(&client_clone, &sb_row).await;
-    });
+    // Buradan Supabase'e yazılmıyor. v1'de bu nokta, depoda ve dağıtılan ikilide
+    // açık duran anon anahtarla merkezi tabloya insert atıyordu; aynı anahtar
+    // arşivin tamamını silmeye de yetiyordu (20260818000005 göçü yetkiyi kaldırdı).
+    // Ayrıca buradaki eşleştirme Türkçe etikete bakıyor, arşivi dolduran
+    // `scripts/kap` ise XBRL concept adına; ikisi aynı tabloya yazsaydı etiket
+    // tabanlı tahminler concept tabanlı kayıtları eziyordu. Bu yol yalnızca
+    // arşive henüz girmemiş en yeni çeyreği anlık göstermek için var.
 
     Ok(Some(fin_period))
 }

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { navigate } from '../lib/router';
 import { useI18n } from '../lib/i18n';
 import { ALL_MODULES } from '../lib/product';
+import { shotSize, shotSrc } from '../lib/shots';
 
 /**
  * Kahramanın altındaki sekmeli ekran görüntüsü. Görüntüler uygulamanın
@@ -68,9 +69,13 @@ export default function ProductShots() {
             hidden={i !== active}
           >
             <img
-              src={`/shots/${mod.shot}.webp`}
+              src={shotSrc(mod.shot!)}
               alt={`${mod.name[lang]} — ${mod.desc[lang]}`}
+              {...shotSize(mod.shot!)}
+              // İlk sekme sayfanın en büyük görseli: geciktirilirse LCP onunla
+              // birlikte gecikir, o yüzden erken ve öncelikli istenir.
               loading={i === 0 ? 'eager' : 'lazy'}
+              fetchPriority={i === 0 ? 'high' : 'auto'}
               decoding="async"
             />
           </div>

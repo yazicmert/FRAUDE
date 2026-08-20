@@ -120,6 +120,14 @@ function renderVisualFundUsage(rawText?: string | null) {
   );
 }
 
+function formatNumberWithDots(val: string | number | null | undefined): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val).trim();
+  return str.replace(/\b\d{4,}\b/g, (match) => {
+    return Number(match).toLocaleString('tr-TR');
+  });
+}
+
 function renderVisualShareStructure(rawText?: string | null) {
   if (!rawText) {
     return (
@@ -150,12 +158,14 @@ function renderVisualShareStructure(rawText?: string | null) {
         else if (isEkOrtak) label = '➕ Ek Ortak Satışı';
         else if (isOrtak) label = '🤝 Ortak Satışı';
 
-        let cleanVal = part
-          .replace(/^Sermaye Artırımı\s*:\s*/i, '')
-          .replace(/^Ek Ortak Satışı\s*:\s*/i, '')
-          .replace(/^Ortak Satışı\s*:\s*/i, '')
-          .replace(/^Halka Arz Şekli\s*:\s*/i, '')
-          .trim();
+        let cleanVal = formatNumberWithDots(
+          part
+            .replace(/^Sermaye Artırımı\s*:\s*/i, '')
+            .replace(/^Ek Ortak Satışı\s*:\s*/i, '')
+            .replace(/^Ortak Satışı\s*:\s*/i, '')
+            .replace(/^Halka Arz Şekli\s*:\s*/i, '')
+            .trim()
+        );
 
         if (cleanVal.length > 45 && cleanVal.includes('(')) {
           cleanVal = cleanVal.replace(/\(([^)]+)\)/g, (_m, p1) => {
@@ -306,7 +316,7 @@ function renderFactRows(facts: Array<[string, string | null | undefined]>) {
       {filled.map(([label, value]) => (
         <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', alignItems: 'baseline' }}>
           <span style={{ color: '#8b949e', whiteSpace: 'nowrap' }}>{label}</span>
-          <span style={{ color: '#f0f6fc', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+          <span style={{ color: '#f0f6fc', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{formatNumberWithDots(value)}</span>
         </div>
       ))}
     </div>
@@ -1169,7 +1179,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
   const [events, setEvents] = useState<CorporateEventsPayload | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [ipoData, setIpoData] = useState<IpoCalendarPayload | null>(null);
-  const [ipoSubTab, setIpoSubTab] = useState<'tamamlanan' | 'taslak'>('tamamlanan');
+  const [ipoSubTab, setIpoSubTab] = useState<'yaklasan' | 'tamamlanan' | 'taslak'>('yaklasan');
   const [loading, setLoading] = useState(false);
   const [ipoRefreshing, setIpoRefreshing] = useState(false);
   const [expandedIpoIndex, setExpandedIpoIndex] = useState<number | null>(null);
@@ -1287,14 +1297,36 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
     return true;
   };
 
-  const activeIposCount = ipos.filter(i => i.status !== 'TASLAK' && filterIpoMatch(i)).length;
-  const draftIposCount = ipos.filter(i => i.status === 'TASLAK' && filterIpoMatch(i)).length;
+  const isPostponedOrCancelled = (ipo: IpoRecord) => {
+    const dates = (ipo.book_building_dates || '').toLowerCase();
+    return (
+      ipo.status === 'ERTELENDİ' ||
+      ipo.status === 'İPTAL' ||
+      dates.includes('ertelendi') ||
+      dates.includes('iptal')
+    );
+  };
+
+  const isUpcomingOrApproved = (ipo: IpoRecord) => {
+    if (isPostponedOrCancelled(ipo)) return false;
+    return ipo.status === 'SPK ONAYLI' || ipo.status === 'TALEP TOPLAMA' || ipo.status === 'AKTİF' || ipo.status === 'YENİ';
+  };
+  const isDraft = (ipo: IpoRecord) =>
+    ipo.status === 'TASLAK' || ipo.status === 'SPK_APPLICATION' || isPostponedOrCancelled(ipo);
+  const isCompleted = (ipo: IpoRecord) =>
+    !isUpcomingOrApproved(ipo) && !isDraft(ipo);
+
+  const upcomingIposCount = ipos.filter(i => isUpcomingOrApproved(i) && filterIpoMatch(i)).length;
+  const completedIposCount = ipos.filter(i => isCompleted(i) && filterIpoMatch(i)).length;
+  const draftIposCount = ipos.filter(i => isDraft(i) && filterIpoMatch(i)).length;
 
   const filteredIpos = ipos.filter(ipo => {
-    if (ipoSubTab === 'taslak') {
-      if (ipo.status !== 'TASLAK') return false;
-    } else {
-      if (ipo.status === 'TASLAK') return false;
+    if (ipoSubTab === 'yaklasan') {
+      if (!isUpcomingOrApproved(ipo)) return false;
+    } else if (ipoSubTab === 'tamamlanan') {
+      if (!isCompleted(ipo)) return false;
+    } else if (ipoSubTab === 'taslak') {
+      if (!isDraft(ipo)) return false;
     }
     return filterIpoMatch(ipo);
   });
@@ -1633,6 +1665,27 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '15px', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button
+                  onClick={() => setIpoSubTab('yaklasan')}
+                  style={{
+                    ...tabStyle('ipo'),
+                    padding: '6px 12px',
+                    borderBottom: ipoSubTab === 'yaklasan' ? '2px solid #a371f7' : '2px solid transparent',
+                    color: ipoSubTab === 'yaklasan' ? '#d2a8ff' : '#8b949e',
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                  }}
+                >
+                  <span>🏛️ {t('caIpoUpcoming')}</span>
+                  <span style={{
+                    fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px',
+                    background: ipoSubTab === 'yaklasan' ? 'rgba(163, 113, 247, 0.2)' : upcomingIposCount > 0 ? 'rgba(163, 113, 247, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    color: ipoSubTab === 'yaklasan' ? '#d2a8ff' : upcomingIposCount > 0 ? '#d2a8ff' : '#8b949e',
+                    fontWeight: upcomingIposCount > 0 ? 'bold' : 'normal',
+                    border: upcomingIposCount > 0 ? '1px solid rgba(163, 113, 247, 0.4)' : 'none',
+                  }}>
+                    {upcomingIposCount}
+                  </span>
+                </button>
+                <button
                   onClick={() => setIpoSubTab('tamamlanan')}
                   style={{
                     ...tabStyle('ipo'),
@@ -1642,13 +1695,13 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     display: 'flex', alignItems: 'center', gap: '6px',
                   }}
                 >
-                  <span>{t('caIpoDone')}</span>
+                  <span>✅ {t('caIpoDone')}</span>
                   <span style={{
                     fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px',
                     background: ipoSubTab === 'tamamlanan' ? 'rgba(88, 166, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
                     color: ipoSubTab === 'tamamlanan' ? '#58a6ff' : '#8b949e',
                   }}>
-                    {activeIposCount}
+                    {completedIposCount}
                   </span>
                 </button>
                 <button
@@ -1661,7 +1714,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     display: 'flex', alignItems: 'center', gap: '6px',
                   }}
                 >
-                  <span>{t('caIpoDraft')}</span>
+                  <span>📝 {t('caIpoDraft')}</span>
                   <span style={{
                     fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px',
                     background: ipoSubTab === 'taslak' ? 'rgba(88, 166, 255, 0.2)' : draftIposCount > 0 ? 'rgba(63, 185, 80, 0.2)' : 'rgba(255, 255, 255, 0.08)',
@@ -1830,9 +1883,9 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
 
             <div style={{ marginBottom: '12px', color: '#8b949e', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>{t('caIpoCount', { n: filteredIpos.length })}</span>
-              {filteredIpos.length < ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length && (
+              {filteredIpos.length < ipos.filter(i => ipoSubTab === 'yaklasan' ? isUpcomingOrApproved(i) : ipoSubTab === 'taslak' ? isDraft(i) : isCompleted(i)).length && (
                 <span style={{ fontSize: '0.72rem', color: '#58a6ff', background: 'rgba(88, 166, 255, 0.12)', padding: '2px 8px', borderRadius: '10px' }}>
-                  Filtrelendi ({ipos.filter(i => ipoSubTab === 'taslak' ? i.status === 'TASLAK' : i.status !== 'TASLAK').length} toplam içerisinden)
+                  Filtrelendi ({ipos.filter(i => ipoSubTab === 'yaklasan' ? isUpcomingOrApproved(i) : ipoSubTab === 'taslak' ? isDraft(i) : isCompleted(i)).length} toplam içerisinden)
                 </span>
               )}
             </div>
@@ -1841,7 +1894,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                 <thead>
                   <tr>
                     <th style={{ ...thStyle, width: '85px' }}>{t('ticker')}</th>
-                    <th style={{ ...thStyle, width: '210px' }}>{t('caCompany')}</th>
+                    <th style={{ ...thStyle, width: '230px' }}>{t('caCompany')}</th>
                     <th style={{ ...thStyle, width: '165px' }}>{t('caBookBuilding')}</th>
                     <th style={{ ...thStyle, width: '145px' }}>{t('caTradingStart')}</th>
                     <th style={{ ...thStyle, width: '110px' }}>{t('caDistribution')}</th>
@@ -1849,7 +1902,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                     <th style={{ ...thStyle, width: '90px' }}>{t('caIpoPrice')}</th>
                     <th style={{ ...thStyle, width: '90px' }}>{t('caCurrent')}</th>
                     <th style={{ ...thStyle, width: '95px' }} title={t('caReturnTip')}>{t('caReturn')} ⓘ</th>
-                    <th style={{ ...thStyle, width: '110px' }}>{t('caStatus')}</th>
+                    <th style={{ ...thStyle, width: '120px' }}>{t('caStatus')}</th>
                     <th style={{ ...thStyle, width: '32px', textAlign: 'center' }}></th>
                   </tr>
                 </thead>
@@ -1901,7 +1954,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                             )}
                           </div>
                         </td>
-                        <td style={{ ...tdStyle, maxWidth: '260px', fontWeight: 500 }}>
+                        <td style={{ ...tdStyle, maxWidth: '280px', fontWeight: 500 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                             <span
                               style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
@@ -1912,8 +1965,18 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                             {renderSourceChips(ipo)}
                           </div>
                         </td>
-                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{ipo.book_building_dates || '—'}</td>
-                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatTradingStartDate(ipo.trading_start_date)}</td>
+                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: ipo.book_building_dates ? '#f0f6fc' : '#8b949e', whiteSpace: 'nowrap' }}>
+                          {ipo.book_building_dates || (ipo.status === 'SPK ONAYLI' ? (
+                            <span style={{ color: '#d2a8ff', fontSize: '0.74rem' }}>⏳ Talep Toplama Bekleniyor</span>
+                          ) : '—')}
+                        </td>
+                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>
+                          {ipo.trading_start_date ? formatTradingStartDate(ipo.trading_start_date) : ipo.spk_bulletin_no ? (
+                            <span style={{ color: '#8b949e', fontSize: '0.74rem', fontFamily: 'var(--font-mono)' }}>
+                              Bülten {ipo.spk_bulletin_no}
+                            </span>
+                          ) : '—'}
+                        </td>
                         <td style={{ ...tdStyle, fontSize: '0.78rem', color: '#8b949e', whiteSpace: 'nowrap' }}>{ipo.distribution_type || '—'}</td>
                         <td style={{ ...tdStyle, fontSize: '0.78rem', color: ipo.participant_count ? '#f0f6fc' : '#8b949e', fontWeight: ipo.participant_count ? 600 : 400, whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)' }}>{ipo.participant_count || '—'}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{typeof ipo.price === 'number' && ipo.price > 0 ? `₺${ipo.price.toFixed(2)}` : '—'}</td>
@@ -1928,14 +1991,28 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                           )}
                         </td>
                         <td style={tdStyle}>
-                          <span style={{
-                            padding: '4px 10px', borderRadius: '16px', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.3px',
-                            background: ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.12)' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? 'rgba(63, 185, 80, 0.12)' : 'rgba(88, 166, 255, 0.12)',
-                            color: ipo.status === 'TAMAMLANDI' ? '#8b949e' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? '#3fb950' : '#58a6ff',
-                            border: `1px solid ${ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.2)' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? 'rgba(63, 185, 80, 0.3)' : 'rgba(88, 166, 255, 0.3)'}`,
-                          }}>
-                            {ipo.status}
-                          </span>
+                          {(() => {
+                            const isPostponed = isPostponedOrCancelled(ipo);
+                            const displayStatus = isPostponed ? 'ERTELENDİ' : ipo.status;
+                            const statusBg = isPostponed ? 'rgba(210, 153, 34, 0.15)' : ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.12)' : ipo.status === 'SPK ONAYLI' ? 'rgba(163, 113, 247, 0.18)' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? 'rgba(63, 185, 80, 0.12)' : 'rgba(88, 166, 255, 0.12)';
+                            const statusColor = isPostponed ? '#d29922' : ipo.status === 'TAMAMLANDI' ? '#8b949e' : ipo.status === 'SPK ONAYLI' ? '#d2a8ff' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? '#3fb950' : '#58a6ff';
+                            const statusBorder = isPostponed ? '1px solid rgba(210, 153, 34, 0.35)' : `1px solid ${ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.2)' : ipo.status === 'SPK ONAYLI' ? 'rgba(163, 113, 247, 0.4)' : ipo.status === 'AKTİF' || ipo.status === 'TALEP TOPLAMA' ? 'rgba(63, 185, 80, 0.3)' : 'rgba(88, 166, 255, 0.3)'}`;
+
+                            return (
+                              <span style={{
+                                padding: '4px 10px', borderRadius: '16px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.3px',
+                                background: statusBg, color: statusColor, border: statusBorder,
+                                display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'
+                              }}>
+                                <span>{displayStatus}</span>
+                                {ipo.spk_bulletin_no && !isPostponed && (
+                                  <span style={{ fontSize: '0.65rem', opacity: 0.85, fontFamily: 'var(--font-mono)' }}>
+                                    ({ipo.spk_bulletin_no})
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'center', color: '#8b949e', fontSize: '0.8rem' }}>
                           {isExpanded ? '▲' : '▼'}
@@ -1987,14 +2064,22 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                       {ipo.ticker}
                                     </span>
                                   )}
-                                  <span style={{
-                                    padding: '3px 10px', borderRadius: '14px', fontSize: '0.72rem', fontWeight: 600,
-                                    background: ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.12)' : 'rgba(63, 185, 80, 0.12)',
-                                    color: ipo.status === 'TAMAMLANDI' ? '#8b949e' : '#3fb950',
-                                    border: `1px solid ${ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.2)' : 'rgba(63, 185, 80, 0.3)'}`,
-                                  }}>
-                                    {ipo.status}
-                                  </span>
+                                  {(() => {
+                                    const isPostponed = isPostponedOrCancelled(ipo);
+                                    const displayStatus = isPostponed ? 'ERTELENDİ' : ipo.status;
+                                    const statusBg = isPostponed ? 'rgba(210, 153, 34, 0.15)' : ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.12)' : ipo.status === 'SPK ONAYLI' ? 'rgba(163, 113, 247, 0.18)' : 'rgba(63, 185, 80, 0.12)';
+                                    const statusColor = isPostponed ? '#d29922' : ipo.status === 'TAMAMLANDI' ? '#8b949e' : ipo.status === 'SPK ONAYLI' ? '#d2a8ff' : '#3fb950';
+                                    const statusBorder = isPostponed ? '1px solid rgba(210, 153, 34, 0.35)' : `1px solid ${ipo.status === 'TAMAMLANDI' ? 'rgba(139, 148, 158, 0.2)' : ipo.status === 'SPK ONAYLI' ? 'rgba(163, 113, 247, 0.4)' : 'rgba(63, 185, 80, 0.3)'}`;
+
+                                    return (
+                                      <span style={{
+                                        padding: '3px 10px', borderRadius: '14px', fontSize: '0.72rem', fontWeight: 600,
+                                        background: statusBg, color: statusColor, border: statusBorder,
+                                      }}>
+                                        {displayStatus}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                                 <button
                                   type="button"
@@ -2011,6 +2096,43 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                 </button>
                               </div>
 
+                              {/* SPK Bülten Onay Banner'ı (SPK Onaylı veya Bülten No Varsa) */}
+                              {ipo.spk_bulletin_no && (
+                                <div style={{
+                                  background: 'linear-gradient(90deg, rgba(163, 113, 247, 0.15), rgba(56, 139, 253, 0.08))',
+                                  border: '1px solid rgba(163, 113, 247, 0.35)',
+                                  borderRadius: '10px',
+                                  padding: '12px 18px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: '10px',
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '1.2rem' }}>🏛️</span>
+                                    <div>
+                                      <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#d2a8ff', letterSpacing: '-0.2px' }}>
+                                        SPK Bülteni {ipo.spk_bulletin_no} ile Onaylandı
+                                      </div>
+                                      <div style={{ fontSize: '0.74rem', color: '#8b949e', marginTop: '2px' }}>
+                                        {ipo.spk_approval_date ? `Resmi Karar / Onay Tarihi: ${ipo.spk_approval_date}` : 'Sermaye Piyasası Kurulu Haftalık Bülten Onayı'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{
+                                      fontSize: '0.74rem', padding: '3px 10px', borderRadius: '12px',
+                                      background: 'rgba(163, 113, 247, 0.25)', color: '#d2a8ff',
+                                      fontWeight: 700, border: '1px solid rgba(163, 113, 247, 0.4)',
+                                      fontFamily: 'var(--font-mono)'
+                                    }}>
+                                      SPK Onaylı İzahname
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Executive Summary Metric Bar (4 Top Cards) */}
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(180px, 100%), 1fr))', gap: '12px', width: '100%', boxSizing: 'border-box' }}>
                                 {/* Arz Fiyatı */}
@@ -2025,7 +2147,7 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                 <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                                   <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📊 Toplam Büyüklük</div>
                                   <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#f0f6fc', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
-                                    {ipo.ipo_size || 'İzahnamede Belirtilecek'}
+                                    {formatNumberWithDots(ipo.ipo_size) || 'İzahnamede Belirtilecek'}
                                   </div>
                                 </div>
 
@@ -2182,8 +2304,8 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                     </div>
                                     {/* Bu bölüm yalnız kaynaktan okunan değerleri gösterir; alan
                                         boşsa satır hiç çizilmez. Her arza aynı sabit metni basmak
-                                        (eskiden "1 Yıl İhraççı Taahhüdü" gibi) gerçek veriden
-                                        ayırt edilemiyordu. */}
+                                         (eskiden "1 Yıl İhraççı Taahhüdü" gibi) gerçek veriden
+                                         ayırt edilemiyordu. */}
                                     {ipo.lockup_period && (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         <span style={{ color: '#8b949e', fontSize: '0.76rem' }}>🔒 Satmama Taahhüdü</span>
@@ -2205,8 +2327,14 @@ export default function CorporateActionsView({ onSelectTicker, initialTab = 'div
                                       </div>
                                     )}
                                     {!ipo.lockup_period && !ipo.price_stability && !ipo.expected_lots && (
-                                      <div style={{ fontSize: '0.82rem', color: '#8b949e', lineHeight: '1.5', fontStyle: 'italic' }}>
-                                        Bu arz için izahname özeti henüz yayımlanmadı.
+                                      <div style={{ fontSize: '0.82rem', color: '#8b949e', lineHeight: '1.6', fontStyle: 'italic' }}>
+                                        {ipo.spk_bulletin_no ? (
+                                          <span>
+                                            Bu halka arz SPK Bülteni <strong>{ipo.spk_bulletin_no}</strong> ile onaylanmıştır. Şirketin onaylı izahnamesi ve talep toplama tarihleri KAP'ta yayımlandığında taahhüt ve dağıtım detayları otomatik güncellenecektir.
+                                          </span>
+                                        ) : (
+                                          'Bu arz için izahname özeti henüz yayımlanmadı.'
+                                        )}
                                       </div>
                                     )}
                                     {(ipo.spk_bulletin_no || (ipo.data_sources?.length ?? 0) > 0) && (
