@@ -1,10 +1,11 @@
 import HeroTerminal from '../components/HeroTerminal';
 import ProductShots from '../components/ProductShots';
 import { navigate } from '../lib/router';
-import { DOWNLOAD_MAC, DOWNLOAD_WIN } from '../lib/download';
+import { useDownloadChoice } from '../lib/platform';
 import { useI18n, type StringKey } from '../lib/i18n';
 import { ALL_MODULES, ALWAYS_ON, MODULE_COUNT, MODULE_GROUPS, SOURCES } from '../lib/product';
 import { useLatestVersion } from '../lib/version';
+import { shotSize, shotSrc } from '../lib/shots';
 
 const PILLARS: { label: StringKey; title: StringKey; body: StringKey }[] = [
   { label: 'p1l', title: 'p1t', body: 'p1x' },
@@ -33,6 +34,7 @@ const INCLUDED: StringKey[] = ['accY1', 'accY2', 'accY3', 'accY4'];
 export default function Landing() {
   const { t, lang } = useI18n();
   const version = useLatestVersion();
+  const download = useDownloadChoice();
 
   return (
     <>
@@ -48,13 +50,15 @@ export default function Landing() {
             <span className="lp-h1-2">{t('heroLine2')}</span>
           </h1>
           <p className="lp-lead">{t('heroLead')}</p>
-          {/* Tek birincil çağrı; ikinci platform yarışan buton değil, bağlantı. */}
+          {/* Tek birincil çağrı; ikinci platform yarışan buton değil, bağlantı.
+              Sıralama ziyaretçinin işletim sistemine göre kurulur, yoksa
+              Windows'tan gelen biri önce yanlış paketi görüyor. */}
           <div className="lp-ctas">
-            <a className="btn btn-primary btn-lg" href={DOWNLOAD_MAC}>
-              {t('dlMac')}
+            <a className="btn btn-primary btn-lg" href={download.primary.href}>
+              {t(download.primary.label)}
             </a>
-            <a className="lp-alt" href={DOWNLOAD_WIN}>
-              {t('heroSecondary')} →
+            <a className="lp-alt" href={download.secondary.href}>
+              {t(download.secondary.short)} →
             </a>
           </div>
           <p className="lp-note">{t('heroNote')}</p>
@@ -124,8 +128,9 @@ export default function Landing() {
                 {mod?.shot && (
                   <div className="lp-flow-shot">
                     <img
-                      src={`/shots/${mod.shot}.webp`}
+                      src={shotSrc(mod.shot)}
                       alt={`${mod.name[lang]} — ${mod.desc[lang]}`}
+                      {...shotSize(mod.shot)}
                       loading="lazy"
                       decoding="async"
                     />
@@ -256,12 +261,17 @@ export default function Landing() {
       <section className="lp-download" id="indir">
         <h2 className="lp-h2">{t('dlTitle')}</h2>
         <p className="lp-sub">{t('dlSub')}</p>
+        {/* Kapanış bandında iki paket de tam düğme: buraya kadar inen okuyucu
+            indirmeye karar vermiştir, platformunu kendi de seçebilmeli. */}
         <div className="lp-ctas lp-ctas-center">
-          <a className="btn btn-primary btn-lg" href={DOWNLOAD_MAC}>
-            {t('dlMac')}
+          <a
+            className={`btn btn-lg${download.ambiguous ? '' : ' btn-primary'}`}
+            href={download.primary.href}
+          >
+            {t(download.primary.label)}
           </a>
-          <a className="btn" href={DOWNLOAD_WIN}>
-            {t('dlWin')}
+          <a className="btn btn-lg" href={download.secondary.href}>
+            {t(download.secondary.label)}
           </a>
         </div>
         <p className="lp-note">{t('dlGatekeeper')}</p>

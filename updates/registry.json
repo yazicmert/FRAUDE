@@ -2,6 +2,104 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-20-bildirim-optimizasyonu-ve-halka-arz-filtreleme",
+      "date": "2026-08-20",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Bildirim Sistemi Optimizasyonu ve Halka Arz Durum Yönetimi",
+        "en": "Notification System Optimization and IPO Status Management"
+      },
+      "summary": {
+        "tr": "Piyasa bildirimlerinde süzgeçsiz hesaplara her 10 dakikada bir tüm BIST haberlerinin gönderilmesi engellendi; yalnızca kritik (seviye 4-5) gelişmeler iletilecek şekilde akıllı süzgeç ve RFC 8058 List-Unsubscribe başlıkları entegre edildi. Halka arzlarda ertelenen ve iptal edilen şirketlerin (örn. Dünya Varlık) onaylılar listesinde görünmesi engellenerek durum makinesi ve tarih sıralaması düzeltildi.",
+        "en": "Prevented inbox flooding by restricting unfiltered notification preferences to critical-only developments (priority level 4-5) and adding RFC 8058 List-Unsubscribe headers. Fixed IPO state machine and ISO date sorting so postponed and cancelled IPOs (e.g. Dünya Varlık) are cleanly separated from upcoming approvals."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/corporate_actions.rs",
+        "core/src/ipo_pipeline.rs",
+        "src/features/corporate/CorporateActionsView.tsx",
+        "src/features/notifications/NotificationsView.tsx",
+        "src/api/i18n.ts",
+        "supabase/functions/market-watch/index.ts",
+        "supabase/functions/_shared/mailer.ts",
+        "site/src/components/NotifyPrefs.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "peki bir de fraude bana her 10 dk bir mail gönderiyor bunu ben ayarlamadım neyden kaynaklandı bu",
+      "notes": null
+    },
+    {
+      "id": "2026-08-20-spk-bulten-halka-arz-entegrasyonu-ve-gorunurluk",
+      "date": "2026-08-20",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "SPK Bülteni Halka Arz Entegrasyonu ve Görünürlük İyileştirmeleri",
+        "en": "SPK Bulletin IPO Integration and Visibility Improvements"
+      },
+      "summary": {
+        "tr": "Yeni SPK bülteninden onay alan halka arzların (örn. İntetra, Bakırcı GYO) arama yapmadan en üstte listelenmesi sağlandı. Halka arz sekmesi 'SPK Onaylı & Yaklaşan', 'Tamamlanan' ve 'Taslak & Başvurular' olarak 3 alt sekmeye ayrıldı. Hangi SPK bülteni ve karar tarihiyle onay alındığı tabloda ve detay kartında belirginleştirildi, lot ve büyüklük sayıları binlik basamaklara göre formatlandı.",
+        "en": "Newly SPK-approved IPOs now appear directly at the top of the IPO list without searching. IPOs are now organized into 3 tabs: 'SPK Approved & Upcoming', 'Completed', and 'Drafts & Applications'. SPK bulletin number and approval dates are clearly highlighted in the table and detail cards, and lot and size figures are cleanly formatted with thousand separators."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/domain.rs",
+        "core/src/corporate_actions.rs",
+        "core/src/ipo_pipeline.rs",
+        "src/types.ts",
+        "src/api/i18n.ts",
+        "src/features/corporate/CorporateActionsView.tsx",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "tamam spk onaylı da ui kötü buna ek olarak hangi spk da onay aldı o gözükmüyor ismini aratmayoınca neden çıkmıyor halka arz kısmında",
+      "notes": null
+    },
+    {
+      "id": "2026-08-18-kap-boru-hatti-v2-ceyreklik-yillik-ayrimi",
+      "date": "2026-08-18",
+      "author": "yazicmert",
+      "kind": "fix",
+      "area": "core",
+      "title": {
+        "tr": "Finansal Tablolarda Çeyreklik/Yıllık Ayrımı ve Konsolide-Solo Çakışması Giderildi",
+        "en": "Correct Quarterly vs Annual Figures and Consolidated/Solo Separation"
+      },
+      "summary": {
+        "tr": "KAP akış kalemlerini (hasılat, kâr, nakit akışı) yılbaşından itibaren kümülatif yayımlıyor; uygulama bu değerleri çeyreklik sanıp gösteriyordu. Artık çeyreklik ve yıllık seriler ayrı kolonlardan okunuyor. Aynı döneme ait konsolide ve solo tablolar birbirini ezmiyor, arşiv kapsama oranı sunucuda sayılıyor.",
+        "en": "KAP publishes flow items (revenue, profit, cash flow) cumulatively from the start of the year, but the app displayed them as if they were quarterly. Quarterly and annual series are now read from separate columns. Consolidated and solo statements for the same period no longer overwrite each other, and archive coverage is counted server-side."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "core/src/supabase_financials.rs",
+        "core/src/kap.rs",
+        "src/features/financials/FinancialsView.tsx",
+        "supabase/migrations/20260818000005_kap_pipeline_v2.sql",
+        "scripts/kap/backfill.py",
+        "scripts/kap/client.py",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "kap-pipline düzelt",
+      "notes": null
+    },
+    {
       "id": "2026-08-18-kap-otomatik-bilanco-senkronizasyon-ve-reconciler",
       "date": "2026-08-18",
       "author": "yazicmert",

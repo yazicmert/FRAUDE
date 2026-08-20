@@ -456,6 +456,7 @@ export interface IpoRecord {
   major_shareholders?: string | null;
   data_sources?: string[];
   spk_bulletin_no?: string | null;
+  spk_approval_date?: string | null;
 }
 
 /** Tamamlanmış bir arzın yatırımcı grubu bazında dağıtım satırı. */

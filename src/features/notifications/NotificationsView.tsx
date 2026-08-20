@@ -24,7 +24,7 @@ const DEFAULTS: Prefs = {
   news_enabled: true,
   tickers: [],
   keywords: [],
-  min_priority: 3,
+  min_priority: 4,
 };
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -221,7 +221,20 @@ export default function NotificationsView() {
           <h2>{t('notifFollowed')}</h2>
           <p className="notif-muted small">{t('notifFollowedHint')}</p>
           <div className="notif-chips">
-            {prefs.tickers.length === 0 && <span className="notif-muted small">{t('notifNoneYet')}</span>}
+            {prefs.tickers.length === 0 && (
+              <div style={{
+                marginTop: '4px',
+                padding: '10px 14px',
+                background: 'rgba(88, 166, 255, 0.08)',
+                border: '1px solid rgba(88, 166, 255, 0.2)',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                lineHeight: '1.45',
+                color: '#a5d6ff',
+              }}>
+                ℹ️ {t('notifEmptyWatchlistHint')}
+              </div>
+            )}
             {prefs.tickers.map((tk) => (
               <span key={tk} className="notif-chip">
                 {tk}

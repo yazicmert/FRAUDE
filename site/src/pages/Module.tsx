@@ -3,6 +3,7 @@ import { navigate } from '../lib/router';
 import { DOWNLOAD_MAC, DOWNLOAD_WIN } from '../lib/download';
 import { useI18n } from '../lib/i18n';
 import { ALL_MODULES, findModule, type ModuleEntry } from '../lib/product';
+import { shotSize, shotSrc } from '../lib/shots';
 
 /**
  * Tek modülün ayrıntı sayfası: /modul/<slug>.
@@ -61,9 +62,12 @@ export default function Module({ slug }: { slug: string }) {
       {mod.shot ? (
         <figure className="md-shot">
           <img
-            src={`/shots/${mod.shot}.webp`}
+            src={shotSrc(mod.shot)}
             alt={`${mod.name[lang]} — ${mod.desc[lang]}`}
-            loading="lazy"
+            {...shotSize(mod.shot)}
+            // Modül sayfasının ana görseli ekranın üstünde: gecikmeli
+            // yükleme burada LCP'yi bekletir.
+            fetchPriority="high"
             decoding="async"
           />
           <figcaption>

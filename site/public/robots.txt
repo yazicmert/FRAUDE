@@ -1,0 +1,19 @@
+# FRAUDE tanıtım sitesi
+# Oturuma bağlı ve tek kullanımlık adresler taranmaz: içerikleri kullanıcıya
+# özeldir ya da jeton taşır. Aynı adresler künyelerinde de noindex taşır
+# (bkz. src/lib/seo.ts).
+
+User-agent: *
+Allow: /
+Disallow: /hesap
+Disallow: /admin
+Disallow: /giris
+Disallow: /sifre-yenile
+Disallow: /lisans-iptal
+Disallow: /uygulamaya-giris
+Disallow: /bildirim-iptal
+
+# ?lang= kapatılmaz: hreflang bağlantıları o adresleri gösteriyor ve
+# taranamayan bir alternatif yok sayılır. Yinelenme kanonik etiketle çözülür.
+
+Sitemap: https://fraude.intelligentverseconnection.com/sitemap.xml

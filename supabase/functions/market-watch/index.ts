@@ -1,5 +1,6 @@
 // FRAUDE — piyasa gözcüsü: KAP + SPK + haber akışlarını ve kullanıcı fiyat alarmlarını
-// yoklar, Qwen ile önceliklendirir ve kullanıcıya Brevo/SMTP ile mailler. Uygulama kapalıyken çalışır.
+// yoklar, Qwen ile önceliklendirir ve eşleşenleri bildirim kuyruğuna yazar.
+// Uygulama kapalıyken çalışır.
 //
 // Akış (pg_cron ile ~10 dk'da bir tetiklenir):
 //   1) notify_seen imleçlerinden sonra gelen yeni KAP bildirimleri + NTV haberleri
@@ -7,9 +8,16 @@
 //   2) KAP/haber öğeleri Qwen'e verilir; model her öğe için ilgili BIST kodlarını,
 //      1-5 önem puanını ve tek satır Türkçe özet döndürür.
 //   3) user_alerts tablosundaki aktif özel alarmlar (fiyat kırılımları, özel KAP/haber anahtarları)
-//      değerlendirilir ve eşleşenlere anında alarm maili gönderilir.
-//   4) notify_prefs tercihine sahip kullanıcılara dijest maili iletilir.
-//   5) İmleçler en yeni öğeye ilerletilir.
+//      değerlendirilir.
+//   4) notify_prefs tercihiyle (hisse / anahtar kelime / önem eşiği) eşleşen
+//      öğeler ilgili kullanıcılara çıkarılır.
+//   5) Eşleşen her şey TEK seferde notify_deliveries + notify_outbox'a yazılır.
+//   6) İmleçler en yeni öğeye ilerletilir.
+//
+// BU FONKSİYON MAİL GÖNDERMEZ. Gönderimi mail-dispatch yapar. Ayrımın sebebi:
+// eskiden mailler tespit döngüsünün içinde tek tek `await` ediliyordu, tek bir
+// yavaş alıcı sunucusu turu wall-clock sınırına sürükleyip imleçlerin
+// ilerlemesini engelliyordu. Artık tespit turu ağ gecikmesinden bağımsız.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -21,6 +29,12 @@ const KAP_FEED = 'https://www.kap.org.tr/tr/api/disclosure/list/light';
 const NEWS_RSS = 'https://www.ntv.com.tr/ekonomi.rss';
 const SPK_PAGE = 'https://spk.gov.tr/spk-bultenleri/2026-yili-spk-bultenleri';
 const UA = 'Mozilla/5.0 (FRAUDE market-watch)';
+
+/** Tek turda bir kullanıcıya genel tercihlerden üretilecek en fazla bildirim. */
+const MAX_PREF_MAILS_PER_RUN = 10;
+
+/** Toplu yazım parça boyutu: tek dev insert isteği zaman aşımına düşmesin. */
+const INSERT_CHUNK = 100;
 
 interface FeedItem {
   source: 'kap' | 'news';
@@ -46,6 +60,18 @@ interface CustomAlertRow {
   repeat: boolean;
   email_notify: boolean;
   is_triggered: boolean;
+}
+
+/** notify_prefs satırı: kullanıcının genel bildirim süzgeci. */
+interface PrefRow {
+  user_id: string;
+  email: string | null;
+  kap_enabled: boolean;
+  spk_enabled: boolean;
+  news_enabled: boolean;
+  tickers: string[] | null;
+  keywords: string[] | null;
+  min_priority: number;
 }
 
 function escapeHtml(v: string): string {
@@ -210,19 +236,181 @@ async function enrich(items: FeedItem[]): Promise<FeedItem[]> {
   return items;
 }
 
-// ── Mail Gönderimi ─────────────────────────────────────────────────────────
-async function sendMail(to: string, subject: string, html: string): Promise<void> {
-  const brevoKey = Deno.env.get('BREVO_API_KEY');
-  const fromRaw = Deno.env.get('MAIL_FROM') ?? '';
-  if (!brevoKey || !fromRaw) return;
-  const m = fromRaw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  const sender = m ? { name: m[1].trim() || 'FRAUDE', email: m[2].trim() } : { name: 'FRAUDE', email: fromRaw.trim() };
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: { 'api-key': brevoKey, 'Content-Type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ sender, to: [{ email: to }], subject, htmlContent: html }),
-  });
-  if (!res.ok) console.error('brevo-failed', res.status, await res.text().catch(() => ''));
+// ── Bildirim kuyruğu ───────────────────────────────────────────────────────
+
+/**
+ * Tur boyunca biriken tek bir bildirim. Hem notify_deliveries'e (Chrome
+ * eklentisi beslemesi ve site geçmişi) hem notify_outbox'a (mail) düşer;
+ * ikisi tek toplu yazımla gider.
+ */
+interface Outgoing {
+  userId: string;
+  email: string;
+  subject: string;
+  html: string;
+  delivery: {
+    source: string;
+    priority: number;
+    title: string;
+    summary: string;
+    tickers: string[];
+    url: string | null;
+  };
+}
+
+/**
+ * Biriken bildirimleri yazar. Önce notify_deliveries (kimlikleri geri alınır),
+ * sonra onlara bağlı notify_outbox satırları.
+ *
+ * Sıra bağımlılığı: tek bir `insert ... returning` ifadesi satırları verilen
+ * sırayla döndürür, bu yüzden `inserted[i]` ile `list[i]` eşleşir. Toplu yazım
+ * bilinçli: kullanıcı başına ayrı istek atmak turu yine ağa bağımlı kılardı.
+ */
+async function flushQueue(
+  supabase: ReturnType<typeof createClient>,
+  list: Outgoing[],
+): Promise<number> {
+  let written = 0;
+
+  for (let start = 0; start < list.length; start += INSERT_CHUNK) {
+    const chunk = list.slice(start, start + INSERT_CHUNK);
+
+    const { data: inserted, error: deliveryError } = await supabase
+      .from('notify_deliveries')
+      .insert(
+        chunk.map((o) => ({
+          user_id: o.userId,
+          source: o.delivery.source,
+          priority: o.delivery.priority,
+          title: o.delivery.title,
+          summary: o.delivery.summary,
+          tickers: o.delivery.tickers,
+          url: o.delivery.url,
+        })),
+      )
+      .select('id');
+
+    // Besleme yazımı başarısız olsa da mail kuyruğa girmeli: bildirimin
+    // kullanıcıya ulaşması, geçmişte görünmesinden önceliklidir.
+    if (deliveryError) console.error('deliveries-insert-failed', deliveryError.message);
+
+    const { error: outboxError } = await supabase.from('notify_outbox').insert(
+      chunk.map((o, i) => ({
+        user_id: o.userId,
+        delivery_id: (inserted?.[i] as { id: string } | undefined)?.id ?? null,
+        to_email: o.email,
+        subject: o.subject,
+        html: o.html,
+        // Webhook kanalı HTML değil bu gövdeyi alır.
+        payload: o.delivery,
+      })),
+    );
+
+    if (outboxError) console.error('outbox-insert-failed', outboxError.message);
+    else written += chunk.length;
+  }
+
+  return written;
+}
+
+/**
+ * notify_prefs süzgecini akışa uygular.
+ *
+ * Kural: kaynak açık olmalı ve önem puanı eşiği geçmeli. Kullanıcı hiç hisse ve
+ * anahtar kelime tanımlamadıysa eşik tek ölçüttür (arayüzdeki "Hepsi (1+)"
+ * seçeneği bu şekilde anlam kazanır); tanımladıysa hisse VEYA anahtar kelime
+ * eşleşmesi aranır.
+ *
+ * SPK bülteni puansızdır ve şirkete özgü değildir: kaynağı açık olan herkese
+ * gider.
+ */
+function matchPrefs(
+  prefRows: PrefRow[],
+  feed: FeedItem[],
+  spkNew: { no: string; url: string } | null,
+): Outgoing[] {
+  const out: Outgoing[] = [];
+
+  for (const pref of prefRows) {
+    if (!pref.email || !pref.enabled) continue;
+
+    const tickers = (pref.tickers ?? []).map((t) => t.toUpperCase());
+    const keywords = (pref.keywords ?? []).map((k) => k.toLowerCase()).filter(Boolean);
+    const hasSpecificFilter = tickers.length > 0 || keywords.length > 0;
+    let produced = 0;
+
+    for (const item of feed) {
+      // Üst sınır iki işi birden yapar: kullanıcıyı tek turda aşırı mail altında
+      // bırakmaz ve kuyruğun kullanıcı×öğe çarpımıyla patlamasını engeller.
+      if (produced >= MAX_PREF_MAILS_PER_RUN) break;
+      if (item.source === 'kap' && !pref.kap_enabled) continue;
+      if (item.source === 'news' && !pref.news_enabled) continue;
+      if (item.priority < pref.min_priority) continue;
+
+      let matched = false;
+      if (hasSpecificFilter) {
+        if (tickers.length > 0) {
+          const hayUpper = `${item.title} ${item.body}`.toUpperCase();
+          matched = tickers.some((t) => item.tickers.includes(t) || hayUpper.includes(t));
+        }
+        if (!matched && keywords.length > 0) {
+          const hayLower = `${item.title} ${item.body}`.toLowerCase();
+          matched = keywords.some((k) => hayLower.includes(k));
+        }
+      } else {
+        // Kullanıcı hiç hisse veya anahtar kelime tanımlamamışsa:
+        // Tüm borsanın olağan bildirimleriyle posta kutusunu boğmamak için
+        // yalnızca KRİTİK (öncelik >= 4: bilanço, sermaye artırımı, olağanüstü durum vb.)
+        // veya SPK bülteni gelişmelerinde bildirim üretilir.
+        if (item.priority >= Math.max(4, pref.min_priority)) {
+          matched = true;
+        }
+      }
+      if (!matched) continue;
+
+      const label = item.source === 'kap' ? 'KAP' : 'Haber';
+      const shown = item.tickers.length > 0 ? item.tickers.join(', ') : label;
+      const subject = `${item.source === 'kap' ? '📢' : '📰'} FRAUDE ${label}: ${item.title.slice(0, 90)}`;
+      const details = `${item.summary || item.body}\n\nKaynak: ${label}`;
+
+      out.push({
+        userId: pref.user_id,
+        email: pref.email,
+        subject,
+        html: renderSingleAlertHtml(subject, shown, details, item.url),
+        delivery: {
+          source: item.source,
+          priority: item.priority,
+          title: item.title,
+          summary: item.summary || item.body.slice(0, 300),
+          tickers: item.tickers,
+          url: item.url,
+        },
+      });
+      produced++;
+    }
+
+    if (spkNew && pref.spk_enabled) {
+      const subject = `🏛️ FRAUDE SPK Bülteni ${spkNew.no}`;
+      const details = `Yeni SPK Bülteni (${spkNew.no}) yayımlandı.`;
+      out.push({
+        userId: pref.user_id,
+        email: pref.email,
+        subject,
+        html: renderSingleAlertHtml(subject, 'SPK', details, spkNew.url),
+        delivery: {
+          source: 'spk',
+          priority: 4,
+          title: subject,
+          summary: details,
+          tickers: [],
+          url: spkNew.url,
+        },
+      });
+    }
+  }
+
+  return out;
 }
 
 function renderSingleAlertHtml(title: string, ticker: string, details: string, url?: string | null): string {
@@ -242,7 +430,9 @@ function renderSingleAlertHtml(title: string, ticker: string, details: string, u
         ${linkHtml}
       </td></tr>
       <tr><td align="center" style="padding-top:22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:12px;line-height:1.7;color:#8b949e;">
-        FRAUDE Terminal — 24/7 Bulut Gözcüsü<br>Bu alarmı FRAUDE grafik veya alarm panelinden yönetebilirsiniz.</td></tr>
+        FRAUDE Terminal — 24/7 Bulut Gözcüsü<br>
+        Bu bildirimleri <a href="https://fraude.app/hesap/bildirimler" style="color:#58a6ff;text-decoration:underline;">Bildirim Ayarları</a> sayfasından yönetebilir veya kapatabilirsiniz.
+      </td></tr>
     </table></td></tr></table></body></html>`;
 }
 
@@ -269,17 +459,20 @@ Deno.serve(async (req) => {
   if (feed.length > 40) feed = feed.slice(0, 40);
   feed = await enrich(feed);
 
-  // 1. Kullanıcı e-postalarını çek
+  // 1. Kullanıcı tercihlerini çek
   const { data: prefs } = await supabase
     .from('notify_prefs')
     .select('user_id, email, kap_enabled, news_enabled, spk_enabled, tickers, keywords, min_priority')
     .eq('enabled', true);
 
+  const prefRows = (prefs ?? []) as PrefRow[];
   const userEmailMap = new Map<string, string>();
-  for (const p of prefs ?? []) {
+  for (const p of prefRows) {
     if (p.email) userEmailMap.set(p.user_id, p.email);
   }
 
+  // Tur boyunca biriken bildirimler; sonda tek seferde yazılır.
+  const outgoing: Outgoing[] = [];
   let customAlertsSent = 0;
 
   // 2. KULLANICI ÖZEL ALARMLARINI İŞLE (user_alerts)
@@ -313,7 +506,20 @@ Deno.serve(async (req) => {
         if (userEmail) {
           const subject = `🎯 FRAUDE Fiyat Alarmı: ${alert.ticker} (${curPrice.toFixed(2)} TL)`;
           const desc = `${alert.ticker} hedef fiyat seviyesine ulaştı! Hedef Eşik: ${alert.threshold} TL (${alert.op === 'above' ? 'Üzeri' : 'Altı'}), Güncel Fiyat: ${curPrice.toFixed(2)} TL.${alert.note ? `\nNot: ${alert.note}` : ''}`;
-          await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, desc));
+          outgoing.push({
+            userId: alert.user_id,
+            email: userEmail,
+            subject,
+            html: renderSingleAlertHtml(subject, alert.ticker, desc),
+            delivery: {
+              source: 'alert',
+              priority: 5,
+              title: subject,
+              summary: desc,
+              tickers: [alert.ticker],
+              url: null,
+            },
+          });
           customAlertsSent++;
         }
 
@@ -353,7 +559,20 @@ Deno.serve(async (req) => {
         for (const item of matchedItems) {
           const subject = `📢 FRAUDE ${alert.metric === 'kap' ? 'KAP' : 'Haber'} Alarmı: ${alert.ticker}`;
           const details = `${item.summary || item.title}\n\nKaynak: ${item.source.toUpperCase()}`;
-          await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, details, item.url));
+          outgoing.push({
+            userId: alert.user_id,
+            email: userEmail,
+            subject,
+            html: renderSingleAlertHtml(subject, alert.ticker, details, item.url),
+            delivery: {
+              source: item.source,
+              priority: Math.max(item.priority, 4), // özel alarm eşleşmesi her zaman önemli
+              title: item.title,
+              summary: item.summary || item.title,
+              tickers: [alert.ticker],
+              url: item.url,
+            },
+          });
           customAlertsSent++;
 
           await supabase
@@ -371,13 +590,36 @@ Deno.serve(async (req) => {
       if (alert.metric === 'spk' && spkNew) {
         const subject = `🏛️ FRAUDE SPK Bülteni: ${alert.ticker}`;
         const details = `Yeni SPK Bülteni (${spkNew.no}) yayımlandı.`;
-        await sendMail(userEmail, subject, renderSingleAlertHtml(subject, alert.ticker, details, spkNew.url));
+        outgoing.push({
+          userId: alert.user_id,
+          email: userEmail,
+          subject,
+          html: renderSingleAlertHtml(subject, alert.ticker, details, spkNew.url),
+          delivery: {
+            source: 'spk',
+            priority: 4,
+            title: subject,
+            summary: details,
+            tickers: [alert.ticker],
+            url: spkNew.url,
+          },
+        });
         customAlertsSent++;
       }
     }
   }
 
-  // 3. İmleçleri ilerlet
+  // 3. GENEL BİLDİRİM TERCİHLERİ (notify_prefs)
+  // Özel alarmı olmayan kullanıcı da takip ettiği hisseler / anahtar kelimeler
+  // için bildirim alır. Bu adım eksikti: notify_deliveries hiç yazılmadığı için
+  // Chrome eklentisinin beslemesi (notify-feed) sürekli boş dönüyordu.
+  const prefsMatched = matchPrefs(prefRows, feed, spkNew);
+  outgoing.push(...prefsMatched);
+
+  // 4. Kuyruğa yaz. Gönderimi mail-dispatch üstlenir.
+  const queued = await flushQueue(supabase, outgoing);
+
+  // 5. İmleçleri ilerlet
   const advance: Array<{ source: string; last_key: string }> = [];
   if (kapItems.length > 0) {
     const maxKap = Math.max(...kapItems.map((i) => Number(i.key)));
@@ -397,7 +639,10 @@ Deno.serve(async (req) => {
       ok: true,
       new_items: feed.length,
       spk: spkNew?.no ?? null,
-      custom_alerts_sent: customAlertsSent,
+      // "sent" değil "queued": gönderimden mail-dispatch sorumlu.
+      custom_alerts_queued: customAlertsSent,
+      pref_matches_queued: prefsMatched.length,
+      queued,
     }),
     { headers: { 'Content-Type': 'application/json' } },
   );

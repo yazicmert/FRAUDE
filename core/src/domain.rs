@@ -496,6 +496,8 @@ pub struct IpoRecord {
     pub data_sources: Vec<String>,
     #[serde(default)]
     pub spk_bulletin_no: Option<String>,
+    #[serde(default)]
+    pub spk_approval_date: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
