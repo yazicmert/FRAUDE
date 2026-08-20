@@ -17,6 +17,7 @@ interface ModuleProps {
   onClose: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  onOpenModule?: (kind: string) => void;
 }
 
 function ModuleFrame({
@@ -309,7 +310,7 @@ export function AbnormalMovements({ snapshot, onSelectTicker, isEditing, onClose
   );
 }
 
-export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }: ModuleProps) {
+export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose, onOpenModule }: ModuleProps) {
   const { t } = useTranslation();
   const { watchlist, toggleWatchlist, updateWatchlistItem } = useWatchlist();
 
@@ -463,6 +464,18 @@ export function ModelPortfolio({ snapshot, onSelectTicker, isEditing, onClose }:
           </>
         )}
       </div>
+      {onOpenModule && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 8px' }}>
+          <button
+            type="button"
+            className="small-button"
+            onClick={() => onOpenModule('portfolio')}
+            style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.75rem' }}
+          >
+            {t('portfolioOpenFullscreen')}
+          </button>
+        </div>
+      )}
       <p className="module-disclaimer">{t('portfolioDisclaimer')}</p>
     </ModuleFrame>
   );

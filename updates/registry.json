@@ -2,6 +2,37 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-21-model-portfoy-modulu-ve-anlik-takip-altyapisi",
+      "date": "2026-08-21",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "Model Portföy Modülü: Tam Ekran Yönetim, Varlık Dağılımı ve Anlık K/Z",
+        "en": "Model Portfolio Module: Fullscreen Tracker, Asset Allocation and Real-Time P&L"
+      },
+      "summary": {
+        "tr": "FRAUDE Terminal'e tam teşekküllü Model Portföy çalışma alanı modülü eklendi. Supabase ve yerel depolama ile çift yönlü çalışan altyapı sayesinde kullanıcılar pozisyonlarını ekleyebilir, canlı piyasa fiyatlarıyla anlık kâr/zarar ve portföy değerini takip edebilir, interaktif pasta grafik ile varlık dağılımını görebilir ve Telegram botu ile anlık senkronizasyon sağlayabilir.",
+        "en": "Introduced a dedicated Model Portfolio workspace module to FRAUDE Terminal. Powered by real-time Supabase synchronization and local fallback, users can manage stock positions, track real-time P&L and total valuation enriched with live market data, inspect interactive asset allocation breakdowns, and sync seamlessly with the Telegram bot."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "src/hooks/usePortfolio.ts",
+        "src/features/portfolio/PortfolioView.tsx",
+        "src/features/portfolio/PortfolioView.css",
+        "src/modules/workspaceRegistry.tsx",
+        "src/features/dashboard/DashboardModules.tsx",
+        "src/features/dashboard/DashboardView.tsx",
+        "src/api/i18n.ts",
+        "supabase/migrations/20260821000010_user_portfolio_and_digest.sql"
+      ]
+    },
+    {
       "id": "2026-08-21-telegram-bot-entegrasyonu-ve-6-haneli-eslestirme",
       "date": "2026-08-21",
       "author": "yazicmert",

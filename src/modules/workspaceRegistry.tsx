@@ -36,6 +36,7 @@ const CommoditiesView = lazy(() => import('../features/commodities/CommoditiesVi
 const CryptoView = lazy(() => import('../features/crypto/CryptoView'));
 const UpdatesView = lazy(() => import('../features/updates/UpdatesView'));
 const FinancialsView = lazy(() => import('../features/financials/FinancialsView'));
+const PortfolioView = lazy(() => import('../features/portfolio/PortfolioView'));
 
 export const CORE_VERSION = '0.1.34';
 
@@ -142,7 +143,7 @@ export const workspaceModules: WorkspaceModule[] = [
       'dashboard',
     ),
     render: (_tab, host) => (
-      <DashboardView onSelectTicker={host.openTicker} />
+      <DashboardView onSelectTicker={host.openTicker} onOpenModule={host.openModule} />
     ),
   },
   {
@@ -362,6 +363,19 @@ export const workspaceModules: WorkspaceModule[] = [
       'financials',
     ),
     render: (_tab, host) => <FinancialsView onSelectTicker={host.openTicker} />,
+  },
+  {
+    kind: 'portfolio',
+    titleKey: 'portfolio',
+    manifest: manifest(
+      'fraude.portfolio',
+      { tr: 'Model Portföy', en: 'Model Portfolio' },
+      { tr: 'Kişisel portföy takibi: pozisyonlar, kâr/zarar, dağılım ve performans.', en: 'Personal portfolio tracker: positions, P&L, allocation and performance.' },
+      ['api:market-data', 'storage:workspace'],
+      'portfolio',
+      'portfolio',
+    ),
+    render: (_tab, host) => <PortfolioView onSelectTicker={host.openTicker} />,
   },
   {
     kind: 'corporate',
@@ -643,6 +657,7 @@ export const NAV_TREE: NavSection[] = [
     labelKey: 'navTools',
     menu: 'group',
     entries: [
+      { type: 'module', kind: 'portfolio' },
       { type: 'module', kind: 'news' },
       { type: 'module', kind: 'forum' },
       { type: 'module', kind: 'ai' },
