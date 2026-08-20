@@ -100,7 +100,12 @@ export default function NotificationsView() {
 
     void fetchTransport();
 
-    // Gerçek zamanlı kanal güncellemesini dinle (kullanıcı Telegram'a kodu yazdığında ekranda anında yeşil olsun)
+    const onFocus = () => {
+      void fetchTransport();
+    };
+    window.addEventListener('focus', onFocus);
+
+    // Gerçek zamanlı kanal güncellemesini dinle
     const channel = supabase
       .channel(`notify_transports:${session.id}`)
       .on(
@@ -114,9 +119,26 @@ export default function NotificationsView() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
       void supabase.removeChannel(channel);
     };
   }, [session?.id]);
+
+  // Kod üretildiğinde kullanıcı Telegram'dan onaylayana kadar 2 saniyede bir otomatik yokla
+  useEffect(() => {
+    if (!pairCode) return;
+    const timer = setInterval(() => {
+      void fetchTransport();
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [pairCode]);
+
+  // Telegram bağlandığı anda kod kutusunu kapat
+  useEffect(() => {
+    if (transport?.kind === 'telegram' && transport?.telegram_chat_id) {
+      setPairCode(null);
+    }
+  }, [transport?.kind, transport?.telegram_chat_id]);
 
   const handleGetPairCode = async () => {
     setPairLoading(true);
