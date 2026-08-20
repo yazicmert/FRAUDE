@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
   }
 
   const kind = String(body.kind ?? '') as TransportKind;
-  if (!['platform', 'webhook', 'api'].includes(kind)) {
+  if (!['platform', 'webhook', 'api', 'telegram'].includes(kind)) {
     return json({ ok: false, error: 'bad-kind' }, 400);
   }
 

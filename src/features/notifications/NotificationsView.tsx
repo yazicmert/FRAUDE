@@ -49,6 +49,34 @@ export default function NotificationsView() {
   const [feedToken, setFeedToken] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Telegram entegrasyon durumu
+  const [transport, setTransport] = useState<{
+    kind: string;
+    telegram_chat_id: string | null;
+    telegram_username: string | null;
+    verified_at: string | null;
+  } | null>(null);
+  const [pairCode, setPairCode] = useState<string | null>(null);
+  const [pairLoading, setPairLoading] = useState(false);
+  const [pairEmailSent, setPairEmailSent] = useState(false);
+  const [disconnectLoading, setDisconnectLoading] = useState(false);
+  const [testMsgLoading, setTestMsgLoading] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  const fetchTransport = async () => {
+    if (!session?.id) return;
+    const { data } = await supabase
+      .from('notify_transports')
+      .select('kind, telegram_chat_id, telegram_username, verified_at')
+      .eq('user_id', session.id)
+      .maybeSingle();
+    if (data) {
+      setTransport(data as any);
+    } else {
+      setTransport(null);
+    }
+  };
+
   useEffect(() => {
     if (!session) {
       setReady(true);
@@ -69,10 +97,97 @@ export default function NotificationsView() {
         }
         setReady(true);
       });
+
+    void fetchTransport();
+
+    // Gerçek zamanlı kanal güncellemesini dinle (kullanıcı Telegram'a kodu yazdığında ekranda anında yeşil olsun)
+    const channel = supabase
+      .channel(`notify_transports:${session.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notify_transports', filter: `user_id=eq.${session.id}` },
+        () => {
+          void fetchTransport();
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
+      void supabase.removeChannel(channel);
     };
   }, [session?.id]);
+
+  const handleGetPairCode = async () => {
+    setPairLoading(true);
+    setPairEmailSent(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('telegram-pair');
+      if (error) throw error;
+      if (data?.ok) {
+        setPairCode(data.code);
+        setPairEmailSent(true);
+      }
+    } catch (e) {
+      console.error('Pair code error', e);
+    } finally {
+      setPairLoading(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    if (!session?.id) return;
+    setDisconnectLoading(true);
+    try {
+      await supabase
+        .from('notify_transports')
+        .update({
+          kind: 'platform',
+          telegram_chat_id: null,
+          telegram_username: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', session.id);
+      await fetchTransport();
+      setPairCode(null);
+    } catch (e) {
+      console.error('Disconnect error', e);
+    } finally {
+      setDisconnectLoading(false);
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    if (!session?.id) return;
+    setTestMsgLoading(true);
+    setTestStatus('idle');
+    try {
+      const { error } = await supabase.from('notify_outbox').insert({
+        user_id: session.id,
+        to_email: session.email,
+        subject: '⚡ FRAUDE Telegram Test Bildirimi',
+        html: '<p>Test</p>',
+        status: 'pending',
+        payload: {
+          source: 'test',
+          priority: 5,
+          title: '⚡ FRAUDE Telegram Test Bildirimi',
+          summary: 'Tebrikler! Telegram bildirim kanalınız sorunsuz bağlandı. BIST açıklamaları ve piyasa alarmları bu sohbete anlık iletilecektir.',
+          tickers: ['BIST'],
+          url: 'https://fraude.app',
+        },
+      });
+      if (error) throw error;
+      setTestStatus('success');
+      setTimeout(() => setTestStatus('idle'), 5000);
+    } catch (e) {
+      console.error('Test notification error', e);
+      setTestStatus('error');
+      setTimeout(() => setTestStatus('idle'), 5000);
+    } finally {
+      setTestMsgLoading(false);
+    }
+  };
 
   const copyFeedToken = async () => {
     try {
@@ -330,6 +445,116 @@ export default function NotificationsView() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Telegram Bot Entegrasyonu */}
+        <section className="notif-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <h2 style={{ margin: 0 }}>{t('notifTelegramTitle')}</h2>
+            {transport?.kind === 'telegram' && transport?.telegram_chat_id ? (
+              <span className="notif-telegram-badge connected">
+                ● {t('notifTelegramConnected')} {transport.telegram_username ? `(${transport.telegram_username})` : ''}
+              </span>
+            ) : (
+              <span className="notif-telegram-badge disconnected">
+                ○ {t('notifTelegramNotConnected')}
+              </span>
+            )}
+          </div>
+          <p className="notif-muted small">{t('notifTelegramHint')}</p>
+
+          {transport?.kind === 'telegram' && transport?.telegram_chat_id ? (
+            <div>
+              <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-main)' }}>
+                Chat ID: <code style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>{transport.telegram_chat_id}</code>
+              </div>
+              <div className="notif-telegram-actions">
+                <button
+                  className="notif-btn notif-btn-primary"
+                  disabled={testMsgLoading}
+                  onClick={() => void handleSendTestNotification()}
+                >
+                  {testMsgLoading ? 'Gönderiliyor…' : t('notifTelegramTest')}
+                </button>
+                <button
+                  className="notif-btn"
+                  style={{ borderColor: 'rgba(255, 106, 94, 0.4)', color: '#ff6a5e' }}
+                  disabled={disconnectLoading}
+                  onClick={() => void handleDisconnectTelegram()}
+                >
+                  {disconnectLoading ? 'Ayrılıyor…' : t('notifTelegramDisconnect')}
+                </button>
+                <a
+                  href="https://t.me/FraudeTerminalBot"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="notif-btn notif-btn-ghost"
+                  style={{ textDecoration: 'none' }}
+                >
+                  {t('notifTelegramOpenBot')}
+                </a>
+              </div>
+              {testStatus === 'success' && (
+                <div className="notif-telegram-status-msg success" style={{ marginTop: '10px' }}>
+                  {t('notifTelegramTestSuccess')}
+                </div>
+              )}
+              {testStatus === 'error' && (
+                <div className="notif-telegram-status-msg error" style={{ marginTop: '10px' }}>
+                  {t('notifTelegramTestError')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ marginTop: '12px' }}>
+              {pairCode ? (
+                <div className="notif-telegram-code-box">
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    {t('notifTelegramCodeHint')}
+                  </div>
+                  <div className="notif-telegram-code">{pairCode}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    ⏳ {t('notifTelegramExpiresIn')}
+                  </div>
+                  {pairEmailSent && (
+                    <div style={{ fontSize: '12px', color: '#58a6ff', marginTop: '8px' }}>
+                      📬 {t('notifTelegramEmailSentNotice')}
+                    </div>
+                  )}
+                  <div style={{ marginTop: '14px' }}>
+                    <a
+                      href={`https://t.me/FraudeTerminalBot?start=${pairCode}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="notif-btn notif-btn-primary"
+                      style={{ display: 'inline-block', textDecoration: 'none' }}
+                    >
+                      {t('notifTelegramOpenBot')}
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="notif-telegram-actions">
+                  <button
+                    className="notif-btn notif-btn-primary"
+                    disabled={pairLoading}
+                    onClick={() => void handleGetPairCode()}
+                  >
+                    {pairLoading ? 'Kod Üretiliyor…' : t('notifTelegramGetCode')}
+                  </button>
+                  <a
+                    href="https://t.me/FraudeTerminalBot"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="notif-btn"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    {t('notifTelegramOpenBot')}
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Chrome eklentisi besleme anahtarı */}

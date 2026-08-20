@@ -2,6 +2,43 @@
   "schemaVersion": 1,
   "updates": [
     {
+      "id": "2026-08-21-telegram-bot-entegrasyonu-ve-6-haneli-eslestirme",
+      "date": "2026-08-21",
+      "author": "yazicmert",
+      "kind": "feature",
+      "area": "core",
+      "title": {
+        "tr": "Resmi Telegram Botu ve 6 Haneli Kod ile Anlık Bildirim Entegrasyonu",
+        "en": "Official Telegram Bot and 6-Digit Code Instant Notification Integration"
+      },
+      "summary": {
+        "tr": "KAP açıklamaları, SPK bültenleri ve fiyat alarmlarını 1 saniyede doğrudan Telegram sohbetine ileten FRAUDE Botu (@FraudeTerminalBot) entegre edildi. Kullanıcılar ister bota e-postalarını yazarak e-postalarına gelen 6 haneli kodla, ister terminal uygulamasından tek tıkla kod üreterek hesaplarını anında eşleştirebilir.",
+        "en": "Integrated official FRAUDE Telegram Bot (@FraudeTerminalBot) to deliver real-time KAP disclosures, SPK bulletins, and market price alerts within 1 second. Users can pair their accounts either by typing their email in Telegram to receive a 6-digit verification PIN by email, or by generating a code directly inside the terminal app."
+      },
+      "commit": null,
+      "includedIn": null,
+      "security": {
+        "reviewed": false,
+        "reviewer": null
+      },
+      "touches": [
+        "supabase/migrations/20260821000008_notify_telegram_bot_pairing.sql",
+        "supabase/functions/_shared/mailer.ts",
+        "supabase/functions/telegram-webhook/index.ts",
+        "supabase/functions/telegram-pair/index.ts",
+        "supabase/functions/transport-config/index.ts",
+        "supabase/functions/mail-dispatch/index.ts",
+        "src/features/notifications/NotificationsView.tsx",
+        "src/features/notifications/NotificationsView.css",
+        "src/api/i18n.ts",
+        "site/src/components/MailTransport.tsx",
+        "site/src/lib/strings.ts",
+        "updates/registry.json"
+      ],
+      "agentPrompt": "telegram kanalı şöyle olsun genel fraude botu olsun orada mail ile oturum açalım yani telegramda maili girince uygulamada 6 haneli kod oluşsun onu telegrama girince oturum açılsın ve oturumu hatırlasın",
+      "notes": null
+    },
+    {
       "id": "2026-08-20-bildirim-optimizasyonu-ve-halka-arz-filtreleme",
       "date": "2026-08-20",
       "author": "yazicmert",

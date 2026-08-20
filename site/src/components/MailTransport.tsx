@@ -17,7 +17,7 @@ import { useI18n } from '../lib/i18n';
  * yapılmalı.
  */
 
-type Kind = 'platform' | 'webhook' | 'api';
+type Kind = 'platform' | 'webhook' | 'api' | 'telegram';
 type Provider = 'resend' | 'brevo' | 'postmark';
 
 interface TransportState {
@@ -176,12 +176,19 @@ export default function MailTransport({ user }: { user: User }) {
           {t('mtKind')}
           <select value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
             <option value="platform">{t('mtKindPlatform')}</option>
+            <option value="telegram">{t('mtKindTelegram')}</option>
             <option value="webhook">{t('mtKindWebhook')}</option>
             <option value="api">{t('mtKindApi')}</option>
           </select>
         </label>
 
         {kind === 'platform' && <p className="muted small">{t('mtPlatformNote')}</p>}
+
+        {kind === 'telegram' && (
+          <p className="muted small">
+            Telegram botuna (<b>@FraudeTerminalBot</b>) giderek e-postanızı yazın veya masaüstü FRAUDE Terminal uygulamasından 6 haneli kod alarak anında eşleştirin.
+          </p>
+        )}
 
         {kind === 'webhook' && (
           <>
